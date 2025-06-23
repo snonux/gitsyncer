@@ -198,3 +198,78 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 func (c *Client) HasToken() bool {
 	return c.token != ""
 }
+
+// Repository represents a GitHub repository
+type Repository struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Private     bool   `json:"private"`
+	Fork        bool   `json:"fork"`
+	Archived    bool   `json:"archived"`
+	Disabled    bool   `json:"disabled"`
+	Size        int    `json:"size"`
+}
+
+// ListPublicRepos lists all public repositories for the user/org
+func (c *Client) ListPublicRepos() ([]Repository, error) {
+	if c.token == "" {
+		return nil, fmt.Errorf("GitHub token required to list repositories")
+	}
+
+	var allRepos []Repository
+	page := 1
+	perPage := 100
+
+	for {
+		url := fmt.Sprintf("https://api.github.com/users/%s/repos?page=%d&per_page=%d&type=owner", c.org, page, perPage)
+		fmt.Printf("  Fetching page %d...\n", page)
+		
+		req, err := http.NewRequest("GET", url, nil)
+		if err != nil {
+			return nil, err
+		}
+		
+		req.Header.Set("Authorization", "Bearer "+c.token)
+		req.Header.Set("Accept", "application/vnd.github.v3+json")
+		
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			return nil, err
+		}
+		defer resp.Body.Close()
+		
+		if resp.StatusCode != 200 {
+			body, _ := io.ReadAll(resp.Body)
+			return nil, fmt.Errorf("failed to list repos: status %d: %s", resp.StatusCode, string(body))
+		}
+		
+		var repos []Repository
+		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+			return nil, fmt.Errorf("failed to decode response: %w", err)
+		}
+		
+		// Filter for public, non-fork, non-archived, non-empty repos
+		for _, repo := range repos {
+			if !repo.Private && !repo.Fork && !repo.Archived && !repo.Disabled && repo.Size > 0 {
+				allRepos = append(allRepos, repo)
+			}
+		}
+		
+		// Check if there are more pages
+		if len(repos) < perPage {
+			break
+		}
+		page++
+	}
+	
+	return allRepos, nil
+}
+
+// GetRepoNames extracts repository names from a list of repos
+func GetRepoNames(repos []Repository) []string {
+	names := make([]string, len(repos))
+	for i, repo := range repos {
+		names[i] = repo.Name
+	}
+	return names
+}

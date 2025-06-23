@@ -24,7 +24,9 @@ func main() {
 		syncRepo           string
 		syncAll            bool
 		syncCodebergPublic bool
+		syncGitHubPublic   bool
 		createGitHubRepos  bool
+		createCodebergRepos bool
 		dryRun             bool
 		workDir            string
 		testGitHubToken    bool
@@ -39,8 +41,10 @@ func main() {
 	flag.BoolVar(&listRepos, "list-repos", false, "list configured repositories")
 	flag.StringVar(&syncRepo, "sync", "", "repository name to sync")
 	flag.BoolVar(&syncAll, "sync-all", false, "sync all configured repositories")
-	flag.BoolVar(&syncCodebergPublic, "sync-codeberg-public", false, "sync all public Codeberg repositories")
+	flag.BoolVar(&syncCodebergPublic, "sync-codeberg-public", false, "sync all public Codeberg repositories to GitHub")
+	flag.BoolVar(&syncGitHubPublic, "sync-github-public", false, "sync all public GitHub repositories to Codeberg")
 	flag.BoolVar(&createGitHubRepos, "create-github-repos", false, "automatically create missing GitHub repositories")
+	flag.BoolVar(&createCodebergRepos, "create-codeberg-repos", false, "automatically create missing Codeberg repositories")
 	flag.BoolVar(&dryRun, "dry-run", false, "show what would be synced without actually syncing")
 	flag.StringVar(&workDir, "work-dir", ".gitsyncer-work", "working directory for cloning repositories")
 	flag.BoolVar(&testGitHubToken, "test-github-token", false, "test GitHub token authentication")
@@ -357,6 +361,93 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle sync GitHub public repos
+	if syncGitHubPublic {
+		githubOrg := cfg.FindGitHubOrg()
+		if githubOrg == nil {
+			fmt.Println("No GitHub organization found in configuration")
+			os.Exit(1)
+		}
+
+		fmt.Printf("Fetching public repositories from GitHub user/org: %s...\n", githubOrg.Name)
+		
+		client := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
+		if !client.HasToken() {
+			fmt.Println("ERROR: GitHub token required to list repositories")
+			fmt.Println("Set GITHUB_TOKEN env var or create ~/.gitsyncer_github_token file")
+			os.Exit(1)
+		}
+		
+		repos, err := client.ListPublicRepos()
+		if err != nil {
+			log.Fatal("Failed to fetch repositories:", err)
+		}
+
+		repoNames := github.GetRepoNames(repos)
+		fmt.Printf("Found %d public repositories on GitHub\n", len(repoNames))
+		
+		if len(repoNames) == 0 {
+			fmt.Println("No public repositories found")
+			os.Exit(0)
+		}
+
+		// Show the repositories that will be synced
+		fmt.Println("\nRepositories to sync:")
+		for _, name := range repoNames {
+			fmt.Printf("  - %s\n", name)
+		}
+		
+		if dryRun {
+			fmt.Printf("\n[DRY RUN] Would sync %d repositories\n", len(repoNames))
+			if createCodebergRepos {
+				fmt.Println("Would create missing Codeberg repositories")
+			}
+			os.Exit(0)
+		}
+		
+		// TODO: Add Codeberg API client for repo creation
+		if createCodebergRepos {
+			fmt.Println("WARNING: --create-codeberg-repos is not yet implemented")
+			fmt.Println("         Repositories must exist on Codeberg before syncing")
+		}
+		
+		fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
+		
+		syncer := sync.New(cfg, workDir)
+		failedRepos := []string{}
+		successCount := 0
+		
+		// Get GitHub repos for description
+		githubRepoMap := make(map[string]github.Repository)
+		for _, repo := range repos {
+			githubRepoMap[repo.Name] = repo
+		}
+		
+		for i, repoName := range repoNames {
+			fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
+			
+			if err := syncer.SyncRepository(repoName); err != nil {
+				fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
+				fmt.Printf("Stopping sync due to error.\n")
+				os.Exit(1)
+			} else {
+				successCount++
+			}
+		}
+
+		fmt.Printf("\n=== Summary ===\n")
+		fmt.Printf("Successfully synced: %d repositories\n", successCount)
+		
+		if len(failedRepos) > 0 {
+			fmt.Printf("Failed to sync: %d repositories\n", len(failedRepos))
+			for _, repo := range failedRepos {
+				fmt.Printf("  - %s\n", repo)
+			}
+		}
+		
+		os.Exit(0)
+	}
+
 	// Default: show usage
 	fmt.Println("\ngitsyncer - Git repository synchronization tool")
 	fmt.Printf("Configured with %d organization(s) and %d repository(ies)\n", 
@@ -364,7 +455,8 @@ func main() {
 	fmt.Println("\nUsage:")
 	fmt.Println("  gitsyncer --sync <repo-name>        Sync a specific repository")
 	fmt.Println("  gitsyncer --sync-all                Sync all configured repositories")
-	fmt.Println("  gitsyncer --sync-codeberg-public    Sync all public Codeberg repositories")
+	fmt.Println("  gitsyncer --sync-codeberg-public    Sync all public Codeberg repositories to GitHub")
+	fmt.Println("  gitsyncer --sync-github-public      Sync all public GitHub repositories to Codeberg")
 	fmt.Println("  gitsyncer --list-orgs               List configured organizations")
 	fmt.Println("  gitsyncer --list-repos              List configured repositories")
 	fmt.Println("  gitsyncer --test-github-token       Test GitHub token authentication")
@@ -373,6 +465,7 @@ func main() {
 	fmt.Println("  --config <path>                     Path to configuration file")
 	fmt.Println("  --work-dir <path>                   Working directory for operations (default: .gitsyncer-work)")
 	fmt.Println("  --create-github-repos               Create missing GitHub repositories automatically")
+	fmt.Println("  --create-codeberg-repos             Create missing Codeberg repositories (not yet implemented)")
 	fmt.Println("  --dry-run                           Show what would be done without doing it")
 	fmt.Println("\nGitHub Token:")
 	fmt.Println("  Set via: config file, GITHUB_TOKEN env var, or ~/.gitsyncer_github_token file")

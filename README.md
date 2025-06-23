@@ -7,9 +7,12 @@ GitSyncer is a tool for synchronizing git repositories between multiple organiza
 - Sync repositories between multiple git organizations
 - Automatic branch creation on remotes that don't have them
 - Batch sync multiple repositories with a single command
-- Sync all public repositories from Codeberg to other platforms
-- Merge conflict detection
+- Sync all public repositories from Codeberg to GitHub
+- Sync all public repositories from GitHub to Codeberg
+- Automatic repository creation on GitHub (Codeberg support planned)
+- Merge conflict detection with clear error messages
 - Never deletes branches (only adds/updates)
+- GitHub token validation tool
 
 ## Installation
 
@@ -52,13 +55,25 @@ Create a `gitsyncer.json` file:
 ./gitsyncer --sync-all
 ```
 
-### Sync all public Codeberg repositories
+### Sync all public Codeberg repositories to GitHub
 ```bash
 # Dry run - see what would be synced
 ./gitsyncer --sync-codeberg-public --dry-run
 
 # Actually sync all public repos
 ./gitsyncer --sync-codeberg-public
+
+# With automatic GitHub repo creation
+./gitsyncer --sync-codeberg-public --create-github-repos
+```
+
+### Sync all public GitHub repositories to Codeberg
+```bash
+# Dry run - see what would be synced
+./gitsyncer --sync-github-public --dry-run
+
+# Actually sync all public repos
+./gitsyncer --sync-github-public
 ```
 
 ### List configured organizations
