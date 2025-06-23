@@ -76,6 +76,17 @@ Create a `gitsyncer.json` file:
 ./gitsyncer --sync-github-public
 ```
 
+### Full bidirectional sync
+```bash
+# Sync all public repos from both Codeberg and GitHub
+# This enables --sync-codeberg-public --sync-github-public 
+# --create-github-repos --create-codeberg-repos
+./gitsyncer --full
+
+# With dry run to see what would happen
+./gitsyncer --full --dry-run
+```
+
 ### List configured organizations
 ```bash
 ./gitsyncer --list-orgs

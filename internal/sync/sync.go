@@ -7,7 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/paul/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
 // Syncer handles repository synchronization between organizations

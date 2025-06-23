@@ -8,11 +8,11 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/paul/gitsyncer/internal/codeberg"
-	"github.com/paul/gitsyncer/internal/config"
-	"github.com/paul/gitsyncer/internal/github"
-	"github.com/paul/gitsyncer/internal/sync"
-	"github.com/paul/gitsyncer/internal/version"
+	"codeberg.org/snonux/gitsyncer/internal/codeberg"
+	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/github"
+	"codeberg.org/snonux/gitsyncer/internal/sync"
+	"codeberg.org/snonux/gitsyncer/internal/version"
 )
 
 func main() {
@@ -25,6 +25,7 @@ func main() {
 		syncAll            bool
 		syncCodebergPublic bool
 		syncGitHubPublic   bool
+		fullSync           bool
 		createGitHubRepos  bool
 		createCodebergRepos bool
 		dryRun             bool
@@ -43,12 +44,27 @@ func main() {
 	flag.BoolVar(&syncAll, "sync-all", false, "sync all configured repositories")
 	flag.BoolVar(&syncCodebergPublic, "sync-codeberg-public", false, "sync all public Codeberg repositories to GitHub")
 	flag.BoolVar(&syncGitHubPublic, "sync-github-public", false, "sync all public GitHub repositories to Codeberg")
+	flag.BoolVar(&fullSync, "full", false, "full bidirectional sync (enables --sync-codeberg-public --sync-github-public --create-github-repos --create-codeberg-repos)")
 	flag.BoolVar(&createGitHubRepos, "create-github-repos", false, "automatically create missing GitHub repositories")
 	flag.BoolVar(&createCodebergRepos, "create-codeberg-repos", false, "automatically create missing Codeberg repositories")
 	flag.BoolVar(&dryRun, "dry-run", false, "show what would be synced without actually syncing")
 	flag.StringVar(&workDir, "work-dir", ".gitsyncer-work", "working directory for cloning repositories")
 	flag.BoolVar(&testGitHubToken, "test-github-token", false, "test GitHub token authentication")
 	flag.Parse()
+
+	// Handle --full flag by enabling all sync operations
+	if fullSync {
+		syncCodebergPublic = true
+		syncGitHubPublic = true
+		createGitHubRepos = true
+		createCodebergRepos = true
+		fmt.Println("Full sync mode enabled:")
+		fmt.Println("  - Sync all public Codeberg repos to GitHub")
+		fmt.Println("  - Sync all public GitHub repos to Codeberg")
+		fmt.Println("  - Create missing GitHub repositories")
+		fmt.Println("  - Create missing Codeberg repositories (when implemented)")
+		fmt.Println()
+	}
 
 	// Handle version flag
 	if versionFlag {
@@ -281,15 +297,18 @@ func main() {
 		}
 		
 		if dryRun {
-			fmt.Printf("\n[DRY RUN] Would sync %d repositories\n", len(repoNames))
+			fmt.Printf("\n[DRY RUN] Would sync %d repositories from Codeberg to GitHub\n", len(repoNames))
 			if createGitHubRepos {
 				fmt.Println("Would create missing GitHub repositories")
 			}
-			os.Exit(0)
+			if !syncGitHubPublic {
+				os.Exit(0)
+			}
 		}
 		
-		// If create-github-repos is enabled, pre-create repos on GitHub
-		var githubClient *github.Client
+		if !dryRun {
+			// If create-github-repos is enabled, pre-create repos on GitHub
+			var githubClient *github.Client
 		if createGitHubRepos {
 			githubOrg := cfg.FindGitHubOrg()
 			if githubOrg == nil {
@@ -357,8 +376,16 @@ func main() {
 				fmt.Printf("  - %s\n", repo)
 			}
 		}
+		} // End of if !dryRun
 		
-		os.Exit(0)
+		if !syncGitHubPublic {
+			os.Exit(0)
+		}
+		
+		// Add separator when doing full sync
+		fmt.Println("\n" + strings.Repeat("=", 70))
+		fmt.Println("=== Continuing with GitHub to Codeberg sync ===")
+		fmt.Println(strings.Repeat("=", 70) + "\n")
 	}
 
 	// Handle sync GitHub public repos
@@ -398,15 +425,16 @@ func main() {
 		}
 		
 		if dryRun {
-			fmt.Printf("\n[DRY RUN] Would sync %d repositories\n", len(repoNames))
+			fmt.Printf("\n[DRY RUN] Would sync %d repositories from GitHub to Codeberg\n", len(repoNames))
 			if createCodebergRepos {
 				fmt.Println("Would create missing Codeberg repositories")
 			}
 			os.Exit(0)
 		}
 		
-		// TODO: Add Codeberg API client for repo creation
-		if createCodebergRepos {
+		if !dryRun {
+			// TODO: Add Codeberg API client for repo creation
+			if createCodebergRepos {
 			fmt.Println("WARNING: --create-codeberg-repos is not yet implemented")
 			fmt.Println("         Repositories must exist on Codeberg before syncing")
 		}
@@ -444,6 +472,7 @@ func main() {
 				fmt.Printf("  - %s\n", repo)
 			}
 		}
+		} // End of if !dryRun
 		
 		os.Exit(0)
 	}
@@ -457,6 +486,7 @@ func main() {
 	fmt.Println("  gitsyncer --sync-all                Sync all configured repositories")
 	fmt.Println("  gitsyncer --sync-codeberg-public    Sync all public Codeberg repositories to GitHub")
 	fmt.Println("  gitsyncer --sync-github-public      Sync all public GitHub repositories to Codeberg")
+	fmt.Println("  gitsyncer --full                    Full bidirectional sync of all public repos")
 	fmt.Println("  gitsyncer --list-orgs               List configured organizations")
 	fmt.Println("  gitsyncer --list-repos              List configured repositories")
 	fmt.Println("  gitsyncer --test-github-token       Test GitHub token authentication")
