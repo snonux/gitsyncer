@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
-	"path/filepath"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
