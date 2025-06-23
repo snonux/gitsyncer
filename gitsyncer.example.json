@@ -1,0 +1,12 @@
+{
+  "organizations": [
+    {
+      "host": "git@codeberg.org",
+      "name": "snonux"
+    },
+    {
+      "host": "git@github.com",
+      "name": "snonux"
+    }
+  ]
+}
