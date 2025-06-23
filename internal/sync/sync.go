@@ -69,6 +69,24 @@ func (s *Syncer) SyncRepository(repoName string) error {
 				return fmt.Errorf("failed to add remote %s: %w", s.getRemoteName(org), err)
 			}
 		}
+	} else {
+		// Repository exists, ensure all remotes are configured
+		fmt.Printf("Using existing repository at %s\n", repoPath)
+		
+		// Check and add any missing remotes
+		for i := range s.config.Organizations {
+			org := &s.config.Organizations[i]
+			remoteName := s.getRemoteName(org)
+			
+			// Check if remote exists
+			cmd := exec.Command("git", "-C", repoPath, "remote", "get-url", remoteName)
+			if err := cmd.Run(); err != nil {
+				// Remote doesn't exist, add it
+				if err := s.addRemote(repoPath, org); err != nil {
+					return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
+				}
+			}
+		}
 	}
 
 	// Change to repository directory
@@ -155,10 +173,43 @@ func (s *Syncer) addRemote(repoPath string, org *config.Organization) error {
 
 // fetchAll fetches from all remotes
 func (s *Syncer) fetchAll() error {
-	cmd := exec.Command("git", "fetch", "--all", "--prune")
-	cmd.Stdout = os.Stdout
-	cmd.Stderr = os.Stderr
-	return cmd.Run()
+	// First, check which remotes actually exist
+	cmd := exec.Command("git", "remote", "-v")
+	output, err := cmd.Output()
+	if err != nil {
+		return fmt.Errorf("failed to list remotes: %w", err)
+	}
+
+	// Try to fetch from each remote individually to handle missing repos
+	remotes := make(map[string]bool)
+	lines := strings.Split(string(output), "\n")
+	for _, line := range lines {
+		if line == "" {
+			continue
+		}
+		parts := strings.Fields(line)
+		if len(parts) >= 1 {
+			remotes[parts[0]] = true
+		}
+	}
+
+	// Fetch from each remote
+	for remote := range remotes {
+		fmt.Printf("Fetching %s\n", remote)
+		cmd := exec.Command("git", "fetch", remote, "--prune")
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			// Check if it's because the repository doesn't exist
+			if strings.Contains(string(output), "does not appear to be a git repository") ||
+			   strings.Contains(string(output), "Could not read from remote repository") {
+				fmt.Printf("  Warning: Remote repository %s does not exist yet\n", remote)
+				continue
+			}
+			return fmt.Errorf("failed to fetch from %s: %w\n%s", remote, err, string(output))
+		}
+	}
+	
+	return nil
 }
 
 // getAllBranches gets all unique branches from all remotes
@@ -242,8 +293,16 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 		output, err := cmd.CombinedOutput()
 		
 		if err != nil {
+			outputStr := string(output)
+			// Check if it's because the repository doesn't exist
+			if strings.Contains(outputStr, "does not appear to be a git repository") ||
+			   strings.Contains(outputStr, "Could not read from remote repository") {
+				fmt.Printf("    Note: Remote repository %s does not exist - creating it first would be needed\n", remoteName)
+				fmt.Printf("    Skipping push to %s (repository must be created manually)\n", remoteName)
+				continue
+			}
 			// Check if it's because the branch doesn't exist on the remote
-			if strings.Contains(string(output), "error: src refspec") {
+			if strings.Contains(outputStr, "error: src refspec") {
 				fmt.Printf("    Creating new branch on %s\n", remoteName)
 				// Try again with -u flag to set upstream
 				cmd = exec.Command("git", "push", "-u", remoteName, branch)
@@ -251,7 +310,7 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 					return fmt.Errorf("failed to push to %s: %w", remoteName, err)
 				}
 			} else {
-				return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, string(output))
+				return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, outputStr)
 			}
 		}
 	}

@@ -17,6 +17,7 @@ type Organization struct {
 // Config holds the application configuration
 type Config struct {
 	Organizations []Organization `json:"organizations"`
+	Repositories  []string       `json:"repositories,omitempty"`
 }
 
 // Load reads and parses the configuration file

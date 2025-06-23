@@ -17,7 +17,9 @@ func main() {
 		versionFlag bool
 		configPath  string
 		listOrgs    bool
+		listRepos   bool
 		syncRepo    string
+		syncAll     bool
 		workDir     string
 	)
 
@@ -27,7 +29,9 @@ func main() {
 	flag.StringVar(&configPath, "config", "", "path to configuration file")
 	flag.StringVar(&configPath, "c", "", "path to configuration file (short)")
 	flag.BoolVar(&listOrgs, "list-orgs", false, "list configured organizations")
+	flag.BoolVar(&listRepos, "list-repos", false, "list configured repositories")
 	flag.StringVar(&syncRepo, "sync", "", "repository name to sync")
+	flag.BoolVar(&syncAll, "sync-all", false, "sync all configured repositories")
 	flag.StringVar(&workDir, "work-dir", ".gitsyncer-work", "working directory for cloning repositories")
 	flag.Parse()
 
@@ -70,6 +74,10 @@ func main() {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
     {"host": "git@codeberg.org", "name": "myorg"}
+  ],
+  "repositories": [
+    "repo1",
+    "repo2"
   ]
 }`)
 			os.Exit(1)
@@ -93,6 +101,19 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle list repositories flag
+	if listRepos {
+		fmt.Println("\nConfigured repositories:")
+		if len(cfg.Repositories) == 0 {
+			fmt.Println("  (none configured)")
+		} else {
+			for _, repo := range cfg.Repositories {
+				fmt.Printf("  - %s\n", repo)
+			}
+		}
+		os.Exit(0)
+	}
+
 	// Handle sync operation
 	if syncRepo != "" {
 		syncer := sync.New(cfg, workDir)
@@ -102,12 +123,45 @@ func main() {
 		os.Exit(0)
 	}
 
+	// Handle sync all operation
+	if syncAll {
+		if len(cfg.Repositories) == 0 {
+			fmt.Println("No repositories configured. Add repositories to the config file.")
+			os.Exit(1)
+		}
+
+		syncer := sync.New(cfg, workDir)
+		failedRepos := []string{}
+		
+		for i, repo := range cfg.Repositories {
+			fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(cfg.Repositories), repo)
+			if err := syncer.SyncRepository(repo); err != nil {
+				fmt.Printf("Failed to sync %s: %v\n", repo, err)
+				failedRepos = append(failedRepos, repo)
+			}
+		}
+
+		if len(failedRepos) > 0 {
+			fmt.Printf("\nFailed to sync %d repository(ies):\n", len(failedRepos))
+			for _, repo := range failedRepos {
+				fmt.Printf("  - %s\n", repo)
+			}
+			os.Exit(1)
+		}
+		
+		fmt.Printf("\nSuccessfully synced all %d repositories!\n", len(cfg.Repositories))
+		os.Exit(0)
+	}
+
 	// Default: show usage
 	fmt.Println("\ngitsyncer - Git repository synchronization tool")
-	fmt.Printf("Configured with %d organization(s)\n", len(cfg.Organizations))
+	fmt.Printf("Configured with %d organization(s) and %d repository(ies)\n", 
+		len(cfg.Organizations), len(cfg.Repositories))
 	fmt.Println("\nUsage:")
-	fmt.Println("  gitsyncer --sync <repo-name>     Sync a repository across all organizations")
+	fmt.Println("  gitsyncer --sync <repo-name>     Sync a specific repository")
+	fmt.Println("  gitsyncer --sync-all             Sync all configured repositories")
 	fmt.Println("  gitsyncer --list-orgs            List configured organizations")
+	fmt.Println("  gitsyncer --list-repos           List configured repositories")
 	fmt.Println("  gitsyncer --version              Show version information")
 	fmt.Println("\nOptions:")
 	fmt.Println("  --config <path>                  Path to configuration file")

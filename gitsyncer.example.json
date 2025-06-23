@@ -8,5 +8,10 @@
       "host": "git@github.com",
       "name": "snonux"
     }
+  ],
+  "repositories": [
+    "gitsyncer",
+    "another-repo",
+    "yet-another-repo"
   ]
 }
