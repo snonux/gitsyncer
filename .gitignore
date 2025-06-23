@@ -37,3 +37,9 @@ go.work.sum
 # OS files
 .DS_Store
 Thumbs.db
+
+# Test artifacts
+test/work/
+test/work-*/
+test/repos/
+.gitsyncer-work/

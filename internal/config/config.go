@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // Organization represents a git organization with its host and name
@@ -59,7 +60,8 @@ func (c *Config) Validate() error {
 		if org.Host == "" {
 			return fmt.Errorf("organization %d: missing host", i)
 		}
-		if org.Name == "" {
+		// Name can be empty for file:// URLs
+		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") {
 			return fmt.Errorf("organization %d: missing name", i)
 		}
 	}

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 
 	"github.com/paul/gitsyncer/internal/config"
+	"github.com/paul/gitsyncer/internal/sync"
 	"github.com/paul/gitsyncer/internal/version"
 )
 
@@ -16,6 +17,8 @@ func main() {
 		versionFlag bool
 		configPath  string
 		listOrgs    bool
+		syncRepo    string
+		workDir     string
 	)
 
 	// Define command line flags
@@ -24,6 +27,8 @@ func main() {
 	flag.StringVar(&configPath, "config", "", "path to configuration file")
 	flag.StringVar(&configPath, "c", "", "path to configuration file (short)")
 	flag.BoolVar(&listOrgs, "list-orgs", false, "list configured organizations")
+	flag.StringVar(&syncRepo, "sync", "", "repository name to sync")
+	flag.StringVar(&workDir, "work-dir", ".gitsyncer-work", "working directory for cloning repositories")
 	flag.Parse()
 
 	// Handle version flag
@@ -88,8 +93,23 @@ func main() {
 		os.Exit(0)
 	}
 
-	// TODO: Implement main gitsyncer functionality
+	// Handle sync operation
+	if syncRepo != "" {
+		syncer := sync.New(cfg, workDir)
+		if err := syncer.SyncRepository(syncRepo); err != nil {
+			log.Fatal("Sync failed:", err)
+		}
+		os.Exit(0)
+	}
+
+	// Default: show usage
 	fmt.Println("\ngitsyncer - Git repository synchronization tool")
 	fmt.Printf("Configured with %d organization(s)\n", len(cfg.Organizations))
-	fmt.Println("\nUse --list-orgs to display configured organizations")
+	fmt.Println("\nUsage:")
+	fmt.Println("  gitsyncer --sync <repo-name>     Sync a repository across all organizations")
+	fmt.Println("  gitsyncer --list-orgs            List configured organizations")
+	fmt.Println("  gitsyncer --version              Show version information")
+	fmt.Println("\nOptions:")
+	fmt.Println("  --config <path>                  Path to configuration file")
+	fmt.Println("  --work-dir <path>                Working directory for operations (default: .gitsyncer-work)")
 }
