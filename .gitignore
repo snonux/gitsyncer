@@ -1,5 +1,5 @@
 # Binaries
-gitsyncer
+/gitsyncer
 gitsyncer-*
 
 # Configuration files (except examples)
