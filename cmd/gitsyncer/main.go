@@ -224,7 +224,7 @@ func main() {
 		}
 
 		syncer := sync.New(cfg, workDir)
-		failedRepos := []string{}
+		successCount := 0
 		
 		for i, repo := range cfg.Repositories {
 			fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(cfg.Repositories), repo)
@@ -245,14 +245,7 @@ func main() {
 				fmt.Printf("Stopping sync due to error.\n")
 				os.Exit(1)
 			}
-		}
-
-		if len(failedRepos) > 0 {
-			fmt.Printf("\nFailed to sync %d repository(ies):\n", len(failedRepos))
-			for _, repo := range failedRepos {
-				fmt.Printf("  - %s\n", repo)
-			}
-			os.Exit(1)
+			successCount++
 		}
 		
 		fmt.Printf("\nSuccessfully synced all %d repositories!\n", len(cfg.Repositories))
@@ -329,7 +322,6 @@ func main() {
 		fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 		
 		syncer := sync.New(cfg, workDir)
-		failedRepos := []string{}
 		successCount := 0
 		
 		// Get Codeberg repos for description
@@ -369,13 +361,6 @@ func main() {
 
 		fmt.Printf("\n=== Summary ===\n")
 		fmt.Printf("Successfully synced: %d repositories\n", successCount)
-		
-		if len(failedRepos) > 0 {
-			fmt.Printf("Failed to sync: %d repositories\n", len(failedRepos))
-			for _, repo := range failedRepos {
-				fmt.Printf("  - %s\n", repo)
-			}
-		}
 		} // End of if !dryRun
 		
 		if !syncGitHubPublic {
@@ -442,7 +427,6 @@ func main() {
 		fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 		
 		syncer := sync.New(cfg, workDir)
-		failedRepos := []string{}
 		successCount := 0
 		
 		// Get GitHub repos for description
@@ -465,13 +449,6 @@ func main() {
 
 		fmt.Printf("\n=== Summary ===\n")
 		fmt.Printf("Successfully synced: %d repositories\n", successCount)
-		
-		if len(failedRepos) > 0 {
-			fmt.Printf("Failed to sync: %d repositories\n", len(failedRepos))
-			for _, repo := range failedRepos {
-				fmt.Printf("  - %s\n", repo)
-			}
-		}
 		} // End of if !dryRun
 		
 		os.Exit(0)
@@ -499,4 +476,7 @@ func main() {
 	fmt.Println("  --dry-run                           Show what would be done without doing it")
 	fmt.Println("\nGitHub Token:")
 	fmt.Println("  Set via: config file, GITHUB_TOKEN env var, or ~/.gitsyncer_github_token file")
+	
+	// Exit with error code when no action was specified
+	os.Exit(1)
 }
