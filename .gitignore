@@ -2,12 +2,6 @@
 /gitsyncer
 gitsyncer-*
 
-# Configuration files (except examples)
-gitsyncer.json
-.gitsyncer.json
-*.json
-!*.example.json
-
 # IDE and editor files
 .vscode/
 .idea/
