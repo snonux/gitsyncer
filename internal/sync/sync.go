@@ -257,16 +257,12 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 		// Check for merge conflicts
 		statusStr := string(output)
 		if strings.Contains(statusStr, "UU ") || strings.Contains(statusStr, "AA ") || strings.Contains(statusStr, "DD ") {
-			// Get the repo name from the work directory
-			repoName := filepath.Base(s.workDir)
-			if repoName == ".gitsyncer-work" || repoName == "" {
-				// If we're in the work directory itself, extract from current directory
-				cmd := exec.Command("git", "rev-parse", "--show-toplevel")
-				if output, err := cmd.Output(); err == nil {
-					repoName = filepath.Base(strings.TrimSpace(string(output)))
-				}
+			// Get absolute path for clarity
+			absPath, err := filepath.Abs(s.workDir)
+			if err != nil {
+				absPath = s.workDir
 			}
-			return fmt.Errorf("repository has unresolved merge conflicts - please resolve manually or delete %s", s.workDir)
+			return fmt.Errorf("repository has unresolved merge conflicts\nPlease resolve conflicts in: %s\nOr delete the directory to start fresh: rm -rf %s", absPath, absPath)
 		}
 		// If we have uncommitted changes but no conflicts, try to stash them
 		fmt.Println("  Stashing uncommitted changes...")
