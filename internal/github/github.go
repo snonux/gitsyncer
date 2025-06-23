@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -20,20 +21,36 @@ type Client struct {
 func NewClient(token, org string) *Client {
 	// If no token provided, try other sources
 	if token == "" {
+		fmt.Println("  No token in config, trying environment variable...")
 		// Try environment variable
 		token = os.Getenv("GITHUB_TOKEN")
 		
 		// If still no token, try reading from file
 		if token == "" {
+			fmt.Println("  No GITHUB_TOKEN env var, trying ~/.gitsyncer_github_token file...")
 			home, err := os.UserHomeDir()
 			if err == nil {
 				tokenFile := filepath.Join(home, ".gitsyncer_github_token")
 				data, err := os.ReadFile(tokenFile)
 				if err == nil {
 					token = strings.TrimSpace(string(data))
+					fmt.Printf("  Loaded token from file (length: %d)\n", len(token))
+					// Check for common issues
+					if strings.Contains(token, "\n") || strings.Contains(token, "\r") {
+						fmt.Println("  Warning: Token contains newline characters")
+					}
+					if strings.HasPrefix(token, " ") || strings.HasSuffix(token, " ") {
+						fmt.Println("  Warning: Token has leading/trailing spaces")
+					}
+				} else {
+					fmt.Printf("  Could not read token file: %v\n", err)
 				}
 			}
+		} else {
+			fmt.Printf("  Loaded token from env var (length: %d)\n", len(token))
 		}
+	} else {
+		fmt.Printf("  Using token from config (length: %d)\n", len(token))
 	}
 	return &Client{
 		token: token,
@@ -76,6 +93,8 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
+	fmt.Printf("  Checking URL: %s\n", url)
+	fmt.Printf("  Token present: %v (length: %d)\n", c.token != "", len(c.token))
 	
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
@@ -95,6 +114,12 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 		return true, nil
 	} else if resp.StatusCode == 404 {
 		return false, nil
+	} else if resp.StatusCode == 401 {
+		// Read the response body for 401 errors
+		body, _ := io.ReadAll(resp.Body)
+		fmt.Printf("  401 Unauthorized - Response: %s\n", string(body))
+		fmt.Printf("  Authorization header: %s\n", req.Header.Get("Authorization"))
+		return false, fmt.Errorf("authentication failed (401): %s", string(body))
 	}
 	
 	return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)

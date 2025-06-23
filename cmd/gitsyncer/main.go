@@ -6,6 +6,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/paul/gitsyncer/internal/codeberg"
 	"github.com/paul/gitsyncer/internal/config"
@@ -26,6 +27,7 @@ func main() {
 		createGitHubRepos  bool
 		dryRun             bool
 		workDir            string
+		testGitHubToken    bool
 	)
 
 	// Define command line flags
@@ -41,11 +43,39 @@ func main() {
 	flag.BoolVar(&createGitHubRepos, "create-github-repos", false, "automatically create missing GitHub repositories")
 	flag.BoolVar(&dryRun, "dry-run", false, "show what would be synced without actually syncing")
 	flag.StringVar(&workDir, "work-dir", ".gitsyncer-work", "working directory for cloning repositories")
+	flag.BoolVar(&testGitHubToken, "test-github-token", false, "test GitHub token authentication")
 	flag.Parse()
 
 	// Handle version flag
 	if versionFlag {
 		fmt.Println(version.GetVersion())
+		os.Exit(0)
+	}
+	
+	// Handle test GitHub token flag
+	if testGitHubToken {
+		fmt.Println("Testing GitHub token authentication...")
+		client := github.NewClient("", "snonux") // Empty token to trigger loading from env/file
+		if !client.HasToken() {
+			fmt.Println("ERROR: No GitHub token found!")
+			fmt.Println("Please set GITHUB_TOKEN environment variable or create ~/.gitsyncer_github_token file")
+			os.Exit(1)
+		}
+		
+		// Test the token by checking a known repo
+		exists, err := client.RepoExists("gitsyncer")
+		if err != nil {
+			fmt.Printf("ERROR: Token test failed: %v\n", err)
+			if strings.Contains(err.Error(), "401") {
+				fmt.Println("\nThe token is invalid or expired. Please check:")
+				fmt.Println("1. Token has not expired")
+				fmt.Println("2. Token has 'repo' scope")
+				fmt.Println("3. Token was not revoked")
+			}
+			os.Exit(1)
+		}
+		
+		fmt.Printf("SUCCESS: Token is valid! Repository check returned: %v\n", exists)
 		os.Exit(0)
 	}
 
@@ -337,6 +367,7 @@ func main() {
 	fmt.Println("  gitsyncer --sync-codeberg-public    Sync all public Codeberg repositories")
 	fmt.Println("  gitsyncer --list-orgs               List configured organizations")
 	fmt.Println("  gitsyncer --list-repos              List configured repositories")
+	fmt.Println("  gitsyncer --test-github-token       Test GitHub token authentication")
 	fmt.Println("  gitsyncer --version                 Show version information")
 	fmt.Println("\nOptions:")
 	fmt.Println("  --config <path>                     Path to configuration file")

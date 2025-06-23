@@ -250,6 +250,35 @@ func (s *Syncer) getAllBranches() ([]string, error) {
 
 // syncBranch synchronizes a specific branch across all remotes
 func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organization) error {
+	// First check if we have unresolved merge conflicts
+	cmd := exec.Command("git", "status", "--porcelain")
+	output, err := cmd.Output()
+	if err == nil && len(output) > 0 {
+		// Check for merge conflicts
+		statusStr := string(output)
+		if strings.Contains(statusStr, "UU ") || strings.Contains(statusStr, "AA ") || strings.Contains(statusStr, "DD ") {
+			// Get the repo name from the work directory
+			repoName := filepath.Base(s.workDir)
+			if repoName == ".gitsyncer-work" || repoName == "" {
+				// If we're in the work directory itself, extract from current directory
+				cmd := exec.Command("git", "rev-parse", "--show-toplevel")
+				if output, err := cmd.Output(); err == nil {
+					repoName = filepath.Base(strings.TrimSpace(string(output)))
+				}
+			}
+			return fmt.Errorf("repository has unresolved merge conflicts - please resolve manually or delete %s", s.workDir)
+		}
+		// If we have uncommitted changes but no conflicts, try to stash them
+		fmt.Println("  Stashing uncommitted changes...")
+		if err := exec.Command("git", "stash", "push", "-m", "gitsyncer-auto-stash").Run(); err != nil {
+			return fmt.Errorf("failed to stash changes: %w", err)
+		}
+		defer func() {
+			// Try to pop the stash at the end
+			exec.Command("git", "stash", "pop").Run()
+		}()
+	}
+	
 	// Create or checkout the branch
 	if err := s.checkoutBranch(branch); err != nil {
 		return fmt.Errorf("failed to checkout branch %s: %w", branch, err)
@@ -333,9 +362,14 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 func (s *Syncer) checkoutBranch(branch string) error {
 	// First try to checkout existing branch
 	cmd := exec.Command("git", "checkout", branch)
-	if err := cmd.Run(); err == nil {
+	output, err := cmd.CombinedOutput()
+	if err == nil {
 		return nil
 	}
+	
+	// If checkout failed, check the error
+	outputStr := string(output)
+	fmt.Printf("  Initial checkout failed: %s\n", strings.TrimSpace(outputStr))
 
 	// If that fails, create a new branch tracking the first remote that has it
 	for i := range s.config.Organizations {
@@ -344,7 +378,11 @@ func (s *Syncer) checkoutBranch(branch string) error {
 
 		if s.remoteBranchExists(remoteName, branch) {
 			cmd = exec.Command("git", "checkout", "-b", branch, fmt.Sprintf("%s/%s", remoteName, branch))
-			return cmd.Run()
+			output, err := cmd.CombinedOutput()
+			if err != nil {
+				return fmt.Errorf("failed to create tracking branch: %s", string(output))
+			}
+			return nil
 		}
 	}
 
