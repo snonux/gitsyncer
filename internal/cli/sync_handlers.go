@@ -66,6 +66,12 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 	
 	fmt.Printf("\nSuccessfully synced all %d repositories!\n", successCount)
+	
+	// Print abandoned branches summary
+	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
+		fmt.Print(summary)
+	}
+	
 	return 0
 }
 
@@ -269,6 +275,11 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
 	
+	// Print abandoned branches summary
+	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
+		fmt.Print(summary)
+	}
+	
 	if !flags.SyncGitHubPublic {
 		return 0
 	}
@@ -303,6 +314,11 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 
 	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
+	
+	// Print abandoned branches summary
+	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
+		fmt.Print(summary)
+	}
 	
 	return 0
 }

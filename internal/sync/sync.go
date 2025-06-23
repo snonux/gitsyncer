@@ -15,6 +15,7 @@ type Syncer struct {
 	config   *config.Config
 	workDir  string
 	repoName string
+	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
 }
 
 // CLAUDE: Is there a reason, we return a pointer to Syncer?
@@ -23,6 +24,7 @@ func New(cfg *config.Config, workDir string) *Syncer {
 	return &Syncer{
 		config:  cfg,
 		workDir: workDir,
+		abandonedReports: make(map[string]*AbandonedBranchReport),
 	}
 }
 
@@ -66,6 +68,20 @@ func (s *Syncer) SyncRepository(repoName string) error {
 	// Sync all branches
 	if err := s.syncAllBranches(branches, remotes); err != nil {
 		return err
+	}
+
+	// Analyze abandoned branches
+	report, err := s.analyzeAbandonedBranches()
+	if err != nil {
+		// Don't fail sync, just log the error
+		fmt.Printf("Warning: Failed to analyze abandoned branches: %v\n", err)
+	} else {
+		// Store the report for summary
+		s.abandonedReports[repoName] = report
+		// Print individual report if not empty
+		if reportStr := formatAbandonedBranchReport(report, repoName); reportStr != "" {
+			fmt.Print(reportStr)
+		}
 	}
 
 	fmt.Printf("\nRepository %s synchronized successfully!\n", repoName)
