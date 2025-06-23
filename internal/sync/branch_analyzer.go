@@ -32,10 +32,13 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 	}
 
 	// Get all branches
-	branches, err := s.getAllBranches()
+	allBranches, err := s.getAllBranches()
 	if err != nil {
 		return nil, fmt.Errorf("failed to get branches: %w", err)
 	}
+	
+	// Filter branches based on exclusion patterns
+	branches := s.branchFilter.FilterBranches(allBranches)
 	report.TotalBranches = len(branches)
 
 	// Check main/master branch status

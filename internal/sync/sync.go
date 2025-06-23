@@ -16,15 +16,25 @@ type Syncer struct {
 	workDir  string
 	repoName string
 	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
+	branchFilter     *BranchFilter                     // Filter for excluding branches
 }
 
 // CLAUDE: Is there a reason, we return a pointer to Syncer?
 // New creates a new Syncer instance
 func New(cfg *config.Config, workDir string) *Syncer {
+	// Create branch filter
+	branchFilter, err := NewBranchFilter(cfg.ExcludeBranches)
+	if err != nil {
+		// Log error but continue without filter
+		fmt.Printf("Warning: Failed to create branch filter: %v\n", err)
+		branchFilter = &BranchFilter{}
+	}
+
 	return &Syncer{
 		config:  cfg,
 		workDir: workDir,
 		abandonedReports: make(map[string]*AbandonedBranchReport),
+		branchFilter:     branchFilter,
 	}
 }
 
@@ -57,9 +67,18 @@ func (s *Syncer) SyncRepository(repoName string) error {
 	}
 
 	// Get all branches
-	branches, err := s.getAllBranches()
+	allBranches, err := s.getAllBranches()
 	if err != nil {
 		return fmt.Errorf("failed to get branches: %w", err)
+	}
+
+	// Filter branches based on exclusion patterns
+	branches := s.branchFilter.FilterBranches(allBranches)
+	excludedBranches := s.branchFilter.GetExcludedBranches(allBranches)
+	
+	// Report excluded branches if any
+	if exclusionReport := FormatExclusionReport(excludedBranches, s.config.ExcludeBranches); exclusionReport != "" {
+		fmt.Print(exclusionReport)
 	}
 
 	// Get remotes map

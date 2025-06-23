@@ -17,8 +17,9 @@ type Organization struct {
 
 // Config holds the application configuration
 type Config struct {
-	Organizations []Organization `json:"organizations"`
-	Repositories  []string       `json:"repositories,omitempty"`
+	Organizations   []Organization `json:"organizations"`
+	Repositories    []string       `json:"repositories,omitempty"`
+	ExcludeBranches []string       `json:"exclude_branches,omitempty"` // Regex patterns for branches to exclude
 }
 
 // Load reads and parses the configuration file

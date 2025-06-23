@@ -111,6 +111,25 @@ Create a `gitsyncer.json` file:
    - Merges changes from remotes that have the branch
    - Pushes to all remotes (creating branches if needed)
 
+## Branch Exclusion
+
+You can exclude branches from synchronization using regex patterns in your configuration:
+
+```json
+{
+  "organizations": [...],
+  "repositories": [...],
+  "exclude_branches": [
+    "^codex/",    // Exclude branches starting with "codex/"
+    "^temp-",     // Exclude branches starting with "temp-"
+    "-wip$",      // Exclude branches ending with "-wip"
+    "experimental" // Exclude branches containing "experimental"
+  ]
+}
+```
+
+Excluded branches will be reported during sync but not synchronized.
+
 ## Example Workflows
 
 ### Sync specific repositories

@@ -98,6 +98,11 @@ func ShowConfigHelp() {
   "repositories": [
     "repo1",
     "repo2"
+  ],
+  "exclude_branches": [
+    "^codex/",
+    "^temp-",
+    "-wip$"
   ]
 }`)
 }
