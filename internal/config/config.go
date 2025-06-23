@@ -10,8 +10,9 @@ import (
 
 // Organization represents a git organization with its host and name
 type Organization struct {
-	Host string `json:"host"`
-	Name string `json:"name"`
+	Host        string `json:"host"`
+	Name        string `json:"name"`
+	GitHubToken string `json:"github_token,omitempty"`
 }
 
 // Config holds the application configuration
@@ -84,3 +85,34 @@ func (c *Config) FindOrganization(host string) *Organization {
 	}
 	return nil
 }
+
+// IsCodeberg checks if the organization is Codeberg
+func (o *Organization) IsCodeberg() bool {
+	return o.Host == "git@codeberg.org" || strings.Contains(o.Host, "codeberg.org")
+}
+
+// FindCodebergOrg finds the first Codeberg organization
+func (c *Config) FindCodebergOrg() *Organization {
+	for i := range c.Organizations {
+		if c.Organizations[i].IsCodeberg() {
+			return &c.Organizations[i]
+		}
+	}
+	return nil
+}
+
+// IsGitHub checks if the organization is GitHub
+func (o *Organization) IsGitHub() bool {
+	return o.Host == "git@github.com" || strings.Contains(o.Host, "github.com")
+}
+
+// FindGitHubOrg finds the first GitHub organization
+func (c *Config) FindGitHubOrg() *Organization {
+	for i := range c.Organizations {
+		if c.Organizations[i].IsGitHub() {
+			return &c.Organizations[i]
+		}
+	}
+	return nil
+}
+

@@ -70,8 +70,7 @@ The application currently provides:
 ## Next Steps
 
 The project needs:
-1. Implementation of the main git synchronization functionality
-2. Configuration handling (config files, environment variables)
-3. Git repository management logic
-4. Sync strategies implementation
-5. Tests for all components
+1. Support for other platforms (GitLab, Gitea, etc.)
+2. Webhook support for automatic syncing
+3. Conflict resolution strategies
+4. Better handling of large repositories
