@@ -30,10 +30,9 @@ type Client struct {
 	org     string
 }
 
-// CLAUDE: Is there a rason, that we return a pointer of Client?
 // NewClient creates a new Codeberg API client
-func NewClient(org string) *Client {
-	return &Client{
+func NewClient(org string) Client {
+	return Client{
 		baseURL: "https://codeberg.org/api/v1",
 		org:     org,
 	}

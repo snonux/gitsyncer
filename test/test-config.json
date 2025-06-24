@@ -1,0 +1,12 @@
+{
+  "organizations": [
+    {
+      "host": "file:///home/paul/git/gitsyncer/test/repos/org1",
+      "name": ""
+    },
+    {
+      "host": "file:///home/paul/git/gitsyncer/test/repos/org2",
+      "name": ""
+    }
+  ]
+}

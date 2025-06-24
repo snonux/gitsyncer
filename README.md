@@ -2,6 +2,16 @@
 
 GitSyncer is a tool for synchronizing git repositories between multiple organizations (e.g., GitHub and Codeberg). It automatically keeps all branches in sync across different git hosting platforms.
 
+## Documentation
+
+📚 **[Full documentation is available in the doc/ directory](doc/README.md)**
+
+- [Architecture Overview](doc/architecture.md) - System design and components
+- [API Reference](doc/api-reference.md) - Complete reference of all packages and functions
+- [Configuration Guide](doc/configuration.md) - Detailed configuration options
+- [Usage Examples](doc/examples.md) - Common usage patterns and workflows
+- [Development Guide](doc/development.md) - Contributing and development setup
+
 ## Features
 
 - Sync repositories between multiple git organizations
@@ -157,4 +167,4 @@ Excluded branches will be reported during sync but not synchronized.
 
 ## License
 
-[Add your license here]
+BSD 2-Clause License. See [LICENSE](LICENSE) file for details.

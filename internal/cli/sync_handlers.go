@@ -37,9 +37,13 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 
 	// Initialize GitHub client if needed
-	var githubClient *github.Client
+	var githubClient github.Client
+	var hasGithubClient bool
 	if flags.CreateGitHubRepos {
-		githubClient = initGitHubClient(cfg)
+		if client := initGitHubClient(cfg); client != nil {
+			githubClient = *client
+			hasGithubClient = true
+		}
 	}
 
 	syncer := sync.New(cfg, flags.WorkDir)
@@ -49,8 +53,8 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(cfg.Repositories), repo)
 		
 		// Create GitHub repo if needed
-		if githubClient != nil {
-			if err := createRepoWithClient(githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
+		if hasGithubClient {
+			if err := createRepoWithClient(&githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
 				fmt.Printf("ERROR: Failed to create GitHub repo %s: %v\n", repo, err)
 				fmt.Printf("Stopping sync due to error.\n")
 				return 1
@@ -207,7 +211,7 @@ func initGitHubClient(cfg *config.Config) *github.Client {
 	}
 	
 	fmt.Println("GitHub client initialized successfully with token")
-	return githubClient
+	return &githubClient
 }
 
 func createRepoWithClient(client *github.Client, repoName, description string) error {
@@ -230,9 +234,13 @@ func printFullSyncSeparator() {
 
 func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string) int {
 	// Initialize GitHub client if needed
-	var githubClient *github.Client
+	var githubClient github.Client
+	var hasGithubClient bool
 	if flags.CreateGitHubRepos {
-		githubClient = initGitHubClient(cfg)
+		if client := initGitHubClient(cfg); client != nil {
+			githubClient = *client
+			hasGithubClient = true
+		}
 	}
 	
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
@@ -250,7 +258,7 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
 		
 		// Create GitHub repo if needed
-		if githubClient != nil && flags.CreateGitHubRepos {
+		if hasGithubClient && flags.CreateGitHubRepos {
 			codebergRepo := repoMap[repoName]
 			description := codebergRepo.Description
 			if description == "" {

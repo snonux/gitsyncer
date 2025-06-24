@@ -18,7 +18,7 @@ type Client struct {
 }
 
 // NewClient creates a new GitHub API client
-func NewClient(token, org string) *Client {
+func NewClient(token, org string) Client {
 	// If no token provided, try other sources
 	if token == "" {
 		fmt.Println("  No token in config, trying environment variable...")
@@ -52,7 +52,7 @@ func NewClient(token, org string) *Client {
 	} else {
 		fmt.Printf("  Using token from config (length: %d)\n", len(token))
 	}
-	return &Client{
+	return Client{
 		token: token,
 		org:   org,
 	}
