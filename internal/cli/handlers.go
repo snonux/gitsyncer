@@ -103,7 +103,8 @@ func ShowConfigHelp() {
     "^codex/",
     "^temp-",
     "-wip$"
-  ]
+  ],
+  "work_dir": "~/git/gitsyncer-workdir"
 }`)
 }
 
@@ -146,7 +147,7 @@ func ShowUsage(cfg *config.Config) {
 	fmt.Println("  gitsyncer --version                 Show version information")
 	fmt.Println("\nOptions:")
 	fmt.Println("  --config <path>                     Path to configuration file")
-	fmt.Println("  --work-dir <path>                   Working directory for operations (default: .gitsyncer-work)")
+	fmt.Println("  --work-dir <path>                   Working directory for operations (default: ~/git/gitsyncer-workdir)")
 	fmt.Println("  --create-github-repos               Create missing GitHub repositories automatically")
 	fmt.Println("  --create-codeberg-repos             Create missing Codeberg repositories (not yet implemented)")
 	fmt.Println("  --dry-run                           Show what would be done without doing it")

@@ -1,6 +1,10 @@
 package cli
 
-import "flag"
+import (
+	"flag"
+	"os"
+	"path/filepath"
+)
 
 // Flags holds all command-line flag values
 type Flags struct {
@@ -38,10 +42,21 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.CreateGitHubRepos, "create-github-repos", false, "automatically create missing GitHub repositories")
 	flag.BoolVar(&f.CreateCodebergRepos, "create-codeberg-repos", false, "automatically create missing Codeberg repositories")
 	flag.BoolVar(&f.DryRun, "dry-run", false, "show what would be synced without actually syncing")
-	flag.StringVar(&f.WorkDir, "work-dir", ".gitsyncer-work", "working directory for cloning repositories")
+	flag.StringVar(&f.WorkDir, "work-dir", "", "working directory for cloning repositories (default: ~/git/gitsyncer-workdir)")
 	flag.BoolVar(&f.TestGitHubToken, "test-github-token", false, "test GitHub token authentication")
 	
 	flag.Parse()
+	
+	// Set default WorkDir if not provided
+	if f.WorkDir == "" {
+		home, err := os.UserHomeDir()
+		if err == nil {
+			f.WorkDir = filepath.Join(home, "git", "gitsyncer-workdir")
+		} else {
+			// Fallback if we can't get home directory
+			f.WorkDir = ".gitsyncer-work"
+		}
+	}
 	
 	// Handle --full flag by enabling all sync operations
 	if f.FullSync {

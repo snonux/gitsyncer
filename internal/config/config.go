@@ -20,6 +20,7 @@ type Config struct {
 	Organizations   []Organization `json:"organizations"`
 	Repositories    []string       `json:"repositories,omitempty"`
 	ExcludeBranches []string       `json:"exclude_branches,omitempty"` // Regex patterns for branches to exclude
+	WorkDir         string         `json:"work_dir,omitempty"`         // Working directory for cloning repositories
 }
 
 // Load reads and parses the configuration file
@@ -48,6 +49,24 @@ func Load(path string) (*Config, error) {
 	// Validate configuration
 	if err := cfg.Validate(); err != nil {
 		return nil, fmt.Errorf("invalid configuration: %w", err)
+	}
+
+	// Set default WorkDir if not specified
+	if cfg.WorkDir == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		cfg.WorkDir = filepath.Join(home, "git", "gitsyncer-workdir")
+	}
+
+	// Expand home directory in WorkDir if needed
+	if strings.HasPrefix(cfg.WorkDir, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		cfg.WorkDir = filepath.Join(home, cfg.WorkDir[2:])
 	}
 
 	return &cfg, nil

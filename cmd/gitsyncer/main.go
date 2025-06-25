@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"path/filepath"
 
 	"codeberg.org/snonux/gitsyncer/internal/cli"
 )
@@ -30,6 +31,15 @@ func main() {
 	if err != nil {
 		cli.ShowConfigHelp()
 		os.Exit(1)
+	}
+
+	// Use config WorkDir only if no flag was explicitly provided
+	// We check if WorkDir matches the default we set in ParseFlags
+	home, _ := os.UserHomeDir()
+	defaultWorkDir := filepath.Join(home, "git", "gitsyncer-workdir")
+	if flags.WorkDir == defaultWorkDir && cfg.WorkDir != "" {
+		// User didn't specify --work-dir, so use config value
+		flags.WorkDir = cfg.WorkDir
 	}
 
 	// Handle list organizations flag
