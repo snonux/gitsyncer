@@ -22,6 +22,7 @@ type Flags struct {
 	DryRun             bool
 	WorkDir            string
 	TestGitHubToken    bool
+	Clean              bool
 }
 
 // ParseFlags parses command-line flags and returns the flags struct
@@ -44,6 +45,7 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.DryRun, "dry-run", false, "show what would be synced without actually syncing")
 	flag.StringVar(&f.WorkDir, "work-dir", "", "working directory for cloning repositories (default: ~/git/gitsyncer-workdir)")
 	flag.BoolVar(&f.TestGitHubToken, "test-github-token", false, "test GitHub token authentication")
+	flag.BoolVar(&f.Clean, "clean", false, "delete all repositories in work directory (with confirmation)")
 	
 	flag.Parse()
 	
