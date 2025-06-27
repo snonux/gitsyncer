@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -226,7 +227,23 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to create repository: status code %d", resp.StatusCode)
+		// Read the response body to get more detailed error information
+		body, err := io.ReadAll(resp.Body)
+		if err != nil {
+			return fmt.Errorf("failed to create repository: status code %d (could not read response)", resp.StatusCode)
+		}
+		
+		// Try to parse as JSON error response
+		var errorResp map[string]interface{}
+		if err := json.Unmarshal(body, &errorResp); err == nil {
+			// If we can parse the JSON, extract the message
+			if msg, ok := errorResp["message"].(string); ok {
+				return fmt.Errorf("failed to create repository: %s (status code %d)", msg, resp.StatusCode)
+			}
+		}
+		
+		// If we can't parse JSON, return the raw response
+		return fmt.Errorf("failed to create repository: %s (status code %d)", string(body), resp.StatusCode)
 	}
 
 	return nil
