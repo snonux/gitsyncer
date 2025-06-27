@@ -53,7 +53,7 @@ func mergeBranch(remoteName, branch string) error {
 
 // pushBranch pushes a branch to a remote
 func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
-	cmd := exec.Command("git", "push", remoteName, branch)
+	cmd := exec.Command("git", "push", remoteName, branch, "--tags")
 	output, err := cmd.CombinedOutput()
 	
 	if err != nil {
@@ -69,7 +69,7 @@ func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
 		if isBranchMissing(outputStr) {
 			fmt.Printf("    Creating new branch on %s\n", remoteName)
 			// Try again with -u flag to set upstream
-			cmd = exec.Command("git", "push", "-u", remoteName, branch)
+			cmd = exec.Command("git", "push", "-u", remoteName, branch, "--tags")
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
 			}
@@ -123,8 +123,9 @@ func getRemotesList() (map[string]bool, error) {
 // fetchRemote fetches from a single remote with error handling
 func fetchRemote(remote string) error {
 	fmt.Printf("Fetching %s\n", remote)
-	cmd := exec.Command("git", "fetch", remote, "--prune")
+	cmd := exec.Command("git", "fetch", remote, "--prune", "--tags")
 	output, err := cmd.CombinedOutput()
+
 	if err != nil {
 		// Check if it's because the repository doesn't exist
 		if isRepositoryMissing(string(output)) {
