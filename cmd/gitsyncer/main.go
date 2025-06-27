@@ -26,10 +26,7 @@ func main() {
 		os.Exit(cli.HandleTestGitHubToken())
 	}
 
-	// Handle clean flag
-	if flags.Clean {
-		os.Exit(cli.HandleClean(flags))
-	}
+	
 
 	// Load configuration
 	cfg, err := cli.LoadConfig(flags.ConfigPath)
