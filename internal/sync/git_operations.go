@@ -1,8 +1,10 @@
 package sync
 
 import (
+	"bytes"
 	"fmt"
 	"os/exec"
+	"regexp"
 	"strings"
 )
 
@@ -127,14 +129,59 @@ func fetchRemote(remote string) error {
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
+		// Check if it's a tag conflict error
+		if bytes.Contains(output, []byte("would clobber existing tag")) {
+			return handleTagConflict(remote, output)
+		}
+
 		// Check if it's because the repository doesn't exist
 		if isRepositoryMissing(string(output)) {
 			fmt.Printf("  Warning: Remote repository %s does not exist yet\n", remote)
 			return nil // Not an error, just skip
 		}
 		return fmt.Errorf("failed to fetch from %s: %w\n%s", remote, err, string(output))
-	}
-	return nil
+    }
+    return nil
+}
+
+// handleTagConflict provides a detailed error message for tag conflicts.
+func handleTagConflict(remote string, output []byte) error {
+    var conflictDetails strings.Builder
+    conflictDetails.WriteString("tag conflict detected while fetching from remote: ")
+    conflictDetails.WriteString(remote)
+
+    // Regex to find tag names from error output
+    re := regexp.MustCompile(`! \[rejected\]\s+([^\s]+)`) 
+    matches := re.FindAllSubmatch(output, -1)
+
+    for _, match := range matches {
+        if len(match) > 1 {
+            tag := string(match[1])
+            localHash, _ := getTagCommitHash(tag, "local")
+            remoteHash, _ := getTagCommitHash(tag, remote)
+            conflictDetails.WriteString(fmt.Sprintf("\n  - Tag: %s\n    Local:  %s\n    Remote: %s", tag, localHash, remoteHash))
+        }
+    }
+
+    return fmt.Errorf(conflictDetails.String())
+}
+
+// getTagCommitHash retrieves the commit hash for a given tag, either locally or from a remote.
+func getTagCommitHash(tag, source string) (string, error) {
+    var cmd *exec.Cmd
+    if source == "local" {
+        cmd = exec.Command("git", "rev-parse", tag+"^{\\}")
+    } else {
+        cmd = exec.Command("git", "ls-remote", "--tags", source, tag)
+    }
+
+    output, err := cmd.Output()
+    if err != nil {
+        return "", err
+    }
+
+    hash := strings.Fields(string(output))[0]
+    return hash, nil
 }
 
 // checkoutExistingBranch tries to checkout an existing branch
