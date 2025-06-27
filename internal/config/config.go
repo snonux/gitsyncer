@@ -10,9 +10,10 @@ import (
 
 // Organization represents a git organization with its host and name
 type Organization struct {
-	Host        string `json:"host"`
-	Name        string `json:"name"`
-	GitHubToken string `json:"github_token,omitempty"`
+	Host          string `json:"host"`
+	Name          string `json:"name"`
+	GitHubToken   string `json:"github_token,omitempty"`
+	CodebergToken string `json:"codeberg_token,omitempty"`
 }
 
 // Config holds the application configuration

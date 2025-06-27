@@ -55,6 +55,9 @@ Array of organization objects. At least one organization must be configured.
 - **github_token** (string, optional): GitHub personal access token
   - Only needed for GitHub organizations
   - Can also be set via environment variable or file
+- **codeberg_token** (string, optional): Codeberg personal access token
+  - Only needed for Codeberg organizations
+  - Can also be set via environment variable or file
 
 #### repositories (optional)
 Array of repository names to sync. If empty, use `--sync-codeberg-public` or `--sync-github-public` to discover repositories.
@@ -190,6 +193,53 @@ chmod 600 ~/.gitsyncer_github_token
 
 ```bash
 gitsyncer --test-github-token
+```
+
+## Codeberg Token Configuration
+
+Codeberg tokens are required for:
+- Creating repositories (`--create-codeberg-repos`)
+- Listing private repositories
+
+### Token Sources (in order of precedence)
+
+1. **Configuration file**: `codeberg_token` field in organization object
+2. **Environment variable**: `CODEBERG_TOKEN`
+3. **Token file**: `~/.gitsyncer_codeberg_token`
+
+### Creating a Codeberg Token
+
+1. Go to Codeberg Settings → Applications → Manage Access Tokens
+2. Click "Generate New Token"
+3. Select scopes:
+   - `repository` (full control of repositories)
+4. Save the token securely
+
+### Setting the Token
+
+#### Method 1: Configuration File
+```json
+{
+  "organizations": [
+    {
+      "host": "git@codeberg.org",
+      "name": "myorg",
+      "codeberg_token": "xxxxxxxxxxxx"
+    }
+  ]
+}
+```
+
+#### Method 2: Environment Variable
+```bash
+export CODEBERG_TOKEN="xxxxxxxxxxxx"
+gitsyncer --sync-all
+```
+
+#### Method 3: Token File
+```bash
+echo "xxxxxxxxxxxx" > ~/.gitsyncer_codeberg_token
+chmod 600 ~/.gitsyncer_codeberg_token
 ```
 
 ## Branch Exclusion Patterns

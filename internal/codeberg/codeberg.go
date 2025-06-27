@@ -1,9 +1,12 @@
 package codeberg
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
+	"path/filepath"
 	"time"
 )
 
@@ -28,14 +31,45 @@ type Repository struct {
 type Client struct {
 	baseURL string
 	org     string
+	token   string
 }
 
 // NewClient creates a new Codeberg API client
-func NewClient(org string) Client {
-	return Client{
+func NewClient(org, token string) Client {
+	c := Client{
 		baseURL: "https://codeberg.org/api/v1",
 		org:     org,
 	}
+	c.loadToken(token)
+	return c
+}
+
+// loadToken loads the Codeberg API token from config, env, or file
+func (c *Client) loadToken(tokenFromConfig string) {
+	if tokenFromConfig != "" {
+		c.token = tokenFromConfig
+		return
+	}
+
+	// Check environment variable
+	if token := os.Getenv("CODEBERG_TOKEN"); token != "" {
+		c.token = token
+		return
+	}
+
+	// Check token file
+	home, err := os.UserHomeDir()
+	if err == nil {
+		tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
+		if data, err := os.ReadFile(tokenFile); err == nil {
+			c.token = string(data)
+		}
+	}
+}
+
+// HasToken returns true if a token is loaded
+func (c *Client) HasToken() bool {
+	return c.token != ""
 }
 
 // ListPublicRepos lists all public repositories for an organization
@@ -129,4 +163,71 @@ func GetRepoNames(repos []Repository) []string {
 		names = append(names, repo.Name)
 	}
 	return names
+}
+
+// RepoExists checks if a repository exists on Codeberg
+func (c *Client) RepoExists(repoName string) (bool, error) {
+	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return false, err
+	}
+
+	if c.HasToken() {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+
+	return resp.StatusCode == 200, nil
+}
+
+// CreateRepo creates a new repository on Codeberg
+func (c *Client) CreateRepo(repoName, description string, private bool) error {
+	exists, err := c.RepoExists(repoName)
+	if err != nil {
+		return fmt.Errorf("failed to check if repo exists: %w", err)
+	}
+	if exists {
+		return nil // Repository already exists
+	}
+
+	url := fmt.Sprintf("%s/user/repos", c.baseURL)
+
+	payload := map[string]interface{}{
+		"name":        repoName,
+		"description": description,
+		"private":     private,
+	}
+
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+
+	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	if c.HasToken() {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to create repository: status code %d", resp.StatusCode)
+	}
+
+	return nil
 }

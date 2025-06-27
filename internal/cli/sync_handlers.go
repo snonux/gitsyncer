@@ -89,7 +89,7 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 
 	fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
 	
-	client := codeberg.NewClient(codebergOrg.Name)
+	client := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
 	
 	// Try fetching as organization first, then as user
 	repos, err := client.ListPublicRepos()
@@ -219,6 +219,24 @@ func createRepoWithClient(client *github.Client, repoName, description string) e
 	return client.CreateRepo(repoName, description, false)
 }
 
+func initCodebergClient(cfg *config.Config) *codeberg.Client {
+	codebergOrg := cfg.FindCodebergOrg()
+	if codebergOrg == nil {
+		fmt.Println("Warning: --create-codeberg-repos specified but no Codeberg organization found in config")
+		return nil
+	}
+
+	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
+	codebergClient := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
+	if !codebergClient.HasToken() {
+		fmt.Println("Warning: No Codeberg token found. Cannot create repositories.")
+		return nil
+	}
+
+	fmt.Println("Codeberg client initialized successfully with token")
+	return &codebergClient
+}
+
 func showReposToSync(repoNames []string) {
 	fmt.Println("\nRepositories to sync:")
 	for _, name := range repoNames {
@@ -298,20 +316,45 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 }
 
 func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string) int {
-	// TODO: Add Codeberg API client for repo creation
+	// Initialize Codeberg client if needed
+	var codebergClient codeberg.Client
+	var hasCodebergClient bool
 	if flags.CreateCodebergRepos {
-		fmt.Println("WARNING: --create-codeberg-repos is not yet implemented")
-		fmt.Println("         Repositories must exist on Codeberg before syncing")
+		if client := initCodebergClient(cfg); client != nil {
+			codebergClient = *client
+			hasCodebergClient = true
+		}
 	}
-	
+
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
-	
+
 	syncer := sync.New(cfg, flags.WorkDir)
 	successCount := 0
-	
+
+	// Create map for descriptions
+	repoMap := make(map[string]github.Repository)
+	for _, repo := range repos {
+		repoMap[repo.Name] = repo
+	}
+
 	for i, repoName := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
-		
+
+		// Create Codeberg repo if needed
+		if hasCodebergClient && flags.CreateCodebergRepos {
+			githubRepo := repoMap[repoName]
+			description := githubRepo.Description
+			if description == "" {
+				description = fmt.Sprintf("Mirror of %s from GitHub", repoName)
+			}
+
+			fmt.Printf("Checking/creating Codeberg repository %s...\n", repoName)
+			err := codebergClient.CreateRepo(repoName, description, false)
+			if err != nil {
+				fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repoName, err)
+			}
+		}
+
 		if err := syncer.SyncRepository(repoName); err != nil {
 			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
 			fmt.Printf("Stopping sync due to error.\n")
@@ -322,12 +365,12 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 
 	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
-	
+
 	// Print abandoned branches summary
 	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
 	}
-	
+
 	return 0
 }
 
