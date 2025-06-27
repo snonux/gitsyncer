@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os/exec"
 	"regexp"
@@ -15,12 +16,12 @@ func checkForMergeConflicts() (bool, string, error) {
 	if err != nil {
 		return false, "", err
 	}
-	
+
 	statusStr := string(output)
-	hasConflicts := strings.Contains(statusStr, "UU ") || 
-	                strings.Contains(statusStr, "AA ") || 
-	                strings.Contains(statusStr, "DD ")
-	
+	hasConflicts := strings.Contains(statusStr, "UU ") ||
+		strings.Contains(statusStr, "AA ") ||
+		strings.Contains(statusStr, "DD ")
+
 	return hasConflicts, statusStr, nil
 }
 
@@ -38,10 +39,10 @@ func popStash() {
 // mergeBranch merges a branch from a remote
 func mergeBranch(remoteName, branch string) error {
 	fmt.Printf("  Merging from %s/%s...\n", remoteName, branch)
-	
+
 	cmd := exec.Command("git", "merge", fmt.Sprintf("%s/%s", remoteName, branch), "--no-edit")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		// Check if it's a merge conflict
 		if strings.Contains(string(output), "CONFLICT") {
@@ -49,7 +50,7 @@ func mergeBranch(remoteName, branch string) error {
 		}
 		return fmt.Errorf("failed to merge %s/%s: %w\n%s", remoteName, branch, err, string(output))
 	}
-	
+
 	return nil
 }
 
@@ -57,7 +58,7 @@ func mergeBranch(remoteName, branch string) error {
 func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
 	cmd := exec.Command("git", "push", remoteName, branch, "--tags")
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		outputStr := string(output)
 		// Check if it's because the repository doesn't exist
@@ -66,7 +67,7 @@ func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
 			fmt.Printf("    Skipping push to %s\n", remoteName)
 			return nil // Not an error, just skip
 		}
-		
+
 		// Check if it's because the branch doesn't exist on the remote
 		if isBranchMissing(outputStr) {
 			fmt.Printf("    Creating new branch on %s\n", remoteName)
@@ -77,21 +78,21 @@ func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
 			}
 			return nil
 		}
-		
+
 		return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, outputStr)
 	}
-	
+
 	if !remoteHasBranch {
 		fmt.Printf("    Successfully created branch %s on %s\n", branch, remoteName)
 	}
-	
+
 	return nil
 }
 
 // isRepositoryMissing checks if the error indicates a missing repository
 func isRepositoryMissing(output string) bool {
 	return strings.Contains(output, "does not appear to be a git repository") ||
-	       strings.Contains(output, "Could not read from remote repository")
+		strings.Contains(output, "Could not read from remote repository")
 }
 
 // isBranchMissing checks if the error indicates a missing branch
@@ -118,7 +119,7 @@ func getRemotesList() (map[string]bool, error) {
 			remotes[parts[0]] = true
 		}
 	}
-	
+
 	return remotes, nil
 }
 
@@ -140,48 +141,48 @@ func fetchRemote(remote string) error {
 			return nil // Not an error, just skip
 		}
 		return fmt.Errorf("failed to fetch from %s: %w\n%s", remote, err, string(output))
-    }
-    return nil
+	}
+	return nil
 }
 
 // handleTagConflict provides a detailed error message for tag conflicts.
 func handleTagConflict(remote string, output []byte) error {
-    var conflictDetails strings.Builder
-    conflictDetails.WriteString("tag conflict detected while fetching from remote: ")
-    conflictDetails.WriteString(remote)
+	var conflictDetails strings.Builder
+	conflictDetails.WriteString("tag conflict detected while fetching from remote: ")
+	conflictDetails.WriteString(remote)
 
-    // Regex to find tag names from error output
-    re := regexp.MustCompile(`! \[rejected\]\s+([^\s]+)`) 
-    matches := re.FindAllSubmatch(output, -1)
+	// Regex to find tag names from error output
+	re := regexp.MustCompile(`! \[rejected\]\s+([^\s]+)`)
+	matches := re.FindAllSubmatch(output, -1)
 
-    for _, match := range matches {
-        if len(match) > 1 {
-            tag := string(match[1])
-            localHash, _ := getTagCommitHash(tag, "local")
-            remoteHash, _ := getTagCommitHash(tag, remote)
-            conflictDetails.WriteString(fmt.Sprintf("\n  - Tag: %s\n    Local:  %s\n    Remote: %s", tag, localHash, remoteHash))
-        }
-    }
+	for _, match := range matches {
+		if len(match) > 1 {
+			tag := string(match[1])
+			localHash, _ := getTagCommitHash(tag, "local")
+			remoteHash, _ := getTagCommitHash(tag, remote)
+			conflictDetails.WriteString(fmt.Sprintf("\n  - Tag: %s\n    Local:  %s\n    Remote: %s", tag, localHash, remoteHash))
+		}
+	}
 
-    return fmt.Errorf(conflictDetails.String())
+	return errors.New(conflictDetails.String())
 }
 
 // getTagCommitHash retrieves the commit hash for a given tag, either locally or from a remote.
 func getTagCommitHash(tag, source string) (string, error) {
-    var cmd *exec.Cmd
-    if source == "local" {
-        cmd = exec.Command("git", "rev-parse", tag+"^{\\}")
-    } else {
-        cmd = exec.Command("git", "ls-remote", "--tags", source, tag)
-    }
+	var cmd *exec.Cmd
+	if source == "local" {
+		cmd = exec.Command("git", "rev-parse", tag+"^{\\}")
+	} else {
+		cmd = exec.Command("git", "ls-remote", "--tags", source, tag)
+	}
 
-    output, err := cmd.Output()
-    if err != nil {
-        return "", err
-    }
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
 
-    hash := strings.Fields(string(output))[0]
-    return hash, nil
+	hash := strings.Fields(string(output))[0]
+	return hash, nil
 }
 
 // checkoutExistingBranch tries to checkout an existing branch
