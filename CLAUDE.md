@@ -27,6 +27,9 @@ task clean
 
 # Show version
 ./gitsyncer --version
+
+# Delete a repository from all configured organizations (with confirmation)
+./gitsyncer --delete-repo <repository-name>
 ```
 
 Note: The Taskfile.yaml is configured for [go-task](https://taskfile.dev/). Install with:

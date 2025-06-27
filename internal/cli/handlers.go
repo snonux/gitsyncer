@@ -1,11 +1,13 @@
 package cli
 
 import (
+	"bufio"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/github"
 	"codeberg.org/snonux/gitsyncer/internal/version"
@@ -144,6 +146,7 @@ func ShowUsage(cfg *config.Config) {
 	fmt.Println("  gitsyncer --list-orgs               List configured organizations")
 	fmt.Println("  gitsyncer --list-repos              List configured repositories")
 	fmt.Println("  gitsyncer --test-github-token       Test GitHub token authentication")
+	fmt.Println("  gitsyncer --delete-repo <name>      Delete repository from all organizations")
 	fmt.Println("  gitsyncer --version                 Show version information")
 	fmt.Println("\nOptions:")
 	fmt.Println("  --config <path>                     Path to configuration file")
@@ -153,4 +156,113 @@ func ShowUsage(cfg *config.Config) {
 	fmt.Println("  --dry-run                           Show what would be done without doing it")
 	fmt.Println("\nGitHub Token:")
 	fmt.Println("  Set via: config file, GITHUB_TOKEN env var, or ~/.gitsyncer_github_token file")
+}
+
+// HandleDeleteRepo handles the --delete-repo flag
+func HandleDeleteRepo(cfg *config.Config, repoName string) int {
+	if repoName == "" {
+		fmt.Println("Error: Repository name is required for --delete-repo")
+		return 1
+	}
+
+	fmt.Printf("\n⚠️  WARNING: This will permanently delete the repository '%s' from all configured organizations!\n\n", repoName)
+	
+	// Find organizations where the repo exists
+	var orgsWithRepo []struct {
+		org    config.Organization
+		exists bool
+		err    error
+	}
+	
+	for _, org := range cfg.Organizations {
+		var exists bool
+		var err error
+		
+		switch org.Host {
+		case "git@github.com":
+			client := github.NewClient(org.GitHubToken, org.Name)
+			exists, err = client.RepoExists(repoName)
+		case "git@codeberg.org":
+			client := codeberg.NewClient(org.Name, org.CodebergToken)
+			exists, err = client.RepoExists(repoName)
+		default:
+			fmt.Printf("Skipping unsupported host: %s\n", org.Host)
+			continue
+		}
+		
+		orgsWithRepo = append(orgsWithRepo, struct {
+			org    config.Organization
+			exists bool
+			err    error
+		}{org, exists, err})
+	}
+	
+	// Show summary of where the repo exists
+	fmt.Println("Repository status:")
+	foundAny := false
+	for _, info := range orgsWithRepo {
+		if info.err != nil {
+			fmt.Printf("  ❌ %s: Error checking - %v\n", info.org.GetGitURL(), info.err)
+		} else if info.exists {
+			fmt.Printf("  ✅ %s: EXISTS - will be DELETED\n", info.org.GetGitURL())
+			foundAny = true
+		} else {
+			fmt.Printf("  ⬜ %s: Not found\n", info.org.GetGitURL())
+		}
+	}
+	
+	if !foundAny {
+		fmt.Printf("\nRepository '%s' not found in any configured organization.\n", repoName)
+		return 0
+	}
+	
+	// Confirm deletion
+	fmt.Printf("\nAre you sure you want to delete '%s' from the above organizations? This action cannot be undone!\n", repoName)
+	fmt.Print("Type 'yes' to confirm: ")
+	
+	reader := bufio.NewReader(os.Stdin)
+	confirmation, _ := reader.ReadString('\n')
+	confirmation = strings.TrimSpace(confirmation)
+	
+	if confirmation != "yes" {
+		fmt.Println("Deletion cancelled.")
+		return 0
+	}
+	
+	// Perform deletions
+	fmt.Println("\nDeleting repositories...")
+	hasError := false
+	
+	for _, info := range orgsWithRepo {
+		if !info.exists || info.err != nil {
+			continue
+		}
+		
+		fmt.Printf("  Deleting from %s... ", info.org.GetGitURL())
+		
+		var deleteErr error
+		switch info.org.Host {
+		case "git@github.com":
+			client := github.NewClient(info.org.GitHubToken, info.org.Name)
+			deleteErr = client.DeleteRepo(repoName)
+		case "git@codeberg.org":
+			client := codeberg.NewClient(info.org.Name, info.org.CodebergToken)
+			deleteErr = client.DeleteRepo(repoName)
+		}
+		
+		if deleteErr != nil {
+			fmt.Printf("FAILED: %v\n", deleteErr)
+			hasError = true
+		} else {
+			fmt.Println("SUCCESS")
+		}
+	}
+	
+	if hasError {
+		fmt.Println("\n⚠️  Some deletions failed. Check the errors above.")
+		return 1
+	}
+	
+	fmt.Printf("\n✅ Repository '%s' has been successfully deleted from all organizations.\n", repoName)
+	return 0
 }

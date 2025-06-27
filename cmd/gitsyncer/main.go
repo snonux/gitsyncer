@@ -26,8 +26,6 @@ func main() {
 		os.Exit(cli.HandleTestGitHubToken())
 	}
 
-	
-
 	// Load configuration
 	cfg, err := cli.LoadConfig(flags.ConfigPath)
 	if err != nil {
@@ -42,6 +40,11 @@ func main() {
 	if flags.WorkDir == defaultWorkDir && cfg.WorkDir != "" {
 		// User didn't specify --work-dir, so use config value
 		flags.WorkDir = cfg.WorkDir
+	}
+
+	// Handle delete repository flag
+	if flags.DeleteRepo != "" {
+		os.Exit(cli.HandleDeleteRepo(cfg, flags.DeleteRepo))
 	}
 
 	// Handle list organizations flag

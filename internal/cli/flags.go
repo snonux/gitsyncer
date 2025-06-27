@@ -23,6 +23,7 @@ type Flags struct {
 	WorkDir            string
 	TestGitHubToken    bool
 	Clean              bool
+	DeleteRepo         string
 }
 
 // ParseFlags parses command-line flags and returns the flags struct
@@ -46,6 +47,7 @@ func ParseFlags() *Flags {
 	flag.StringVar(&f.WorkDir, "work-dir", "", "working directory for cloning repositories (default: ~/git/gitsyncer-workdir)")
 	flag.BoolVar(&f.TestGitHubToken, "test-github-token", false, "test GitHub token authentication")
 	flag.BoolVar(&f.Clean, "clean", false, "delete all repositories in work directory (with confirmation)")
+	flag.StringVar(&f.DeleteRepo, "delete-repo", "", "delete specified repository from all configured organizations (with confirmation)")
 	
 	flag.Parse()
 	

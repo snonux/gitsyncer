@@ -24,7 +24,7 @@ func NewClient(token, org string) Client {
 		fmt.Println("  No token in config, trying environment variable...")
 		// Try environment variable
 		token = os.Getenv("GITHUB_TOKEN")
-		
+
 		// If still no token, try reading from file
 		if token == "" {
 			fmt.Println("  No GITHUB_TOKEN env var, trying ~/.gitsyncer_github_token file...")
@@ -95,21 +95,21 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
 	fmt.Printf("  Checking URL: %s\n", url)
 	fmt.Printf("  Token present: %v (length: %d)\n", c.token != "", len(c.token))
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return false, err
 	}
-	
+
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return false, err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode == 200 {
 		return true, nil
 	} else if resp.StatusCode == 404 {
@@ -121,7 +121,7 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 		fmt.Printf("  Authorization header: %s\n", req.Header.Get("Authorization"))
 		return false, fmt.Errorf("authentication failed (401): %s", string(body))
 	}
-	
+
 	return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 }
 
@@ -142,36 +142,36 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		// Repo already exists, nothing to do
 		return nil
 	}
-	
+
 	url := fmt.Sprintf("https://api.github.com/user/repos")
-	
+
 	reqBody := CreateRepoRequest{
 		Name:        repoName,
 		Description: description,
 		Private:     private,
 		AutoInit:    false, // Don't auto-init, we'll push content
 	}
-	
+
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
 		return err
 	}
-	
+
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return err
 	}
-	
+
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("Content-Type", "application/json")
-	
+
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
-	
+
 	if resp.StatusCode == 201 {
 		var createResp CreateRepoResponse
 		if err := json.NewDecoder(resp.Body).Decode(&createResp); err != nil {
@@ -180,17 +180,17 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		fmt.Printf("Created GitHub repository: %s\n", createResp.FullName)
 		return nil
 	}
-	
+
 	// Handle error response
 	var errResp ErrorResponse
 	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-	
+
 	if errResp.Message != "" {
 		return fmt.Errorf("GitHub API error: %s", errResp.Message)
 	}
-	
+
 	return fmt.Errorf("failed to create repository: status %d", resp.StatusCode)
 }
 
@@ -223,45 +223,45 @@ func (c *Client) ListPublicRepos() ([]Repository, error) {
 	for {
 		url := fmt.Sprintf("https://api.github.com/users/%s/repos?page=%d&per_page=%d&type=owner", c.org, page, perPage)
 		fmt.Printf("  Fetching page %d...\n", page)
-		
+
 		req, err := http.NewRequest("GET", url, nil)
 		if err != nil {
 			return nil, err
 		}
-		
+
 		req.Header.Set("Authorization", "Bearer "+c.token)
 		req.Header.Set("Accept", "application/vnd.github.v3+json")
-		
+
 		resp, err := http.DefaultClient.Do(req)
 		if err != nil {
 			return nil, err
 		}
 		defer resp.Body.Close()
-		
+
 		if resp.StatusCode != 200 {
 			body, _ := io.ReadAll(resp.Body)
 			return nil, fmt.Errorf("failed to list repos: status %d: %s", resp.StatusCode, string(body))
 		}
-		
+
 		var repos []Repository
 		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
 			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
-		
-		// Filter for public, non-fork, non-archived, non-empty repos
+
+		// Filter for public, non-fork, non-archived
 		for _, repo := range repos {
-			if !repo.Private && !repo.Fork && !repo.Archived && !repo.Disabled && repo.Size > 0 {
+			if !repo.Private && !repo.Fork && !repo.Archived && !repo.Disabled {
 				allRepos = append(allRepos, repo)
 			}
 		}
-		
+
 		// Check if there are more pages
 		if len(repos) < perPage {
 			break
 		}
 		page++
 	}
-	
+
 	return allRepos, nil
 }
 
@@ -272,4 +272,54 @@ func GetRepoNames(repos []Repository) []string {
 		names[i] = repo.Name
 	}
 	return names
+}
+
+// DeleteRepo deletes a repository from GitHub
+func (c *Client) DeleteRepo(repoName string) error {
+	if c.token == "" {
+		return fmt.Errorf("GitHub token required to delete repository")
+	}
+
+	// First check if the repo exists
+	exists, err := c.RepoExists(repoName)
+	if err != nil {
+		return fmt.Errorf("failed to check if repo exists: %w", err)
+	}
+	if !exists {
+		// Repo doesn't exist, nothing to delete
+		return fmt.Errorf("repository %s/%s does not exist", c.org, repoName)
+	}
+
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 {
+		// Successfully deleted
+		return nil
+	} else if resp.StatusCode == 404 {
+		// Already gone, consider it a success
+		return nil
+	} else if resp.StatusCode == 403 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("permission denied (403): %s", string(body))
+	} else if resp.StatusCode == 401 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("authentication failed (401): %s", string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("failed to delete repository: status %d: %s", resp.StatusCode, string(body))
 }

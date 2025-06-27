@@ -248,3 +248,52 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 
 	return nil
 }
+
+// DeleteRepo deletes a repository from Codeberg
+func (c *Client) DeleteRepo(repoName string) error {
+	if !c.HasToken() {
+		return fmt.Errorf("Codeberg token required to delete repository")
+	}
+
+	// First check if the repo exists
+	exists, err := c.RepoExists(repoName)
+	if err != nil {
+		return fmt.Errorf("failed to check if repo exists: %w", err)
+	}
+	if !exists {
+		// Repo doesn't exist, nothing to delete
+		return fmt.Errorf("repository %s/%s does not exist", c.org, repoName)
+	}
+
+	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
+
+	req, err := http.NewRequest("DELETE", url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "token "+c.token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 {
+		// Successfully deleted
+		return nil
+	} else if resp.StatusCode == 404 {
+		// Already gone, consider it a success
+		return nil
+	} else if resp.StatusCode == 403 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("permission denied (403): %s", string(body))
+	} else if resp.StatusCode == 401 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("authentication failed (401): %s", string(body))
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("failed to delete repository: status %d: %s", resp.StatusCode, string(body))
+}
