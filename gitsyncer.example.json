@@ -7,6 +7,10 @@
     {
       "host": "git@github.com",
       "name": "snonux"
+    },
+    {
+      "host": "paul@t450:git",
+      "backupLocation": true
     }
   ],
   "repositories": [

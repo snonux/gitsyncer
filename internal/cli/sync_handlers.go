@@ -22,6 +22,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 	}
 	
 	syncer := sync.New(cfg, flags.WorkDir)
+	syncer.SetBackupEnabled(flags.Backup)
 	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
 		log.Fatal("Sync failed:", err)
 		return 1
@@ -47,6 +48,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 
 	syncer := sync.New(cfg, flags.WorkDir)
+	syncer.SetBackupEnabled(flags.Backup)
 	successCount := 0
 	
 	for i, repo := range cfg.Repositories {
@@ -264,6 +266,7 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 	
 	syncer := sync.New(cfg, flags.WorkDir)
+	syncer.SetBackupEnabled(flags.Backup)
 	successCount := 0
 	
 	// Create map for descriptions
@@ -329,6 +332,7 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 
 	syncer := sync.New(cfg, flags.WorkDir)
+	syncer.SetBackupEnabled(flags.Backup)
 	successCount := 0
 
 	// Create map for descriptions

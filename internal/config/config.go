@@ -10,10 +10,11 @@ import (
 
 // Organization represents a git organization with its host and name
 type Organization struct {
-	Host          string `json:"host"`
-	Name          string `json:"name"`
-	GitHubToken   string `json:"github_token,omitempty"`
-	CodebergToken string `json:"codeberg_token,omitempty"`
+	Host           string `json:"host"`
+	Name           string `json:"name"`
+	GitHubToken    string `json:"github_token,omitempty"`
+	CodebergToken  string `json:"codeberg_token,omitempty"`
+	BackupLocation bool   `json:"backupLocation,omitempty"` // Mark this as a backup-only destination
 }
 
 // Config holds the application configuration
@@ -83,8 +84,8 @@ func (c *Config) Validate() error {
 		if org.Host == "" {
 			return fmt.Errorf("organization %d: missing host", i)
 		}
-		// Name can be empty for file:// URLs
-		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") {
+		// Name can be empty for file:// URLs or SSH backup locations
+		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() {
 			return fmt.Errorf("organization %d: missing name", i)
 		}
 	}
@@ -94,6 +95,10 @@ func (c *Config) Validate() error {
 
 // GetGitURL returns the git URL for an organization
 func (o *Organization) GetGitURL() string {
+	// For SSH backup locations with empty name, just return the host
+	if o.IsSSH() && o.Name == "" {
+		return o.Host
+	}
 	return fmt.Sprintf("%s:%s", o.Host, o.Name)
 }
 
@@ -135,5 +140,12 @@ func (c *Config) FindGitHubOrg() *Organization {
 		}
 	}
 	return nil
+}
+
+// IsSSH checks if the organization is a plain SSH location
+func (o *Organization) IsSSH() bool {
+	// Check if it's not a known git hosting service and contains SSH-like syntax
+	return !o.IsGitHub() && !o.IsCodeberg() && !strings.HasPrefix(o.Host, "file://") &&
+		(strings.Contains(o.Host, "@") || strings.Contains(o.Host, ":"))
 }
 

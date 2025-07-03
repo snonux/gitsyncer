@@ -10,7 +10,11 @@ import (
 func (s *Syncer) trackRemotesWithBranch(branch string, remotes map[string]*config.Organization) map[string]bool {
 	remotesWithBranch := make(map[string]bool)
 	
-	for remoteName := range remotes {
+	for remoteName, org := range remotes {
+		// Skip checking backup locations as we don't sync from them
+		if org.BackupLocation {
+			continue
+		}
 		if s.remoteBranchExists(remoteName, branch) {
 			remotesWithBranch[remoteName] = true
 		}
@@ -48,7 +52,7 @@ func pushToAllRemotes(branch string, remotes map[string]*config.Organization, re
 			fmt.Printf("  Pushing to %s (%s)...\n", remoteName, org.Host)
 		}
 
-		if err := pushBranch(remoteName, branch, remoteHasBranch); err != nil {
+		if err := pushBranchWithBackupSupport(remoteName, branch, remoteHasBranch, org); err != nil {
 			return err
 		}
 	}

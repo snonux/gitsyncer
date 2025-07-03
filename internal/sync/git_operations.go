@@ -7,6 +7,8 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+
+	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
 // checkForMergeConflicts checks if the repository has merge conflicts
@@ -232,4 +234,119 @@ func getAllUniqueBranches(output []byte) []string {
 	}
 
 	return branches
+}
+
+// createSSHBareRepository creates a bare repository on an SSH server
+func createSSHBareRepository(sshHost, repoPath string) error {
+	// Extract user@host and path components
+	parts := strings.Split(sshHost, ":")
+	if len(parts) != 2 {
+		return fmt.Errorf("invalid SSH host format: %s", sshHost)
+	}
+	
+	userHost := parts[0]
+	basePath := parts[1]
+	
+	// Full path to the repository
+	fullRepoPath := fmt.Sprintf("%s/%s.git", basePath, repoPath)
+	
+	fmt.Printf("Creating bare repository at %s:%s\n", userHost, fullRepoPath)
+	
+	// Create the repository directory and initialize as bare
+	commands := fmt.Sprintf("mkdir -p %s && cd %s && git init --bare", fullRepoPath, fullRepoPath)
+	cmd := exec.Command("ssh", userHost, commands)
+	output, err := cmd.CombinedOutput()
+	
+	if err != nil {
+		return fmt.Errorf("failed to create bare repository: %w\n%s", err, string(output))
+	}
+	
+	fmt.Printf("Successfully created bare repository at %s:%s\n", userHost, fullRepoPath)
+	return nil
+}
+
+// pushBranchWithBackupSupport pushes a branch to a remote, creating SSH repos if needed
+func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool, org *config.Organization) error {
+	cmd := exec.Command("git", "push", remoteName, branch, "--tags")
+	output, err := cmd.CombinedOutput()
+
+	if err != nil {
+		outputStr := string(output)
+		// Check if it's because the repository doesn't exist
+		if isRepositoryMissing(outputStr) {
+			// If it's an SSH backup location, try to create the repository
+			if org.BackupLocation && org.IsSSH() {
+				// Get the repository name from the remote URL
+				remoteURL, err := getRemoteURL(remoteName)
+				if err != nil {
+					return fmt.Errorf("failed to get remote URL: %w", err)
+				}
+				
+				// Extract repo name from URL
+				repoName := extractRepoName(remoteURL)
+				if repoName == "" {
+					return fmt.Errorf("failed to extract repository name from URL: %s", remoteURL)
+				}
+				
+				// Create the bare repository
+				if err := createSSHBareRepository(org.Host, repoName); err != nil {
+					return fmt.Errorf("failed to create SSH repository: %w", err)
+				}
+				
+				// Try pushing again
+				cmd = exec.Command("git", "push", remoteName, branch, "--tags")
+				if err := cmd.Run(); err != nil {
+					return fmt.Errorf("failed to push after creating repository: %w", err)
+				}
+				fmt.Printf("    Successfully pushed to newly created backup repository\n")
+				return nil
+			}
+			
+			fmt.Printf("    Note: Remote repository %s does not exist - must be created manually\n", remoteName)
+			fmt.Printf("    Skipping push to %s\n", remoteName)
+			return nil // Not an error, just skip
+		}
+
+		// Check if it's because the branch doesn't exist on the remote
+		if isBranchMissing(outputStr) {
+			fmt.Printf("    Creating new branch on %s\n", remoteName)
+			// Try again with -u flag to set upstream
+			cmd = exec.Command("git", "push", "-u", remoteName, branch, "--tags")
+			if err := cmd.Run(); err != nil {
+				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
+			}
+			return nil
+		}
+
+		return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, outputStr)
+	}
+
+	if !remoteHasBranch {
+		fmt.Printf("    Successfully created branch %s on %s\n", branch, remoteName)
+	}
+
+	return nil
+}
+
+// getRemoteURL gets the URL for a given remote
+func getRemoteURL(remoteName string) (string, error) {
+	cmd := exec.Command("git", "remote", "get-url", remoteName)
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimSpace(string(output)), nil
+}
+
+// extractRepoName extracts the repository name from a git URL
+func extractRepoName(url string) string {
+	// Remove .git suffix if present
+	url = strings.TrimSuffix(url, ".git")
+	
+	// Extract the last component of the path
+	parts := strings.Split(url, "/")
+	if len(parts) > 0 {
+		return parts[len(parts)-1]
+	}
+	return ""
 }

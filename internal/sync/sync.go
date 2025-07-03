@@ -17,6 +17,7 @@ type Syncer struct {
 	repoName string
 	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
 	branchFilter     *BranchFilter                     // Filter for excluding branches
+	backupEnabled    bool                              // Whether to sync to backup locations
 }
 
 // CLAUDE: Is there a reason, we return a pointer to Syncer?
@@ -35,7 +36,13 @@ func New(cfg *config.Config, workDir string) *Syncer {
 		workDir: workDir,
 		abandonedReports: make(map[string]*AbandonedBranchReport),
 		branchFilter:     branchFilter,
+		backupEnabled:    false, // Default to false, will be set via SetBackupEnabled
 	}
+}
+
+// SetBackupEnabled enables or disables syncing to backup locations
+func (s *Syncer) SetBackupEnabled(enabled bool) {
+	s.backupEnabled = enabled
 }
 
 // SyncRepository synchronizes a repository across all configured organizations
@@ -109,10 +116,18 @@ func (s *Syncer) SyncRepository(repoName string) error {
 
 // cloneRepository clones a repository from an organization
 func (s *Syncer) cloneRepository(org *config.Organization, repoPath string) error {
+	// Skip cloning from backup locations
+	if org.BackupLocation {
+		return fmt.Errorf("cannot clone from backup location %s", org.Host)
+	}
+
 	// For file:// URLs, we need special handling
 	var cloneURL string
 	if strings.HasPrefix(org.Host, "file://") {
 		// For local file paths, the format is: file:///path/to/repo.git
+		cloneURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	} else if org.IsSSH() && org.Name == "" {
+		// For SSH backup locations: user@host:path/repo.git
 		cloneURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
 	} else {
 		// For SSH URLs, the format is: git@host:org/repo.git
@@ -140,6 +155,9 @@ func (s *Syncer) addRemote(repoPath string, org *config.Organization) error {
 	var remoteURL string
 	if strings.HasPrefix(org.Host, "file://") {
 		remoteURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	} else if org.IsSSH() && org.Name == "" {
+		// For SSH backup locations: user@host:path/repo.git
+		remoteURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
 	} else {
 		remoteURL = fmt.Sprintf("%s/%s.git", org.GetGitURL(), s.repoName)
 	}
@@ -163,8 +181,17 @@ func (s *Syncer) fetchAll() error {
 		return err
 	}
 
+	// Get remotes map to check if it's a backup location
+	remotesMap := s.getRemotesMap()
+
 	// Fetch from each remote
 	for remote := range remotes {
+		// Skip backup locations - we don't fetch from them
+		if org, exists := remotesMap[remote]; exists && org.BackupLocation {
+			fmt.Printf("Skipping fetch from backup location %s\n", remote)
+			continue
+		}
+
 		if err := fetchRemote(remote); err != nil {
 			return err
 		}
@@ -179,6 +206,12 @@ func (s *Syncer) getAllBranches() ([]string, error) {
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
+	}
+
+	// If backup is disabled, filter out branches from backup locations
+	if !s.backupEnabled {
+		filteredOutput := s.filterBackupBranches(output)
+		return getAllUniqueBranches(filteredOutput), nil
 	}
 
 	return getAllUniqueBranches(output), nil
@@ -286,4 +319,36 @@ func (s *Syncer) getRemoteName(org *config.Organization) string {
 	}
 
 	return host
+}
+
+// filterBackupBranches filters out branches from backup locations
+func (s *Syncer) filterBackupBranches(output []byte) []byte {
+	lines := strings.Split(string(output), "\n")
+	var filtered []string
+	
+	for _, line := range lines {
+		line = strings.TrimSpace(line)
+		if line == "" {
+			continue
+		}
+		
+		// Check if this branch is from a backup remote
+		isBackup := false
+		for i := range s.config.Organizations {
+			org := &s.config.Organizations[i]
+			if org.BackupLocation {
+				remoteName := s.getRemoteName(org)
+				if strings.HasPrefix(line, remoteName+"/") {
+					isBackup = true
+					break
+				}
+			}
+		}
+		
+		if !isBackup {
+			filtered = append(filtered, line)
+		}
+	}
+	
+	return []byte(strings.Join(filtered, "\n"))
 }

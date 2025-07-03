@@ -24,6 +24,7 @@ type Flags struct {
 	TestGitHubToken    bool
 	Clean              bool
 	DeleteRepo         string
+	Backup             bool
 }
 
 // ParseFlags parses command-line flags and returns the flags struct
@@ -48,6 +49,7 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.TestGitHubToken, "test-github-token", false, "test GitHub token authentication")
 	flag.BoolVar(&f.Clean, "clean", false, "delete all repositories in work directory (with confirmation)")
 	flag.StringVar(&f.DeleteRepo, "delete-repo", "", "delete specified repository from all configured organizations (with confirmation)")
+	flag.BoolVar(&f.Backup, "backup", false, "enable syncing to backup locations")
 	
 	flag.Parse()
 	

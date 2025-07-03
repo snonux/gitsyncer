@@ -20,9 +20,12 @@ GitSyncer is a tool for synchronizing git repositories between multiple organiza
 - Sync all public repositories from Codeberg to GitHub
 - Sync all public repositories from GitHub to Codeberg
 - Automatic repository creation on GitHub and Codeberg
+- SSH backup locations with automatic bare repository creation
+- One-way backup to private SSH servers (e.g., home NAS)
 - Merge conflict detection with clear error messages
 - Never deletes branches (only adds/updates)
 - GitHub token validation tool
+- Opt-in backup mode with --backup flag for resilient offline backups
 
 ## Installation
 
@@ -44,6 +47,10 @@ Create a `gitsyncer.json` file:
     {
       "host": "git@github.com",
       "name": "yourusername"
+    },
+    {
+      "host": "user@nas.local:git",
+      "backupLocation": true
     }
   ],
   "repositories": [
@@ -58,11 +65,17 @@ Create a `gitsyncer.json` file:
 ### Sync a single repository
 ```bash
 ./gitsyncer --sync repo-name
+
+# Include backup locations
+./gitsyncer --sync repo-name --backup
 ```
 
 ### Sync all configured repositories
 ```bash
 ./gitsyncer --sync-all
+
+# Include backup locations
+./gitsyncer --sync-all --backup
 ```
 
 ### Sync all public Codeberg repositories to GitHub
@@ -112,6 +125,24 @@ Create a `gitsyncer.json` file:
 ./gitsyncer --version
 ```
 
+### The --backup Flag
+
+The `--backup` flag enables syncing to backup locations configured in your `gitsyncer.json`. This is particularly useful when:
+- Your backup server might be offline (e.g., home NAS)
+- You want to control when backups happen
+- You need to separate regular syncing from backup operations
+
+Without `--backup`: GitSyncer only syncs between primary git hosts (GitHub, Codeberg, etc.)
+With `--backup`: GitSyncer also pushes to backup locations marked with `"backupLocation": true`
+
+```bash
+# Regular sync (backup locations ignored)
+./gitsyncer --sync myrepo
+
+# Sync with backup enabled
+./gitsyncer --sync myrepo --backup
+```
+
 ## How It Works
 
 1. GitSyncer clones the repository from the first configured organization
@@ -139,6 +170,62 @@ You can exclude branches from synchronization using regex patterns in your confi
 ```
 
 Excluded branches will be reported during sync but not synchronized.
+
+## SSH Backup Locations
+
+You can configure SSH backup locations for one-way repository backups to private servers:
+
+```json
+{
+  "organizations": [
+    {
+      "host": "git@github.com",
+      "name": "yourusername"
+    },
+    {
+      "host": "paul@t450:git",
+      "backupLocation": true
+    }
+  ]
+}
+```
+
+### How SSH Backup Works
+
+1. **Opt-in feature**: Backup locations are disabled by default. Use the `--backup` flag to enable syncing to them
+2. **One-way sync**: Repositories are only pushed TO backup locations, never pulled FROM them
+3. **Automatic repository creation**: If a repository doesn't exist on the SSH server, GitSyncer will:
+   - SSH into the server
+   - Create the directory structure
+   - Initialize a bare git repository
+4. **Archive functionality**: Repositories that exist only on the backup location are considered archived and won't be synced to other organizations
+5. **All branches and tags**: Every branch and tag is pushed to the backup location when `--backup` is used
+
+### SSH Backup Example
+
+```bash
+# Configure your gitsyncer.json with an SSH backup location
+# Backup locations are DISABLED by default to handle offline servers
+
+# Sync without backup (default behavior)
+./gitsyncer --sync myrepo
+
+# Sync WITH backup enabled
+./gitsyncer --sync myrepo --backup
+
+# Sync all repositories with backup
+./gitsyncer --sync-all --backup
+
+# Full sync with backup
+./gitsyncer --full --backup
+```
+
+The backup location path format is: `user@host:path/REPONAME.git`
+- `user@host`: SSH connection string
+- `path`: Base directory for repositories
+- `REPONAME.git`: Automatically appended repository name
+
+**Note**: The `--backup` flag is required to sync to backup locations. This allows GitSyncer to work normally even when backup servers are offline or unreachable.
 
 ## Example Workflows
 

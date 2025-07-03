@@ -22,7 +22,21 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 		return fmt.Errorf("no organizations configured")
 	}
 
-	firstOrg := &s.config.Organizations[0]
+	// Find first non-backup organization to clone from
+	var firstOrg *config.Organization
+	var firstOrgIndex int
+	for i := range s.config.Organizations {
+		if !s.config.Organizations[i].BackupLocation {
+			firstOrg = &s.config.Organizations[i]
+			firstOrgIndex = i
+			break
+		}
+	}
+
+	if firstOrg == nil {
+		return fmt.Errorf("no non-backup organizations configured to clone from")
+	}
+
 	if err := s.cloneRepository(firstOrg, repoPath); err != nil {
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
@@ -35,8 +49,17 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 	}
 
 	// Add other organizations as remotes
-	for i := 1; i < len(s.config.Organizations); i++ {
+	for i := range s.config.Organizations {
+		if i == firstOrgIndex {
+			continue // Skip the first org we already cloned from
+		}
 		org := &s.config.Organizations[i]
+		
+		// Skip backup locations if backup is not enabled
+		if org.BackupLocation && !s.backupEnabled {
+			continue
+		}
+		
 		if err := s.addRemote(repoPath, org); err != nil {
 			return fmt.Errorf("failed to add remote %s: %w", s.getRemoteName(org), err)
 		}
@@ -52,6 +75,12 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 	// Check and add any missing remotes
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
+		
+		// Skip backup locations if backup is not enabled
+		if org.BackupLocation && !s.backupEnabled {
+			continue
+		}
+		
 		remoteName := s.getRemoteName(org)
 
 		// Check if remote exists
@@ -86,6 +115,12 @@ func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	remotes := make(map[string]*config.Organization)
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
+		
+		// Skip backup locations if backup is not enabled
+		if org.BackupLocation && !s.backupEnabled {
+			continue
+		}
+		
 		remoteName := s.getRemoteName(org)
 		remotes[remoteName] = org
 	}
