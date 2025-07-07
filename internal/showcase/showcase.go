@@ -164,15 +164,14 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	cacheDir := filepath.Join(g.workDir, ".gitsyncer-showcase-cache")
 	cacheFile := filepath.Join(cacheDir, repoName+".json")
 	
+	// Try to load cached summary (but we'll still update metadata and images)
+	var cachedSummary string
+	var haveCachedSummary bool
 	if !forceRegenerate {
 		if cached, err := g.loadFromCache(cacheFile); err == nil {
-			fmt.Printf("Using cached summary (cache file: %s)\n", cacheFile)
-			// Verify that cached images still exist
-			if err := g.verifyImages(cached); err != nil {
-				fmt.Printf("Warning: Cached images missing, regenerating: %v\n", err)
-			} else {
-				return cached, nil
-			}
+			fmt.Printf("Using cached Claude summary (cache file: %s)\n", cacheFile)
+			cachedSummary = cached.Summary
+			haveCachedSummary = true
 		}
 	}
 
@@ -192,7 +191,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		return nil, fmt.Errorf("failed to change to repository directory: %w", err)
 	}
 
-	// Extract metadata first
+	// Always extract metadata (not cached)
 	fmt.Printf("Extracting repository metadata...\n")
 	metadata, err := extractRepoMetadata(repoPath)
 	if err != nil {
@@ -200,21 +199,28 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		// Continue anyway with partial metadata
 	}
 
-	// Run claude command
-	prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
-	
-	fmt.Printf("Running Claude command:\n")
-	fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
-	
-	cmd := exec.Command("claude", "--model", "sonnet", prompt)
-	output, err := cmd.Output()
-	if err != nil {
-		return nil, fmt.Errorf("failed to run claude: %w", err)
-	}
+	// Get the summary - either from cache or by running Claude
+	var summary string
+	if haveCachedSummary {
+		summary = cachedSummary
+		fmt.Printf("Using cached Claude summary\n")
+	} else {
+		// Run claude command
+		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
+		
+		fmt.Printf("Running Claude command:\n")
+		fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
+		
+		cmd := exec.Command("claude", "--model", "sonnet", prompt)
+		output, err := cmd.Output()
+		if err != nil {
+			return nil, fmt.Errorf("failed to run claude: %w", err)
+		}
 
-	summary := strings.TrimSpace(string(output))
-	if summary == "" {
-		return nil, fmt.Errorf("received empty summary from claude")
+		summary = strings.TrimSpace(string(output))
+		if summary == "" {
+			return nil, fmt.Errorf("received empty summary from claude")
+		}
 	}
 
 	// Build URLs
@@ -229,7 +235,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
 	}
 
-	// Extract images from README
+	// Always extract images from README (not cached)
 	fmt.Printf("Extracting images from README...\n")
 	home, err := os.UserHomeDir()
 	if err != nil {
