@@ -148,6 +148,13 @@ func extractImageReferences(content string) []string {
 			
 			// Clean and validate URL
 			url = strings.TrimSpace(url)
+			
+			// Handle markdown image titles - remove anything after a space or quote
+			if idx := strings.IndexAny(url, " \"'"); idx != -1 {
+				url = url[:idx]
+			}
+			url = strings.TrimSpace(url)
+			
 			fmt.Printf("DEBUG: Found potential image URL: %s\n", url)
 			
 			if isImageFile(url) {
