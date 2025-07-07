@@ -292,6 +292,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString(fmt.Sprintf("* Commits: %d\n", summary.Metadata.CommitCount))
 			builder.WriteString(fmt.Sprintf("* Lines of Code: %d\n", summary.Metadata.LinesOfCode))
 			builder.WriteString(fmt.Sprintf("* Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
+			builder.WriteString(fmt.Sprintf("* Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
 			builder.WriteString(fmt.Sprintf("* License: %s\n\n", summary.Metadata.License))
 		}
 		
