@@ -25,6 +25,8 @@ type Flags struct {
 	Clean              bool
 	DeleteRepo         string
 	Backup             bool
+	Showcase           bool
+	Force              bool
 }
 
 // ParseFlags parses command-line flags and returns the flags struct
@@ -50,6 +52,8 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.Clean, "clean", false, "delete all repositories in work directory (with confirmation)")
 	flag.StringVar(&f.DeleteRepo, "delete-repo", "", "delete specified repository from all configured organizations (with confirmation)")
 	flag.BoolVar(&f.Backup, "backup", false, "enable syncing to backup locations")
+	flag.BoolVar(&f.Showcase, "showcase", false, "generate project showcase using Claude after syncing")
+	flag.BoolVar(&f.Force, "force", false, "force regeneration of cached data")
 	
 	flag.Parse()
 	

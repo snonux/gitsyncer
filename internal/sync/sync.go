@@ -114,6 +114,49 @@ func (s *Syncer) SyncRepository(repoName string) error {
 	return nil
 }
 
+// EnsureRepositoryCloned ensures a repository is cloned locally without syncing
+// This is used for showcase-only mode
+func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
+	s.repoName = repoName
+	
+	// Create work directory if it doesn't exist
+	if err := os.MkdirAll(s.workDir, 0755); err != nil {
+		return fmt.Errorf("failed to create work directory: %w", err)
+	}
+	
+	// Check if repository already exists
+	repoPath := filepath.Join(s.workDir, repoName)
+	if _, err := os.Stat(repoPath); err == nil {
+		// Repository exists, nothing to do
+		fmt.Printf("  Repository %s already exists locally\n", repoName)
+		return nil
+	}
+	
+	// Repository doesn't exist, clone it
+	fmt.Printf("  Cloning %s...\n", repoName)
+	
+	// Find first non-backup organization to clone from
+	var sourceOrg *config.Organization
+	for i := range s.config.Organizations {
+		if !s.config.Organizations[i].BackupLocation {
+			sourceOrg = &s.config.Organizations[i]
+			break
+		}
+	}
+	
+	if sourceOrg == nil {
+		return fmt.Errorf("no non-backup organizations configured to clone from")
+	}
+	
+	// Clone the repository
+	if err := s.cloneRepository(sourceOrg, repoPath); err != nil {
+		return fmt.Errorf("failed to clone repository: %w", err)
+	}
+	
+	fmt.Printf("  Successfully cloned %s\n", repoName)
+	return nil
+}
+
 // cloneRepository clones a repository from an organization
 func (s *Syncer) cloneRepository(org *config.Organization, repoPath string) error {
 	// Skip cloning from backup locations
@@ -186,8 +229,13 @@ func (s *Syncer) fetchAll() error {
 
 	// Fetch from each remote
 	for remote := range remotes {
-		// Skip backup locations - we don't fetch from them
+		// Skip backup locations if backup is not enabled
 		if org, exists := remotesMap[remote]; exists && org.BackupLocation {
+			if !s.backupEnabled {
+				// Silently skip - don't even print a message since backup is not enabled
+				continue
+			}
+			// Even when backup is enabled, we don't fetch from backup locations
 			fmt.Printf("Skipping fetch from backup location %s\n", remote)
 			continue
 		}

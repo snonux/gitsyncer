@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"os"
 	"path/filepath"
 
@@ -59,25 +60,61 @@ func main() {
 
 	// Handle sync operation
 	if flags.SyncRepo != "" {
-		os.Exit(cli.HandleSync(cfg, flags))
+		exitCode := cli.HandleSync(cfg, flags)
+		if exitCode == 0 && flags.Showcase {
+			showcaseCode := cli.HandleShowcase(cfg, flags)
+			if showcaseCode != 0 {
+				os.Exit(showcaseCode)
+			}
+		}
+		os.Exit(exitCode)
 	}
 
 	// Handle sync all operation
 	if flags.SyncAll {
-		os.Exit(cli.HandleSyncAll(cfg, flags))
+		exitCode := cli.HandleSyncAll(cfg, flags)
+		if exitCode == 0 && flags.Showcase {
+			showcaseCode := cli.HandleShowcase(cfg, flags)
+			if showcaseCode != 0 {
+				os.Exit(showcaseCode)
+			}
+		}
+		os.Exit(exitCode)
 	}
 
 	// Handle sync Codeberg public repos
 	if flags.SyncCodebergPublic {
 		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
 		if exitCode != 0 || !flags.SyncGitHubPublic {
+			if exitCode == 0 && flags.Showcase && !flags.SyncGitHubPublic {
+				showcaseCode := cli.HandleShowcase(cfg, flags)
+				if showcaseCode != 0 {
+					os.Exit(showcaseCode)
+				}
+			}
 			os.Exit(exitCode)
 		}
 	}
 
 	// Handle sync GitHub public repos
 	if flags.SyncGitHubPublic {
-		os.Exit(cli.HandleSyncGitHubPublic(cfg, flags))
+		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
+		
+		// Run showcase generation if requested and sync was successful
+		if exitCode == 0 && flags.Showcase {
+			showcaseCode := cli.HandleShowcase(cfg, flags)
+			if showcaseCode != 0 {
+				os.Exit(showcaseCode)
+			}
+		}
+		
+		os.Exit(exitCode)
+	}
+	
+	// Handle standalone showcase mode (no sync operations specified)
+	if flags.Showcase {
+		fmt.Println("Running showcase generation for all repositories (clone-only mode)...")
+		os.Exit(cli.HandleShowcaseOnly(cfg, flags))
 	}
 
 	// Default: show usage
