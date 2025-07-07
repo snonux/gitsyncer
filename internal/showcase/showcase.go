@@ -186,9 +186,11 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 	}
 
-	// Check if claude command exists
-	if _, err := exec.LookPath("claude"); err != nil {
-		return nil, fmt.Errorf("claude command not found. Please install Claude CLI")
+	// Check if claude command exists (only if we need to run it)
+	if !haveCachedSummary {
+		if _, err := exec.LookPath("claude"); err != nil {
+			return nil, fmt.Errorf("claude command not found. Please install Claude CLI")
+		}
 	}
 
 	// Change to repository directory
