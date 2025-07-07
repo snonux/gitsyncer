@@ -29,6 +29,17 @@ type ProjectSummary struct {
 	Images      []string // Relative paths to images in showcase directory
 }
 
+// LegacyRepoMetadata for backwards compatibility with old cache files
+type LegacyRepoMetadata struct {
+	Languages       []string
+	CommitCount     int
+	LinesOfCode     int
+	FirstCommitDate string
+	LastCommitDate  string
+	License         string
+	AvgCommitAge    float64
+}
+
 // New creates a new showcase generator
 func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
@@ -82,7 +93,7 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 		fmt.Printf("\n--- Generated summary for %s ---\n", repo)
 		fmt.Println(summary.Summary)
 		if summary.Metadata != nil {
-			fmt.Printf("Languages: %s\n", strings.Join(summary.Metadata.Languages, ", "))
+			fmt.Printf("Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages))
 			fmt.Printf("Commits: %d\n", summary.Metadata.CommitCount)
 			fmt.Printf("Lines of Code: %d\n", summary.Metadata.LinesOfCode)
 			fmt.Printf("First Commit: %s\n", summary.Metadata.FirstCommitDate)
@@ -293,7 +304,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		// Add metadata if available
 		if summary.Metadata != nil {
 			if len(summary.Metadata.Languages) > 0 {
-				builder.WriteString(fmt.Sprintf("* Languages: %s\n", strings.Join(summary.Metadata.Languages, ", ")))
+				builder.WriteString(fmt.Sprintf("* Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages)))
 			}
 			builder.WriteString(fmt.Sprintf("* Commits: %d\n", summary.Metadata.CommitCount))
 			builder.WriteString(fmt.Sprintf("* Lines of Code: %d\n", summary.Metadata.LinesOfCode))

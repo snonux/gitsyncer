@@ -10,9 +10,16 @@ import (
 	"time"
 )
 
+// LanguageStats holds statistics for a programming language
+type LanguageStats struct {
+	Name       string
+	Lines      int
+	Percentage float64
+}
+
 // RepoMetadata holds metadata about a repository
 type RepoMetadata struct {
-	Languages       []string
+	Languages       []LanguageStats // Languages with usage statistics
 	CommitCount     int
 	LinesOfCode     int
 	FirstCommitDate string
@@ -73,116 +80,6 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	return metadata, nil
 }
 
-// detectLanguages detects programming languages used in the repository
-func detectLanguages(repoPath string) ([]string, error) {
-	languageMap := make(map[string]bool)
-	
-	// Define common language extensions
-	langExtensions := map[string]string{
-		".go":    "Go",
-		".py":    "Python",
-		".js":    "JavaScript",
-		".ts":    "TypeScript",
-		".java":  "Java",
-		".c":     "C",
-		".cpp":   "C++",
-		".cc":    "C++",
-		".h":     "C/C++",
-		".hpp":   "C++",
-		".cs":    "C#",
-		".rb":    "Ruby",
-		".php":   "PHP",
-		".swift": "Swift",
-		".kt":    "Kotlin",
-		".rs":    "Rust",
-		".scala": "Scala",
-		".r":     "R",
-		".m":     "Objective-C",
-		".mm":    "Objective-C++",
-		".sh":    "Shell",
-		".bash":  "Bash",
-		".zsh":   "Zsh",
-		".pl":    "Perl",
-		".lua":   "Lua",
-		".vim":   "Vim Script",
-		".el":    "Emacs Lisp",
-		".clj":   "Clojure",
-		".hs":    "Haskell",
-		".ml":    "OCaml",
-		".ex":    "Elixir",
-		".exs":   "Elixir",
-		".dart":  "Dart",
-		".jl":    "Julia",
-		".nim":   "Nim",
-		".v":     "V",
-		".zig":   "Zig",
-	}
-
-	// Walk through the repository
-	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return nil // Skip errors
-		}
-
-		// Skip hidden directories and common non-code directories
-		if info.IsDir() {
-			name := info.Name()
-			if strings.HasPrefix(name, ".") || name == "node_modules" || name == "vendor" || name == "target" || name == "dist" || name == "build" {
-				return filepath.SkipDir
-			}
-			return nil
-		}
-
-		// Check file extension
-		ext := strings.ToLower(filepath.Ext(path))
-		if lang, ok := langExtensions[ext]; ok {
-			languageMap[lang] = true
-		}
-
-		// Check for special files
-		basename := filepath.Base(path)
-		switch strings.ToLower(basename) {
-		case "makefile", "gnumakefile":
-			languageMap["Make"] = true
-		case "dockerfile":
-			languageMap["Docker"] = true
-		case "cmakelists.txt":
-			languageMap["CMake"] = true
-		case "rakefile":
-			languageMap["Ruby"] = true
-		case "gemfile":
-			languageMap["Ruby"] = true
-		case "package.json":
-			languageMap["JavaScript/Node.js"] = true
-		case "cargo.toml":
-			languageMap["Rust"] = true
-		case "go.mod":
-			languageMap["Go"] = true
-		case "pom.xml":
-			languageMap["Java/Maven"] = true
-		case "build.gradle", "build.gradle.kts":
-			languageMap["Java/Gradle"] = true
-		case "requirements.txt", "setup.py", "pyproject.toml":
-			languageMap["Python"] = true
-		case "composer.json":
-			languageMap["PHP"] = true
-		}
-
-		return nil
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	// Convert map to slice
-	var languages []string
-	for lang := range languageMap {
-		languages = append(languages, lang)
-	}
-
-	return languages, nil
-}
 
 // getCommitCount returns the total number of commits
 func getCommitCount(repoPath string) (int, error) {
