@@ -293,6 +293,53 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
 	
+	// Calculate total stats
+	totalProjects := len(summaries)
+	totalCommits := 0
+	totalLOC := 0
+	languageTotals := make(map[string]int)
+	
+	for _, summary := range summaries {
+		if summary.Metadata != nil {
+			totalCommits += summary.Metadata.CommitCount
+			totalLOC += summary.Metadata.LinesOfCode
+			
+			// Aggregate language statistics
+			for _, lang := range summary.Metadata.Languages {
+				languageTotals[lang.Name] += lang.Lines
+			}
+		}
+	}
+	
+	// Calculate language percentages
+	var languageStats []LanguageStats
+	for name, lines := range languageTotals {
+		percentage := 0.0
+		if totalLOC > 0 {
+			percentage = float64(lines) * 100.0 / float64(totalLOC)
+		}
+		languageStats = append(languageStats, LanguageStats{
+			Name:       name,
+			Lines:      lines,
+			Percentage: percentage,
+		})
+	}
+	
+	// Sort languages by percentage
+	sort.Slice(languageStats, func(i, j int) bool {
+		return languageStats[i].Percentage > languageStats[j].Percentage
+	})
+	
+	// Write total stats section
+	builder.WriteString("## Overall Statistics\n\n")
+	builder.WriteString(fmt.Sprintf("* Total Projects: %d\n", totalProjects))
+	builder.WriteString(fmt.Sprintf("* Total Commits: %s\n", formatNumber(totalCommits)))
+	builder.WriteString(fmt.Sprintf("* Total Lines of Code: %s\n", formatNumber(totalLOC)))
+	if len(languageStats) > 0 {
+		builder.WriteString(fmt.Sprintf("* Languages: %s\n", FormatLanguagesWithPercentages(languageStats)))
+	}
+	builder.WriteString("\n")
+	
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
 	// Add each project
@@ -383,20 +430,24 @@ func (g *Generator) writeShowcaseFile(content string) error {
 
 // updateShowcaseFile updates specific entries in an existing showcase file
 func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
-	// Build target path
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
-	}
-
-	targetDir := filepath.Join(home, "git", "foo.zone-content", "gemtext", "about")
-	targetFile := filepath.Join(targetDir, "showcase.gmi.tpl")
-
-	// Read existing file if it exists
+	// Load existing summaries from cache files instead of parsing Gemtext
 	existingSummaries := make(map[string]ProjectSummary)
-	if data, err := os.ReadFile(targetFile); err == nil {
-		// Parse existing summaries (simplified - in production would need proper parsing)
-		existingSummaries = g.parseExistingSummaries(string(data))
+	
+	// Get all repositories in work directory to load their cached summaries
+	repos, err := g.getRepositories()
+	if err == nil {
+		cacheDir := filepath.Join(g.workDir, ".gitsyncer-showcase-cache")
+		for _, repo := range repos {
+			// Skip excluded repos
+			if g.isExcluded(repo) {
+				continue
+			}
+			
+			cacheFile := filepath.Join(cacheDir, repo+".json")
+			if cached, err := g.loadFromCache(cacheFile); err == nil {
+				existingSummaries[repo] = *cached
+			}
+		}
 	}
 
 	// Update with new summaries
@@ -432,71 +483,6 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 	return nil
 }
 
-// parseExistingSummaries parses existing showcase file to extract summaries
-// This is a simplified implementation - in production would need more robust parsing
-func (g *Generator) parseExistingSummaries(content string) map[string]ProjectSummary {
-	summaries := make(map[string]ProjectSummary)
-	
-	// Split by repository sections
-	sections := strings.Split(content, "\n---\n")
-	
-	for _, section := range sections {
-		lines := strings.Split(section, "\n")
-		var currentRepo string
-		var summaryText strings.Builder
-		var codebergURL, githubURL string
-		
-		for _, line := range lines {
-			line = strings.TrimSpace(line)
-			
-			// Extract repository name
-			if strings.HasPrefix(line, "## ") {
-				currentRepo = strings.TrimPrefix(line, "## ")
-				continue
-			}
-			
-			// Extract URLs
-			if strings.HasPrefix(line, "=> ") {
-				if strings.Contains(line, "codeberg.org") {
-					parts := strings.SplitN(line, " ", 3)
-					if len(parts) >= 2 {
-						codebergURL = parts[1]
-					}
-				} else if strings.Contains(line, "github.com") {
-					parts := strings.SplitN(line, " ", 3)
-					if len(parts) >= 2 {
-						githubURL = parts[1]
-					}
-				}
-				continue
-			}
-			
-			// Skip header lines
-			if strings.HasPrefix(line, "#") || strings.Contains(line, "Generated on:") {
-				continue
-			}
-			
-			// Collect summary text
-			if line != "" && currentRepo != "" {
-				if summaryText.Len() > 0 {
-					summaryText.WriteString("\n\n")
-				}
-				summaryText.WriteString(line)
-			}
-		}
-		
-		if currentRepo != "" && summaryText.Len() > 0 {
-			summaries[currentRepo] = ProjectSummary{
-				Name:        currentRepo,
-				Summary:     strings.TrimSpace(summaryText.String()),
-				CodebergURL: codebergURL,
-				GitHubURL:   githubURL,
-			}
-		}
-	}
-	
-	return summaries
-}
 
 // loadFromCache loads a project summary from cache
 func (g *Generator) loadFromCache(cacheFile string) (*ProjectSummary, error) {
@@ -577,4 +563,33 @@ func (g *Generator) filterExcludedRepos(repos []string) []string {
 	}
 	
 	return filtered
+}
+
+// isExcluded checks if a repository is in the exclusion list
+func (g *Generator) isExcluded(repo string) bool {
+	for _, excluded := range g.config.ExcludeFromShowcase {
+		if excluded == repo {
+			return true
+		}
+	}
+	return false
+}
+
+// formatNumber formats a number with thousands separators
+func formatNumber(n int) string {
+	str := fmt.Sprintf("%d", n)
+	if len(str) <= 3 {
+		return str
+	}
+	
+	// Insert commas from right to left
+	var result []byte
+	for i := len(str) - 1; i >= 0; i-- {
+		if (len(str)-i-1) > 0 && (len(str)-i-1)%3 == 0 {
+			result = append([]byte{','}, result...)
+		}
+		result = append([]byte{str[i]}, result...)
+	}
+	
+	return string(result)
 }
