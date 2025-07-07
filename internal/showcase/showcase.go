@@ -88,7 +88,7 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 			fmt.Printf("First Commit: %s\n", summary.Metadata.FirstCommitDate)
 			fmt.Printf("Last Commit: %s\n", summary.Metadata.LastCommitDate)
 			fmt.Printf("License: %s\n", summary.Metadata.License)
-			fmt.Printf("Avg. age of last 100 commits: %.1f days\n", summary.Metadata.AvgCommitAge)
+			fmt.Printf("Avg. age of last 42 commits: %.1f days\n", summary.Metadata.AvgCommitAge)
 		}
 		fmt.Println("--- End of summary ---")
 		

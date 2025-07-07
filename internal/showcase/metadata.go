@@ -18,7 +18,7 @@ type RepoMetadata struct {
 	FirstCommitDate string
 	LastCommitDate  string
 	License         string
-	AvgCommitAge    float64 // Average age of last 100 commits in days
+	AvgCommitAge    float64 // Average age of last 42 commits in days
 }
 
 // extractRepoMetadata extracts metadata from a repository
@@ -63,8 +63,8 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	license := detectLicense(repoPath)
 	metadata.License = license
 
-	// Get average age of last 100 commits
-	avgAge, err := getAverageCommitAge(repoPath, 100)
+	// Get average age of last 42 commits (42 is the answer!)
+	avgAge, err := getAverageCommitAge(repoPath, 42)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get average commit age: %v\n", err)
 	}
