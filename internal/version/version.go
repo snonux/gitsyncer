@@ -7,14 +7,14 @@ import (
 
 var (
 	// Version is the current version of gitsyncer
-	Version = "0.2.0"
-	
+	Version = "0.3.0"
+
 	// GitCommit is the git commit hash at build time
 	GitCommit = "unknown"
-	
+
 	// BuildDate is the date when the binary was built
 	BuildDate = "unknown"
-	
+
 	// GoVersion is the Go version used to build
 	GoVersion = runtime.Version()
 )
