@@ -446,8 +446,14 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString(fmt.Sprintf("* 🔥 Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
 			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
 			
-			// Add experimental status if no releases
-			if !summary.Metadata.HasReleases {
+			// Add release information or experimental status
+			if summary.Metadata.HasReleases && summary.Metadata.LatestTag != "" {
+				if summary.Metadata.LatestTagDate != "" {
+					builder.WriteString(fmt.Sprintf("* 🏷️ Latest Release: %s (%s)\n", summary.Metadata.LatestTag, summary.Metadata.LatestTagDate))
+				} else {
+					builder.WriteString(fmt.Sprintf("* 🏷️ Latest Release: %s\n", summary.Metadata.LatestTag))
+				}
+			} else {
 				builder.WriteString("* 🧪 Status: Experimental (no releases yet)\n")
 			}
 			

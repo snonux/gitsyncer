@@ -29,6 +29,7 @@ type RepoMetadata struct {
 	License         string
 	AvgCommitAge    float64 // Average age of last 42 commits in days
 	LatestTag       string  // Latest version tag (empty if no tags)
+	LatestTagDate   string  // Date of the latest tag (empty if no tags)
 	HasReleases     bool    // Whether the project has any releases/tags
 }
 
@@ -89,11 +90,12 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	metadata.AvgCommitAge = avgAge
 
 	// Get latest tag and check for releases
-	latestTag, hasReleases, err := getLatestTag(repoPath)
+	latestTag, latestTagDate, hasReleases, err := getLatestTag(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get latest tag: %v\n", err)
 	}
 	metadata.LatestTag = latestTag
+	metadata.LatestTagDate = latestTagDate
 	metadata.HasReleases = hasReleases
 
 	return metadata, nil
@@ -280,8 +282,8 @@ func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 	return totalAge / float64(validCommits), nil
 }
 
-// getLatestTag returns the latest git tag and whether the repo has any releases
-func getLatestTag(repoPath string) (string, bool, error) {
+// getLatestTag returns the latest git tag, its date, and whether the repo has any releases
+func getLatestTag(repoPath string) (string, string, bool, error) {
 	// First try to get tags sorted by version
 	cmd := exec.Command("git", "-C", repoPath, "tag", "-l", "--sort=-version:refname")
 	output, err := cmd.Output()
@@ -291,15 +293,80 @@ func getLatestTag(repoPath string) (string, bool, error) {
 		output, err = cmd.Output()
 		if err != nil {
 			// No tags at all
-			return "", false, nil
+			return "", "", false, nil
 		}
 	}
 
 	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(tags) == 0 || tags[0] == "" {
-		return "", false, nil
+		return "", "", false, nil
 	}
 
-	// Return the latest tag
-	return tags[0], true, nil
+	// Find the first tag that looks like a version number
+	latestTag := ""
+	for _, tag := range tags {
+		if isVersionTag(tag) {
+			latestTag = tag
+			break
+		}
+	}
+	
+	if latestTag == "" {
+		// No version-like tags found
+		return "", "", false, nil
+	}
+	
+	// Get the date of the latest tag
+	cmd = exec.Command("git", "-C", repoPath, "log", "-1", "--format=%ai", latestTag)
+	dateOutput, err := cmd.Output()
+	if err != nil {
+		// Tag exists but couldn't get date
+		return latestTag, "", true, nil
+	}
+	
+	// Extract just the date part (YYYY-MM-DD)
+	parts := strings.Fields(string(dateOutput))
+	tagDate := ""
+	if len(parts) > 0 {
+		tagDate = parts[0]
+	}
+
+	// Return the latest tag and its date
+	return latestTag, tagDate, true, nil
+}
+
+// isVersionTag checks if a tag looks like a version number
+func isVersionTag(tag string) bool {
+	// Remove 'v' prefix if present
+	versionStr := strings.TrimPrefix(tag, "v")
+	
+	// Check if the remaining string contains at least one digit and one dot
+	hasDigit := false
+	hasDot := false
+	
+	for _, ch := range versionStr {
+		if ch >= '0' && ch <= '9' {
+			hasDigit = true
+		} else if ch == '.' {
+			hasDot = true
+		} else if ch != '-' && ch != '+' && ch != '_' && 
+		         (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') {
+			// Allow alphanumeric characters and common separators
+			// but anything else makes it not a version
+			return false
+		}
+	}
+	
+	// Must have at least one digit, and either:
+	// - have a dot (e.g., 1.0, 0.1.2)
+	// - be just digits (e.g., 2, 2024)
+	// - start with a digit (e.g., 1-beta)
+	if hasDigit && len(versionStr) > 0 {
+		firstChar := versionStr[0]
+		if firstChar >= '0' && firstChar <= '9' {
+			return true
+		}
+	}
+	
+	return hasDigit && hasDot
 }
