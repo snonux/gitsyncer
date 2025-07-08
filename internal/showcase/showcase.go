@@ -297,16 +297,24 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	totalProjects := len(summaries)
 	totalCommits := 0
 	totalLOC := 0
+	totalDocs := 0
 	languageTotals := make(map[string]int)
+	docTotals := make(map[string]int)
 	
 	for _, summary := range summaries {
 		if summary.Metadata != nil {
 			totalCommits += summary.Metadata.CommitCount
 			totalLOC += summary.Metadata.LinesOfCode
+			totalDocs += summary.Metadata.LinesOfDocs
 			
 			// Aggregate language statistics
 			for _, lang := range summary.Metadata.Languages {
 				languageTotals[lang.Name] += lang.Lines
+			}
+			
+			// Aggregate documentation statistics
+			for _, doc := range summary.Metadata.Documentation {
+				docTotals[doc.Name] += doc.Lines
 			}
 		}
 	}
@@ -330,13 +338,38 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		return languageStats[i].Percentage > languageStats[j].Percentage
 	})
 	
+	// Calculate documentation percentages
+	var docStats []LanguageStats
+	for name, lines := range docTotals {
+		percentage := 0.0
+		if totalDocs > 0 {
+			percentage = float64(lines) * 100.0 / float64(totalDocs)
+		}
+		docStats = append(docStats, LanguageStats{
+			Name:       name,
+			Lines:      lines,
+			Percentage: percentage,
+		})
+	}
+	
+	// Sort documentation by percentage
+	sort.Slice(docStats, func(i, j int) bool {
+		return docStats[i].Percentage > docStats[j].Percentage
+	})
+	
 	// Write total stats section
 	builder.WriteString("## Overall Statistics\n\n")
 	builder.WriteString(fmt.Sprintf("* Total Projects: %d\n", totalProjects))
 	builder.WriteString(fmt.Sprintf("* Total Commits: %s\n", formatNumber(totalCommits)))
 	builder.WriteString(fmt.Sprintf("* Total Lines of Code: %s\n", formatNumber(totalLOC)))
+	if totalDocs > 0 {
+		builder.WriteString(fmt.Sprintf("* Total Lines of Documentation: %s\n", formatNumber(totalDocs)))
+	}
 	if len(languageStats) > 0 {
 		builder.WriteString(fmt.Sprintf("* Languages: %s\n", FormatLanguagesWithPercentages(languageStats)))
+	}
+	if len(docStats) > 0 {
+		builder.WriteString(fmt.Sprintf("* Documentation: %s\n", FormatLanguagesWithPercentages(docStats)))
 	}
 	builder.WriteString("\n")
 	
@@ -358,8 +391,14 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			if len(summary.Metadata.Languages) > 0 {
 				builder.WriteString(fmt.Sprintf("* Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages)))
 			}
+			if len(summary.Metadata.Documentation) > 0 {
+				builder.WriteString(fmt.Sprintf("* Documentation: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Documentation)))
+			}
 			builder.WriteString(fmt.Sprintf("* Commits: %d\n", summary.Metadata.CommitCount))
 			builder.WriteString(fmt.Sprintf("* Lines of Code: %d\n", summary.Metadata.LinesOfCode))
+			if summary.Metadata.LinesOfDocs > 0 {
+				builder.WriteString(fmt.Sprintf("* Lines of Documentation: %d\n", summary.Metadata.LinesOfDocs))
+			}
 			builder.WriteString(fmt.Sprintf("* Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
 			builder.WriteString(fmt.Sprintf("* Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
 			builder.WriteString(fmt.Sprintf("* License: %s\n\n", summary.Metadata.License))

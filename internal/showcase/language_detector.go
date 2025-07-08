@@ -10,8 +10,10 @@ import (
 )
 
 // detectLanguages detects programming languages used in the repository with line counts
-func detectLanguages(repoPath string) ([]LanguageStats, error) {
+// Returns both programming languages and documentation/text files separately
+func detectLanguages(repoPath string) (languages []LanguageStats, documentation []LanguageStats, err error) {
 	languageLines := make(map[string]int)
+	documentationLines := make(map[string]int)
 	
 	// Define common language extensions
 	langExtensions := map[string]string{
@@ -70,9 +72,16 @@ func detectLanguages(repoPath string) ([]LanguageStats, error) {
 		".cfg":   "Config",
 		".conf":  "Config",
 		".sql":   "SQL",
+	}
+	
+	// Define documentation/text extensions
+	docExtensions := map[string]string{
 		".md":    "Markdown",
 		".rst":   "reStructuredText",
 		".tex":   "LaTeX",
+		".txt":   "Text",
+		".adoc":  "AsciiDoc",
+		".org":   "Org",
 	}
 
 	// Special files that indicate specific languages
@@ -102,7 +111,7 @@ func detectLanguages(repoPath string) ([]LanguageStats, error) {
 	}
 
 	// Count lines for each language
-	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
 		if err != nil {
 			return nil // Skip errors
 		}
@@ -134,15 +143,20 @@ func detectLanguages(repoPath string) ([]LanguageStats, error) {
 		basename := strings.ToLower(filepath.Base(path))
 		ext := strings.ToLower(filepath.Ext(path))
 
-		// Determine the language
+		// Determine the language or documentation type
 		var language string
+		var isDoc bool
 		
 		// Check special files first
 		if lang, ok := specialFiles[basename]; ok {
 			language = lang
 		} else {
-			// Check by extension
-			if lang, ok := langExtensions[ext]; ok {
+			// Check documentation extensions
+			if docType, ok := docExtensions[ext]; ok {
+				language = docType
+				isDoc = true
+			} else if lang, ok := langExtensions[ext]; ok {
+				// Check programming language extensions
 				language = lang
 			}
 		}
@@ -151,7 +165,11 @@ func detectLanguages(repoPath string) ([]LanguageStats, error) {
 		if language != "" {
 			lines, err := countFileLines(path)
 			if err == nil {
-				languageLines[language] += lines
+				if isDoc {
+					documentationLines[language] += lines
+				} else {
+					languageLines[language] += lines
+				}
 			}
 		}
 
@@ -159,35 +177,58 @@ func detectLanguages(repoPath string) ([]LanguageStats, error) {
 	})
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Calculate total lines
-	totalLines := 0
+	// Process programming languages
+	totalCodeLines := 0
 	for _, lines := range languageLines {
-		totalLines += lines
+		totalCodeLines += lines
 	}
 
-	// Convert to LanguageStats with percentages
-	var stats []LanguageStats
+	var languageStats []LanguageStats
 	for lang, lines := range languageLines {
 		percentage := 0.0
-		if totalLines > 0 {
-			percentage = float64(lines) * 100.0 / float64(totalLines)
+		if totalCodeLines > 0 {
+			percentage = float64(lines) * 100.0 / float64(totalCodeLines)
 		}
-		stats = append(stats, LanguageStats{
+		languageStats = append(languageStats, LanguageStats{
 			Name:       lang,
 			Lines:      lines,
 			Percentage: percentage,
 		})
 	}
 
-	// Sort by percentage (descending)
-	sort.Slice(stats, func(i, j int) bool {
-		return stats[i].Percentage > stats[j].Percentage
+	// Sort languages by percentage (descending)
+	sort.Slice(languageStats, func(i, j int) bool {
+		return languageStats[i].Percentage > languageStats[j].Percentage
 	})
 
-	return stats, nil
+	// Process documentation
+	totalDocLines := 0
+	for _, lines := range documentationLines {
+		totalDocLines += lines
+	}
+
+	var docStats []LanguageStats
+	for docType, lines := range documentationLines {
+		percentage := 0.0
+		if totalDocLines > 0 {
+			percentage = float64(lines) * 100.0 / float64(totalDocLines)
+		}
+		docStats = append(docStats, LanguageStats{
+			Name:       docType,
+			Lines:      lines,
+			Percentage: percentage,
+		})
+	}
+
+	// Sort documentation by percentage (descending)
+	sort.Slice(docStats, func(i, j int) bool {
+		return docStats[i].Percentage > docStats[j].Percentage
+	})
+
+	return languageStats, docStats, nil
 }
 
 // countFileLines counts the number of lines in a file

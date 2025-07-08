@@ -19,9 +19,11 @@ type LanguageStats struct {
 
 // RepoMetadata holds metadata about a repository
 type RepoMetadata struct {
-	Languages       []LanguageStats // Languages with usage statistics
+	Languages       []LanguageStats // Programming languages with usage statistics
+	Documentation   []LanguageStats // Documentation/text files with usage statistics
 	CommitCount     int
-	LinesOfCode     int
+	LinesOfCode     int             // Lines of code (excluding documentation)
+	LinesOfDocs     int             // Lines of documentation
 	FirstCommitDate string
 	LastCommitDate  string
 	License         string
@@ -32,12 +34,13 @@ type RepoMetadata struct {
 func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	metadata := &RepoMetadata{}
 
-	// Get programming languages by analyzing file extensions
-	languages, err := detectLanguages(repoPath)
+	// Get programming languages and documentation by analyzing file extensions
+	languages, documentation, err := detectLanguages(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to detect languages: %v\n", err)
 	}
 	metadata.Languages = languages
+	metadata.Documentation = documentation
 
 	// Get commit count
 	commitCount, err := getCommitCount(repoPath)
@@ -46,12 +49,18 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	}
 	metadata.CommitCount = commitCount
 
-	// Get lines of code
-	loc, err := countLinesOfCode(repoPath)
-	if err != nil {
-		fmt.Printf("Warning: Failed to count lines of code: %v\n", err)
+	// Calculate lines of code and documentation from language stats
+	loc := 0
+	for _, lang := range metadata.Languages {
+		loc += lang.Lines
 	}
 	metadata.LinesOfCode = loc
+	
+	locDocs := 0
+	for _, doc := range metadata.Documentation {
+		locDocs += doc.Lines
+	}
+	metadata.LinesOfDocs = locDocs
 
 	// Get first and last commit dates
 	firstDate, err := getFirstCommitDate(repoPath)
