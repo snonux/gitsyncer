@@ -509,7 +509,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		
 		// Add code snippet at the end for all projects
 		if summary.CodeSnippet != "" {
-			builder.WriteString(fmt.Sprintf("\n%s:\n\n```\n%s\n```\n", summary.CodeLanguage, summary.CodeSnippet))
+			builder.WriteString(fmt.Sprintf("\n%s:\n\n```AUTO\n%s\n```\n", summary.CodeLanguage, summary.CodeSnippet))
 		}
 	}
 
