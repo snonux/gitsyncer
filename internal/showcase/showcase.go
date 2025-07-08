@@ -492,7 +492,9 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		
 		// Add code snippet at the end for all projects
 		if summary.CodeSnippet != "" {
-			builder.WriteString(fmt.Sprintf("\n%s:\n\n```\n%s\n```\n", summary.CodeLanguage, summary.CodeSnippet))
+			// Extract the language name for syntax highlighting
+			languageName := extractLanguageForHighlighting(summary.CodeLanguage)
+			builder.WriteString(fmt.Sprintf("\n%s:\n\n```%s\n%s\n```\n", summary.CodeLanguage, languageName, summary.CodeSnippet))
 		}
 	}
 
@@ -714,4 +716,59 @@ func detectAIUsage(repoPath string) bool {
 	}
 	
 	return false
+}
+
+// extractLanguageForHighlighting extracts the language name from the CodeLanguage string
+// for syntax highlighting in code blocks
+func extractLanguageForHighlighting(codeLanguage string) string {
+	// codeLanguage format: "Language from `path/to/file`"
+	// Extract just the language name
+	parts := strings.Split(codeLanguage, " ")
+	if len(parts) > 0 {
+		lang := strings.ToLower(parts[0])
+		
+		// Map language names to syntax highlighting identifiers
+		// Based on source-highlight --lang-list output
+		languageMap := map[string]string{
+			"go":           "go",
+			"python":       "python",
+			"javascript":   "javascript",
+			"typescript":   "javascript", // Use javascript for TypeScript
+			"java":         "java",
+			"c":            "c",
+			"c++":          "cpp",
+			"c/c++":        "cpp",
+			"c#":           "csharp",
+			"ruby":         "ruby",
+			"rust":         "rust",
+			"shell":        "sh",  // source-highlight uses sh.lang
+			"bash":         "bash",
+			"perl":         "perl",
+			"php":          "php",
+			"swift":        "swift",
+			"kotlin":       "java", // Use java highlighting for Kotlin
+			"haskell":      "haskell",
+			"lua":          "lua",
+			"html":         "html",
+			"css":          "css",
+			"sql":          "sql",
+			"make":         "makefile",
+			"docker":       "dockerfile",
+			"yaml":         "yaml",
+			"json":         "json",
+			"xml":          "xml",
+			"toml":         "toml",
+			"hcl":          "hcl",
+			"vim":          "vim",
+		}
+		
+		if mapped, ok := languageMap[lang]; ok {
+			return mapped
+		}
+		
+		// Return the original language name if no mapping exists
+		return lang
+	}
+	
+	return ""
 }

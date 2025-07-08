@@ -165,13 +165,14 @@ func extractSnippetFromFile(filePath string, minLines, maxLines int) (string, er
 	// Try to find the smallest complete function
 	bestFunction := findSmallestCompleteFunction(lines)
 	if bestFunction != "" {
-		return bestFunction, nil
+		return stripComments(bestFunction), nil
 	}
 
 	// If no complete function found, try to find a complete function/method
 	functionStart, functionEnd := findCompleteFunctionOrMethod(lines, minLines, maxLines*2) // Allow larger functions
 	if functionStart >= 0 && functionEnd >= 0 {
-		return strings.Join(lines[functionStart:functionEnd+1], "\n"), nil
+		snippet := strings.Join(lines[functionStart:functionEnd+1], "\n")
+		return stripComments(snippet), nil
 	}
 
 	// Fallback to finding an interesting start with at least minLines
@@ -181,7 +182,8 @@ func extractSnippetFromFile(filePath string, minLines, maxLines int) (string, er
 		if endLine > totalLines {
 			endLine = totalLines
 		}
-		return strings.Join(lines[interestingStart:endLine], "\n"), nil
+		snippet := strings.Join(lines[interestingStart:endLine], "\n")
+		return stripComments(snippet), nil
 	}
 
 	// Last resort: return first minLines (skip imports if possible)
@@ -201,7 +203,8 @@ func extractSnippetFromFile(filePath string, minLines, maxLines int) (string, er
 		endLine = totalLines
 	}
 
-	return strings.Join(lines[skipLines:endLine], "\n"), nil
+	snippet := strings.Join(lines[skipLines:endLine], "\n")
+	return stripComments(snippet), nil
 }
 
 // findSmallestCompleteFunction finds the smallest complete function in the file
@@ -392,4 +395,73 @@ func findInterestingStart(lines []string, snippetSize int) int {
 
 	// No interesting start found
 	return -1
+}
+
+// stripComments removes comment lines from code snippets to make them more concise
+func stripComments(code string) string {
+	lines := strings.Split(code, "\n")
+	var result []string
+	inMultilineComment := false
+	
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		
+		// Handle multi-line comments for C-style languages
+		if strings.Contains(line, "/*") {
+			inMultilineComment = true
+			// If comment ends on same line, process the rest
+			if strings.Contains(line, "*/") {
+				inMultilineComment = false
+				// Skip this line entirely if it's just a comment
+				if strings.TrimSpace(strings.Split(line, "/*")[0]) == "" {
+					continue
+				}
+			} else {
+				continue
+			}
+		}
+		
+		if inMultilineComment {
+			if strings.Contains(line, "*/") {
+				inMultilineComment = false
+			}
+			continue
+		}
+		
+		// Skip single-line comments
+		if trimmed == "" {
+			// Keep empty lines for readability
+			result = append(result, line)
+		} else if strings.HasPrefix(trimmed, "//") || 
+			strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "#include") && !strings.HasPrefix(trimmed, "#define") ||
+			strings.HasPrefix(trimmed, "<!--") ||
+			strings.HasPrefix(trimmed, "*") && len(trimmed) > 1 && trimmed[1] == ' ' {
+			// Skip comment lines
+			continue
+		} else if strings.HasPrefix(trimmed, "\"\"\"") || strings.HasPrefix(trimmed, "'''") {
+			// Skip Python docstrings (simplified - doesn't handle all cases)
+			continue
+		} else {
+			// Keep the line but remove inline comments for some languages
+			// This is a simple approach - doesn't handle all edge cases
+			if idx := strings.Index(line, " //"); idx > 0 {
+				// Check if it's not inside a string (very basic check)
+				beforeComment := line[:idx]
+				if strings.Count(beforeComment, "\"")%2 == 0 && strings.Count(beforeComment, "'")%2 == 0 {
+					line = strings.TrimRight(line[:idx], " \t")
+				}
+			}
+			result = append(result, line)
+		}
+	}
+	
+	// Remove leading and trailing empty lines
+	for len(result) > 0 && strings.TrimSpace(result[0]) == "" {
+		result = result[1:]
+	}
+	for len(result) > 0 && strings.TrimSpace(result[len(result)-1]) == "" {
+		result = result[:len(result)-1]
+	}
+	
+	return strings.Join(result, "\n")
 }
