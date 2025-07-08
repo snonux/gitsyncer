@@ -342,13 +342,16 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
+	// Add Projects section
+	builder.WriteString("## Projects\n\n")
+
 	// Add each project
 	for i, summary := range summaries {
 		if i > 0 {
 			builder.WriteString("\n---\n\n")
 		}
 
-		builder.WriteString(fmt.Sprintf("## %s\n\n", summary.Name))
+		builder.WriteString(fmt.Sprintf("### %s\n\n", summary.Name))
 		
 		// Add metadata if available
 		if summary.Metadata != nil {
