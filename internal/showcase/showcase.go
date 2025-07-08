@@ -436,7 +436,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			
 			// Add AI-Assisted notice if detected
 			if summary.AIAssisted {
-				builder.WriteString("* 🤖 AI-Assisted: This project was partially generated with the help of generative AI\n")
+				builder.WriteString("* 🤖 AI-Assisted: This project was partially created with the help of generative AI\n")
 			}
 			
 			// Check if project might be obsolete (avg age > 2 years AND last commit > 1 year)
