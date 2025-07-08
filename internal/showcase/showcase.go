@@ -323,6 +323,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	totalLOC := 0
 	totalDocs := 0
 	aiAssistedCount := 0
+	releasedCount := 0
 	languageTotals := make(map[string]int)
 	docTotals := make(map[string]int)
 	
@@ -335,6 +336,11 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			totalCommits += summary.Metadata.CommitCount
 			totalLOC += summary.Metadata.LinesOfCode
 			totalDocs += summary.Metadata.LinesOfDocs
+			
+			// Count projects with releases
+			if summary.Metadata.HasReleases {
+				releasedCount++
+			}
 			
 			// Aggregate language statistics
 			for _, lang := range summary.Metadata.Languages {
@@ -405,6 +411,11 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		aiAssistedCount, totalProjects, 
 		float64(aiAssistedCount)*100/float64(totalProjects),
 		float64(nonAICount)*100/float64(totalProjects)))
+	experimentalCount := totalProjects - releasedCount
+	builder.WriteString(fmt.Sprintf("* 🚀 Release Status: %d released, %d experimental (%.1f%% with releases, %.1f%% experimental)\n",
+		releasedCount, experimentalCount,
+		float64(releasedCount)*100/float64(totalProjects),
+		float64(experimentalCount)*100/float64(totalProjects)))
 	builder.WriteString("\n")
 
 	// Add Projects section
