@@ -26,6 +26,7 @@ GitSyncer is a tool for synchronizing git repositories between multiple organiza
 - Never deletes branches (only adds/updates)
 - GitHub token validation tool
 - Opt-in backup mode with --backup flag for resilient offline backups
+- AI-powered project showcase generation for documentation
 
 ## Installation
 
@@ -123,6 +124,15 @@ Create a `gitsyncer.json` file:
 ### Show version
 ```bash
 ./gitsyncer --version
+```
+
+### Generate project showcase
+```bash
+# Generate a showcase of all your projects using Claude AI
+./gitsyncer --showcase
+
+# Force regeneration of cached summaries
+./gitsyncer --showcase --force
 ```
 
 ### The --backup Flag
@@ -226,6 +236,63 @@ The backup location path format is: `user@host:path/REPONAME.git`
 - `REPONAME.git`: Automatically appended repository name
 
 **Note**: The `--backup` flag is required to sync to backup locations. This allows GitSyncer to work normally even when backup servers are offline or unreachable.
+
+## Project Showcase Generation
+
+GitSyncer can generate a comprehensive showcase of all your projects using Claude AI. This feature creates a formatted document with project summaries, statistics, and code snippets.
+
+### How it works
+
+1. **Repository Analysis**: GitSyncer analyzes all cloned repositories to extract:
+   - Programming languages and their usage percentages
+   - Commit history and development activity
+   - Lines of code and documentation
+   - License information
+   - Latest release version and date
+   - AI-assistance detection (looks for CLAUDE.md, GEMINI.md files)
+
+2. **AI-Powered Summaries**: Uses Claude AI to generate concise project descriptions that explain:
+   - What the project does
+   - Why it's useful
+   - How it's implemented
+   - Key features and architecture
+
+3. **Automatic Features**:
+   - Extracts README images (including SVG support)
+   - Selects representative code snippets
+   - Orders projects by recent activity
+   - Generates overall portfolio statistics
+   - Caches summaries to avoid redundant AI calls
+
+### Usage
+
+```bash
+# Generate showcase (uses cached summaries when available)
+./gitsyncer --showcase
+
+# Force regeneration of all summaries
+./gitsyncer --showcase --force
+```
+
+### Output
+
+The showcase is generated in Gemini Gemtext format and includes:
+- Overall statistics (total projects, commits, lines of code, languages)
+- Release status breakdown (released vs experimental projects)
+- AI-assistance statistics
+- Individual project sections with:
+  - Language breakdown
+  - Development metrics
+  - Latest release information or experimental status
+  - Project description
+  - Code snippet example
+  - Links to repositories
+
+### Configuration
+
+The showcase output is written to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl` by default (currently hardcoded).
+
+Projects can be excluded from the showcase by creating a `.nosync` file in their repository root.
 
 ## Example Workflows
 
