@@ -41,6 +41,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		"Rust":         {".rs"},
 		"Shell":        {".sh", ".bash"},
 		"Perl":         {".pl", ".pm"},
+		"Raku":         {".raku", ".rakumod", ".p6", ".pm6"},
 		"Haskell":      {".hs"},
 		"Lua":          {".lua"},
 		"HTML":         {".html", ".htm"},

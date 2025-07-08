@@ -308,6 +308,9 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	// Header
 	builder.WriteString("# Project Showcase\n\n")
 	
+	// Generated date at the top
+	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
+	
 	// Introduction paragraph
 	builder.WriteString("This page showcases my open source projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ordered by recent activity, with the most actively maintained projects listed first.\n\n")
 	
@@ -403,8 +406,6 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		float64(aiAssistedCount)*100/float64(totalProjects),
 		float64(nonAICount)*100/float64(totalProjects)))
 	builder.WriteString("\n")
-	
-	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
 	// Add Projects section
 	builder.WriteString("## Projects\n\n")
@@ -744,6 +745,7 @@ func extractLanguageForHighlighting(codeLanguage string) string {
 			"shell":        "sh",  // source-highlight uses sh.lang
 			"bash":         "bash",
 			"perl":         "perl",
+			"raku":         "perl",  // Use perl highlighting for Raku
 			"php":          "php",
 			"swift":        "swift",
 			"kotlin":       "java", // Use java highlighting for Kotlin
