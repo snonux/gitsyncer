@@ -7,7 +7,7 @@ import (
 
 var (
 	// Version is the current version of gitsyncer
-	Version = "0.3.0"
+	Version = "0.4.0"
 
 	// GitCommit is the git commit hash at build time
 	GitCommit = "unknown"
