@@ -172,6 +172,39 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 			}
 		}
 
+		// Check shebang for executable files when no language was detected
+		if language == "" && info.Mode()&0111 != 0 {
+			if file, err := os.Open(path); err == nil {
+				scanner := bufio.NewScanner(file)
+				if scanner.Scan() {
+					firstLine := scanner.Text()
+					if strings.HasPrefix(firstLine, "#!") {
+						// Check for various interpreters in shebang
+						if strings.Contains(firstLine, "python") {
+							language = "Python"
+						} else if strings.Contains(firstLine, "node") {
+							language = "JavaScript"
+						} else if strings.Contains(firstLine, "ruby") {
+							language = "Ruby"
+						} else if strings.Contains(firstLine, "perl") && !strings.Contains(firstLine, "perl6") {
+							language = "Perl"
+						} else if strings.Contains(firstLine, "perl6") || strings.Contains(firstLine, "raku") {
+							language = "Raku"
+						} else if strings.Contains(firstLine, "awk") || strings.Contains(firstLine, "gawk") || strings.Contains(firstLine, "mawk") {
+							language = "AWK"
+						} else if strings.Contains(firstLine, "sh") || strings.Contains(firstLine, "bash") || strings.Contains(firstLine, "zsh") || strings.Contains(firstLine, "fish") {
+							language = "Shell"
+						} else if strings.Contains(firstLine, "php") {
+							language = "PHP"
+						} else if strings.Contains(firstLine, "lua") {
+							language = "Lua"
+						}
+					}
+				}
+				file.Close()
+			}
+		}
+		
 		// If we identified a language, count its lines
 		if language != "" {
 			lines, err := countFileLines(path)

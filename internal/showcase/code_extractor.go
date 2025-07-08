@@ -49,7 +49,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		"SQL":          {".sql"},
 		"Make":         {"Makefile", "makefile", "GNUmakefile"},
 		"HCL":          {".tf", ".tfvars", ".hcl"},
-		"AWK":          {".awk"},
+		"AWK":          {".awk", ".cgi"},  // .cgi files can be AWK scripts
 	}
 
 	// Get file extensions for the primary language
@@ -100,17 +100,36 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		basename := filepath.Base(path)
 		ext := filepath.Ext(path)
 		
+		matched := false
 		for _, validExt := range extensions {
 			if validExt == basename || (strings.HasPrefix(validExt, ".") && ext == validExt) {
-				// Skip test files and generated files
-				if !strings.Contains(basename, "_test") && 
-				   !strings.Contains(basename, ".test.") &&
-				   !strings.Contains(basename, ".min.") &&
-				   !strings.Contains(path, "/test/") &&
-				   !strings.Contains(path, "/tests/") {
-					codeFiles = append(codeFiles, path)
-				}
+				matched = true
 				break
+			}
+		}
+		
+		// For executable files, also check shebang if primary language is AWK and file has .cgi extension
+		if !matched && primaryLang == "AWK" && ext == ".cgi" && info.Mode()&0111 != 0 {
+			if file, err := os.Open(path); err == nil {
+				scanner := bufio.NewScanner(file)
+				if scanner.Scan() {
+					firstLine := scanner.Text()
+					if strings.Contains(firstLine, "awk") || strings.Contains(firstLine, "gawk") {
+						matched = true
+					}
+				}
+				file.Close()
+			}
+		}
+		
+		if matched {
+			// Skip test files and generated files
+			if !strings.Contains(basename, "_test") && 
+			   !strings.Contains(basename, ".test.") &&
+			   !strings.Contains(basename, ".min.") &&
+			   !strings.Contains(path, "/test/") &&
+			   !strings.Contains(path, "/tests/") {
+				codeFiles = append(codeFiles, path)
 			}
 		}
 
