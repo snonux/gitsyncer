@@ -435,6 +435,11 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString(fmt.Sprintf("* 🔥 Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
 			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
 			
+			// Add experimental status if no releases
+			if !summary.Metadata.HasReleases {
+				builder.WriteString("* 🧪 Status: Experimental (no releases yet)\n")
+			}
+			
 			// Add AI-Assisted notice if detected
 			if summary.AIAssisted {
 				builder.WriteString("* 🤖 AI-Assisted: This project was partially created with the help of generative AI\n")

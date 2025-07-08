@@ -28,6 +28,8 @@ type RepoMetadata struct {
 	LastCommitDate  string
 	License         string
 	AvgCommitAge    float64 // Average age of last 42 commits in days
+	LatestTag       string  // Latest version tag (empty if no tags)
+	HasReleases     bool    // Whether the project has any releases/tags
 }
 
 // extractRepoMetadata extracts metadata from a repository
@@ -85,6 +87,14 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 		fmt.Printf("Warning: Failed to get average commit age: %v\n", err)
 	}
 	metadata.AvgCommitAge = avgAge
+
+	// Get latest tag and check for releases
+	latestTag, hasReleases, err := getLatestTag(repoPath)
+	if err != nil {
+		fmt.Printf("Warning: Failed to get latest tag: %v\n", err)
+	}
+	metadata.LatestTag = latestTag
+	metadata.HasReleases = hasReleases
 
 	return metadata, nil
 }
@@ -268,4 +278,28 @@ func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 	}
 
 	return totalAge / float64(validCommits), nil
+}
+
+// getLatestTag returns the latest git tag and whether the repo has any releases
+func getLatestTag(repoPath string) (string, bool, error) {
+	// First try to get tags sorted by version
+	cmd := exec.Command("git", "-C", repoPath, "tag", "-l", "--sort=-version:refname")
+	output, err := cmd.Output()
+	if err != nil {
+		// Fallback to describe
+		cmd = exec.Command("git", "-C", repoPath, "describe", "--tags", "--abbrev=0")
+		output, err = cmd.Output()
+		if err != nil {
+			// No tags at all
+			return "", false, nil
+		}
+	}
+
+	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
+	if len(tags) == 0 || tags[0] == "" {
+		return "", false, nil
+	}
+
+	// Return the latest tag
+	return tags[0], true, nil
 }

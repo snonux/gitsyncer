@@ -125,7 +125,8 @@ func extractImageReferences(content string) []string {
 	// Regex patterns for markdown images
 	patterns := []string{
 		`!\[([^\]]*)\]\(([^)]+)\)`,                    // ![alt](url)
-		`<img[^>]+src=["']([^"']+)["'][^>]*>`,        // <img src="url">
+		`<img[^>]+src=["']([^"']+)["'][^>]*>`,        // <img src="url"> with quotes
+		`<img[^>]+src=([^\s>]+)[^>]*>`,               // <img src=url> without quotes
 		`!\[([^\]]*)\]\[([^\]]+)\]`,                   // ![alt][ref]
 		`\[([^\]]+)\]:\s*(.+?)(?:\s+"[^"]+")?\s*$`,   // [ref]: url "title"
 	}
@@ -133,7 +134,7 @@ func extractImageReferences(content string) []string {
 	fmt.Printf("DEBUG: Content length: %d bytes\n", len(content))
 	
 	// Extract from markdown image syntax
-	for i, pattern := range patterns[:2] { // First two patterns have URLs in different positions
+	for i, pattern := range patterns[:3] { // First three patterns have URLs in different positions
 		re := regexp.MustCompile(pattern)
 		matches := re.FindAllStringSubmatch(content, -1)
 		fmt.Printf("DEBUG: Pattern %d (%s) found %d matches\n", i, pattern, len(matches))
@@ -143,7 +144,7 @@ func extractImageReferences(content string) []string {
 			if pattern == patterns[0] {
 				url = match[2] // For ![alt](url)
 			} else {
-				url = match[1] // For <img src="url">
+				url = match[1] // For <img src="url"> (both with and without quotes)
 			}
 			
 			// Clean and validate URL
@@ -182,7 +183,7 @@ func extractImageReferences(content string) []string {
 	}
 	
 	// Handle reference-style images
-	refPattern := regexp.MustCompile(patterns[3])
+	refPattern := regexp.MustCompile(patterns[4])
 	refMatches := refPattern.FindAllStringSubmatch(content, -1)
 	refs := make(map[string]string)
 	for _, match := range refMatches {
@@ -190,7 +191,7 @@ func extractImageReferences(content string) []string {
 	}
 	
 	// Find reference-style image uses
-	refUsePattern := regexp.MustCompile(patterns[2])
+	refUsePattern := regexp.MustCompile(patterns[3])
 	refUseMatches := refUsePattern.FindAllStringSubmatch(content, -1)
 	for _, match := range refUseMatches {
 		ref := match[2]
