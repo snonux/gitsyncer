@@ -484,5 +484,84 @@ func stripComments(code string) string {
 		result = result[:len(result)-1]
 	}
 	
+	// Remove unnecessary indentation
+	result = removeCommonIndentation(result)
+	
 	return strings.Join(result, "\n")
+}
+
+// removeCommonIndentation removes common leading whitespace from all lines
+func removeCommonIndentation(lines []string) []string {
+	if len(lines) == 0 {
+		return lines
+	}
+	
+	// Find the common prefix of whitespace
+	var commonPrefix string
+	firstNonEmpty := -1
+	
+	// Find first non-empty line to use as reference
+	for i, line := range lines {
+		if strings.TrimSpace(line) != "" {
+			firstNonEmpty = i
+			break
+		}
+	}
+	
+	if firstNonEmpty == -1 {
+		return lines
+	}
+	
+	// Get the whitespace prefix of the first non-empty line
+	firstLine := lines[firstNonEmpty]
+	for i, ch := range firstLine {
+		if ch != ' ' && ch != '\t' {
+			commonPrefix = firstLine[:i]
+			break
+		}
+	}
+	
+	// If the first line has no indentation, return as-is
+	if commonPrefix == "" {
+		return lines
+	}
+	
+	// Find the actual common prefix among all non-empty lines
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		
+		// Reduce commonPrefix to what this line shares
+		for i := 0; i < len(commonPrefix); i++ {
+			if i >= len(line) || line[i] != commonPrefix[i] {
+				commonPrefix = commonPrefix[:i]
+				break
+			}
+		}
+		
+		if commonPrefix == "" {
+			break
+		}
+	}
+	
+	// If no common prefix found, return as-is
+	if commonPrefix == "" {
+		return lines
+	}
+	
+	// Remove common prefix from all lines
+	result := make([]string, len(lines))
+	prefixLen := len(commonPrefix)
+	for i, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			result[i] = ""
+		} else if strings.HasPrefix(line, commonPrefix) {
+			result[i] = line[prefixLen:]
+		} else {
+			result[i] = line
+		}
+	}
+	
+	return result
 }
