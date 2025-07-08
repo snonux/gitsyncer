@@ -401,7 +401,20 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			}
 			builder.WriteString(fmt.Sprintf("* Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
 			builder.WriteString(fmt.Sprintf("* Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
-			builder.WriteString(fmt.Sprintf("* License: %s\n\n", summary.Metadata.License))
+			builder.WriteString(fmt.Sprintf("* License: %s\n", summary.Metadata.License))
+			
+			// Check if project might be obsolete (avg age > 2 years AND last commit > 1 year)
+			if summary.Metadata.AvgCommitAge > 730 && summary.Metadata.LastCommitDate != "" {
+				// Parse the last commit date
+				lastCommit, err := time.Parse("2006-01-02", summary.Metadata.LastCommitDate)
+				if err == nil {
+					daysSinceLastCommit := time.Since(lastCommit).Hours() / 24
+					if daysSinceLastCommit > 365 {
+						builder.WriteString("\n⚠️  **Notice**: This project appears to be finished, obsolete, or no longer maintained. Last meaningful activity was over 2 years ago. Use at your own risk.")
+					}
+				}
+			}
+			builder.WriteString("\n\n")
 		}
 		
 		// Handle images and paragraphs

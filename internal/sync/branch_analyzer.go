@@ -46,12 +46,13 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 	if mainBranch != "" {
 		mainInfo, err := s.getBranchInfo(mainBranch)
 		if err == nil {
-			report.MainBranchUpdated = mainInfo.LastCommit.After(time.Now().AddDate(-1, 0, 0))
+			// Consider project active if main branch has commits within last 3 years
+			report.MainBranchUpdated = mainInfo.LastCommit.After(time.Now().AddDate(-3, 0, 0))
 			report.MainBranchLastCommit = mainInfo.LastCommit
 		}
 	}
 
-	// Only analyze if main branch is active
+	// Only analyze if main branch is active (has commits within last 3 years)
 	if !report.MainBranchUpdated {
 		return report, nil
 	}
