@@ -72,6 +72,9 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 		".cfg":   "Config",
 		".conf":  "Config",
 		".sql":   "SQL",
+		".tf":    "HCL",
+		".tfvars": "HCL",
+		".hcl":   "HCL",
 	}
 	
 	// Define documentation/text extensions

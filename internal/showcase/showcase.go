@@ -21,12 +21,15 @@ type Generator struct {
 
 // ProjectSummary holds the summary information for a project
 type ProjectSummary struct {
-	Name        string
-	Summary     string
-	CodebergURL string
-	GitHubURL   string
-	Metadata    *RepoMetadata
-	Images      []string // Relative paths to images in showcase directory
+	Name         string
+	Summary      string
+	CodebergURL  string
+	GitHubURL    string
+	Metadata     *RepoMetadata
+	Images       []string // Relative paths to images in showcase directory
+	CodeSnippet  string   // Code snippet to show when no images
+	CodeLanguage string   // Language and file info for the snippet
+	AIAssisted   bool     // Whether AI was detected in the project
 }
 
 // LegacyRepoMetadata for backwards compatibility with old cache files
@@ -261,13 +264,31 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		// Continue without images
 	}
 
+	// Extract code snippet if no images found
+	var codeSnippet, codeLanguage string
+	if len(images) == 0 && metadata != nil && len(metadata.Languages) > 0 {
+		snippet, lang, err := extractCodeSnippet(repoPath, metadata.Languages)
+		if err != nil {
+			fmt.Printf("Warning: Failed to extract code snippet: %v\n", err)
+		} else {
+			codeSnippet = snippet
+			codeLanguage = lang
+		}
+	}
+	
+	// Check for AI assistance
+	aiAssisted := detectAIUsage(repoPath)
+	
 	projectSummary := &ProjectSummary{
-		Name:        repoName,
-		Summary:     summary,
-		CodebergURL: codebergURL,
-		GitHubURL:   githubURL,
-		Metadata:    metadata,
-		Images:      images,
+		Name:         repoName,
+		Summary:      summary,
+		CodebergURL:  codebergURL,
+		GitHubURL:    githubURL,
+		Metadata:     metadata,
+		Images:       images,
+		CodeSnippet:  codeSnippet,
+		CodeLanguage: codeLanguage,
+		AIAssisted:   aiAssisted,
 	}
 	
 	// Save to cache
@@ -359,17 +380,17 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	
 	// Write total stats section
 	builder.WriteString("## Overall Statistics\n\n")
-	builder.WriteString(fmt.Sprintf("* Total Projects: %d\n", totalProjects))
-	builder.WriteString(fmt.Sprintf("* Total Commits: %s\n", formatNumber(totalCommits)))
-	builder.WriteString(fmt.Sprintf("* Total Lines of Code: %s\n", formatNumber(totalLOC)))
+	builder.WriteString(fmt.Sprintf("* 📦 Total Projects: %d\n", totalProjects))
+	builder.WriteString(fmt.Sprintf("* 📊 Total Commits: %s\n", formatNumber(totalCommits)))
+	builder.WriteString(fmt.Sprintf("* 📈 Total Lines of Code: %s\n", formatNumber(totalLOC)))
 	if totalDocs > 0 {
-		builder.WriteString(fmt.Sprintf("* Total Lines of Documentation: %s\n", formatNumber(totalDocs)))
+		builder.WriteString(fmt.Sprintf("* 📄 Total Lines of Documentation: %s\n", formatNumber(totalDocs)))
 	}
 	if len(languageStats) > 0 {
-		builder.WriteString(fmt.Sprintf("* Languages: %s\n", FormatLanguagesWithPercentages(languageStats)))
+		builder.WriteString(fmt.Sprintf("* 💻 Languages: %s\n", FormatLanguagesWithPercentages(languageStats)))
 	}
 	if len(docStats) > 0 {
-		builder.WriteString(fmt.Sprintf("* Documentation: %s\n", FormatLanguagesWithPercentages(docStats)))
+		builder.WriteString(fmt.Sprintf("* 📚 Documentation: %s\n", FormatLanguagesWithPercentages(docStats)))
 	}
 	builder.WriteString("\n")
 	
@@ -389,19 +410,24 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		// Add metadata if available
 		if summary.Metadata != nil {
 			if len(summary.Metadata.Languages) > 0 {
-				builder.WriteString(fmt.Sprintf("* Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages)))
+				builder.WriteString(fmt.Sprintf("* 💻 Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages)))
 			}
 			if len(summary.Metadata.Documentation) > 0 {
-				builder.WriteString(fmt.Sprintf("* Documentation: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Documentation)))
+				builder.WriteString(fmt.Sprintf("* 📚 Documentation: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Documentation)))
 			}
-			builder.WriteString(fmt.Sprintf("* Commits: %d\n", summary.Metadata.CommitCount))
-			builder.WriteString(fmt.Sprintf("* Lines of Code: %d\n", summary.Metadata.LinesOfCode))
+			builder.WriteString(fmt.Sprintf("* 📊 Commits: %d\n", summary.Metadata.CommitCount))
+			builder.WriteString(fmt.Sprintf("* 📈 Lines of Code: %d\n", summary.Metadata.LinesOfCode))
 			if summary.Metadata.LinesOfDocs > 0 {
-				builder.WriteString(fmt.Sprintf("* Lines of Documentation: %d\n", summary.Metadata.LinesOfDocs))
+				builder.WriteString(fmt.Sprintf("* 📄 Lines of Documentation: %d\n", summary.Metadata.LinesOfDocs))
 			}
-			builder.WriteString(fmt.Sprintf("* Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
-			builder.WriteString(fmt.Sprintf("* Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
-			builder.WriteString(fmt.Sprintf("* License: %s\n", summary.Metadata.License))
+			builder.WriteString(fmt.Sprintf("* 📅 Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
+			builder.WriteString(fmt.Sprintf("* 🔥 Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
+			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
+			
+			// Add AI-Assisted notice if detected
+			if summary.AIAssisted {
+				builder.WriteString("* 🤖 AI-Assisted: This project was partially generated with the help of generative AI\n")
+			}
 			
 			// Check if project might be obsolete (avg age > 2 years AND last commit > 1 year)
 			if summary.Metadata.AvgCommitAge > 730 && summary.Metadata.LastCommitDate != "" {
@@ -440,7 +466,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 				builder.WriteString(fmt.Sprintf("%s\n\n", strings.TrimSpace(paragraphs[i])))
 			}
 		} else {
-			// No images, just add paragraphs normally
+			// No images - just add all paragraphs
 			for _, para := range paragraphs {
 				builder.WriteString(fmt.Sprintf("%s\n\n", strings.TrimSpace(para)))
 			}
@@ -452,6 +478,11 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		}
 		if summary.GitHubURL != "" {
 			builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
+		}
+		
+		// Add code snippet at the end (no header, just the code)
+		if summary.CodeSnippet != "" && len(summary.Images) == 0 {
+			builder.WriteString(fmt.Sprintf("\n%s:\n\n```\n%s\n```\n", summary.CodeLanguage, summary.CodeSnippet))
 		}
 	}
 
@@ -647,4 +678,30 @@ func formatNumber(n int) string {
 	}
 	
 	return string(result)
+}
+
+// detectAIUsage checks if the repository was generated with AI assistance
+func detectAIUsage(repoPath string) bool {
+	// Check for AI-related files
+	aiFiles := []string{"CLAUDE.md", "GEMINI.md"}
+	for _, aiFile := range aiFiles {
+		filePath := filepath.Join(repoPath, aiFile)
+		if _, err := os.Stat(filePath); err == nil {
+			return true
+		}
+	}
+	
+	// Search for "agentic coding" string in the repository
+	cmd := exec.Command("rg", "-i", "--max-count", "1", "agentic coding", repoPath)
+	if output, err := cmd.Output(); err == nil && len(output) > 0 {
+		return true
+	}
+	
+	// Fallback to grep if rg is not available
+	cmd = exec.Command("grep", "-r", "-i", "-m", "1", "agentic coding", repoPath)
+	if output, err := cmd.Output(); err == nil && len(output) > 0 {
+		return true
+	}
+	
+	return false
 }
