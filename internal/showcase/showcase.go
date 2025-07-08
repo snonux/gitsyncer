@@ -760,6 +760,7 @@ func extractLanguageForHighlighting(codeLanguage string) string {
 			"toml":         "toml",
 			"hcl":          "hcl",
 			"vim":          "vim",
+			"awk":          "awk",
 		}
 		
 		if mapped, ok := languageMap[lang]; ok {

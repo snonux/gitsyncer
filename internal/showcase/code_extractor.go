@@ -48,6 +48,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		"SQL":          {".sql"},
 		"Make":         {"Makefile", "makefile", "GNUmakefile"},
 		"HCL":          {".tf", ".tfvars", ".hcl"},
+		"AWK":          {".awk"},
 	}
 
 	// Get file extensions for the primary language

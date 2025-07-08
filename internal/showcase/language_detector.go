@@ -75,6 +75,7 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 		".tf":    "HCL",
 		".tfvars": "HCL",
 		".hcl":   "HCL",
+		".awk":   "AWK",
 	}
 	
 	// Define documentation/text extensions
