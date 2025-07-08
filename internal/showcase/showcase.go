@@ -264,9 +264,9 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		// Continue without images
 	}
 
-	// Extract code snippet if no images found
+	// Extract code snippet for all projects
 	var codeSnippet, codeLanguage string
-	if len(images) == 0 && metadata != nil && len(metadata.Languages) > 0 {
+	if metadata != nil && len(metadata.Languages) > 0 {
 		snippet, lang, err := extractCodeSnippet(repoPath, metadata.Languages)
 		if err != nil {
 			fmt.Printf("Warning: Failed to extract code snippet: %v\n", err)
@@ -319,10 +319,15 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	totalCommits := 0
 	totalLOC := 0
 	totalDocs := 0
+	aiAssistedCount := 0
 	languageTotals := make(map[string]int)
 	docTotals := make(map[string]int)
 	
 	for _, summary := range summaries {
+		if summary.AIAssisted {
+			aiAssistedCount++
+		}
+		
 		if summary.Metadata != nil {
 			totalCommits += summary.Metadata.CommitCount
 			totalLOC += summary.Metadata.LinesOfCode
@@ -392,6 +397,11 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	if len(docStats) > 0 {
 		builder.WriteString(fmt.Sprintf("* 📚 Documentation: %s\n", FormatLanguagesWithPercentages(docStats)))
 	}
+	nonAICount := totalProjects - aiAssistedCount
+	builder.WriteString(fmt.Sprintf("* 🤖 AI-Assisted Projects: %d out of %d (%.1f%% AI-assisted, %.1f%% human-only)\n", 
+		aiAssistedCount, totalProjects, 
+		float64(aiAssistedCount)*100/float64(totalProjects),
+		float64(nonAICount)*100/float64(totalProjects)))
 	builder.WriteString("\n")
 	
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
@@ -480,8 +490,8 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
 		}
 		
-		// Add code snippet at the end (no header, just the code)
-		if summary.CodeSnippet != "" && len(summary.Images) == 0 {
+		// Add code snippet at the end for all projects
+		if summary.CodeSnippet != "" {
 			builder.WriteString(fmt.Sprintf("\n%s:\n\n```\n%s\n```\n", summary.CodeLanguage, summary.CodeSnippet))
 		}
 	}
