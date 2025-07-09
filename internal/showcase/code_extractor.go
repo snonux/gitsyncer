@@ -144,13 +144,38 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		return "", "", fmt.Errorf("no code files found")
 	}
 
-	// Select a random file
-	selectedFile := codeFiles[rand.Intn(len(codeFiles))]
+	// Try multiple files to find one with good line lengths
+	rand.Shuffle(len(codeFiles), func(i, j int) {
+		codeFiles[i], codeFiles[j] = codeFiles[j], codeFiles[i]
+	})
 	
-	// Read the file and extract a snippet (~10 lines but complete functions)
-	snippet, err := extractSnippetFromFile(selectedFile, 10, 15)
-	if err != nil {
-		return "", "", err
+	var snippet string
+	var selectedFile string
+	
+	// Try up to 5 files to find a good snippet
+	for i := 0; i < len(codeFiles) && i < 5; i++ {
+		candidateFile := codeFiles[i]
+		candidateSnippet, err := extractSnippetFromFile(candidateFile, 10, 15)
+		if err != nil {
+			continue
+		}
+		
+		// Check if this snippet has acceptable line lengths
+		if hasAcceptableLineLength(candidateSnippet, 80) {
+			snippet = candidateSnippet
+			selectedFile = candidateFile
+			break
+		}
+		
+		// Keep the first valid snippet as fallback
+		if snippet == "" {
+			snippet = candidateSnippet
+			selectedFile = candidateFile
+		}
+	}
+	
+	if snippet == "" {
+		return "", "", fmt.Errorf("no valid code snippets found")
 	}
 
 	// Get relative path for display
@@ -276,8 +301,17 @@ func findSmallestCompleteFunction(lines []string) string {
 		}
 	}
 	
-	// Find the smallest function
+	// Find the smallest function with acceptable line lengths
 	if len(functions) > 0 {
+		// First try to find a function with all lines <= 80 chars
+		for _, f := range functions {
+			snippet := strings.Join(lines[f.start:f.end+1], "\n")
+			if hasAcceptableLineLength(snippet, 80) {
+				return snippet
+			}
+		}
+		
+		// If none found, return the smallest function (will be broken later)
 		smallest := functions[0]
 		for _, f := range functions[1:] {
 			if f.size < smallest.size {
@@ -487,6 +521,9 @@ func stripComments(code string) string {
 	// Remove unnecessary indentation
 	result = removeCommonIndentation(result)
 	
+	// Break long lines
+	result = breakLongLines(result, 80)
+	
 	return strings.Join(result, "\n")
 }
 
@@ -561,6 +598,132 @@ func removeCommonIndentation(lines []string) []string {
 		} else {
 			result[i] = line
 		}
+	}
+	
+	return result
+}
+
+// hasAcceptableLineLength checks if all lines in the snippet are within maxLength
+func hasAcceptableLineLength(snippet string, maxLength int) bool {
+	lines := strings.Split(snippet, "\n")
+	for _, line := range lines {
+		if len(line) > maxLength {
+			return false
+		}
+	}
+	return true
+}
+
+// breakLongLines breaks lines that exceed maxLength at appropriate points
+func breakLongLines(lines []string, maxLength int) []string {
+	var result []string
+	
+	for _, line := range lines {
+		if len(line) <= maxLength {
+			result = append(result, line)
+			continue
+		}
+		
+		// Try to break the line intelligently
+		broken := breakLine(line, maxLength)
+		result = append(result, broken...)
+	}
+	
+	return result
+}
+
+// breakLine breaks a single line at appropriate points
+func breakLine(line string, maxLength int) []string {
+	// If the line is short enough, return as-is
+	if len(line) <= maxLength {
+		return []string{line}
+	}
+	
+	// Get the indentation of the original line
+	indent := ""
+	for _, ch := range line {
+		if ch == ' ' || ch == '\t' {
+			indent += string(ch)
+		} else {
+			break
+		}
+	}
+	
+	// Common break points in order of preference
+	breakPoints := []string{
+		", ",      // After comma
+		" && ",    // Before logical operators
+		" || ",
+		" + ",     // Before arithmetic operators
+		" - ",
+		" * ",
+		" / ",
+		" = ",     // Before assignment
+		" := ",
+		" == ",    // Before comparison
+		" != ",
+		" < ",
+		" > ",
+		" <= ",
+		" >= ",
+		"(",       // After opening parenthesis
+		" ",       // Any space
+	}
+	
+	var result []string
+	remaining := line
+	isFirstLine := true
+	
+	for len(remaining) > maxLength {
+		// Find the best break point
+		bestBreak := -1
+		
+		for _, breakPoint := range breakPoints {
+			// Look for break point before maxLength
+			searchIn := remaining
+			if len(searchIn) > maxLength {
+				searchIn = remaining[:maxLength]
+			}
+			
+			idx := strings.LastIndex(searchIn, breakPoint)
+			if idx > 0 && idx < maxLength {
+				// For some break points, we want to break after them
+				if breakPoint == ", " || breakPoint == "(" {
+					idx += len(breakPoint)
+				}
+				if idx > bestBreak {
+					bestBreak = idx
+				}
+			}
+		}
+		
+		// If no good break point found, break at maxLength
+		if bestBreak == -1 {
+			bestBreak = maxLength
+		}
+		
+		// Add the line
+		lineToAdd := remaining[:bestBreak]
+		if !isFirstLine && !strings.HasPrefix(strings.TrimSpace(lineToAdd), "//") {
+			// Add extra indentation for continuation
+			lineToAdd = indent + "  " + strings.TrimLeft(lineToAdd, " \t")
+		}
+		result = append(result, strings.TrimRight(lineToAdd, " "))
+		
+		// Update remaining
+		remaining = remaining[bestBreak:]
+		if !isFirstLine && !strings.HasPrefix(strings.TrimSpace(remaining), "//") {
+			remaining = strings.TrimLeft(remaining, " ")
+		}
+		isFirstLine = false
+	}
+	
+	// Add the last part
+	if len(remaining) > 0 {
+		if !isFirstLine && !strings.HasPrefix(strings.TrimSpace(remaining), "//") {
+			remaining = indent + "  " + strings.TrimLeft(remaining, " \t")
+		}
+		result = append(result, remaining)
 	}
 	
 	return result
