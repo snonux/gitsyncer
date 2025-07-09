@@ -6,7 +6,22 @@ import (
 	"path/filepath"
 
 	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"codeberg.org/snonux/gitsyncer/internal/state"
 )
+
+// saveBatchRunState saves the batch run timestamp if this is a batch run
+func saveBatchRunState(flags *cli.Flags) {
+	if flags.BatchRun && flags.BatchRunStateManager != nil && flags.BatchRunState != nil {
+		flags.BatchRunState.UpdateBatchRunTime()
+		if err := flags.BatchRunStateManager.Save(flags.BatchRunState); err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to save batch run state: %v\n", err)
+		} else {
+			stateFile := filepath.Join(flags.WorkDir, ".gitsyncer-state.json")
+			fmt.Printf("Batch run completed successfully. State saved to: %s\n", stateFile)
+			fmt.Println("Next batch run allowed after one week.")
+		}
+	}
+}
 
 func main() {
 	// Parse command-line flags
@@ -41,6 +56,32 @@ func main() {
 	if flags.WorkDir == defaultWorkDir && cfg.WorkDir != "" {
 		// User didn't specify --work-dir, so use config value
 		flags.WorkDir = cfg.WorkDir
+	}
+
+	// Handle --batch-run flag: check if it has run within the past week
+	if flags.BatchRun {
+		stateManager := state.NewManager(flags.WorkDir)
+		s, err := stateManager.Load()
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "Warning: Failed to load state: %v\n", err)
+			// Continue anyway on first run
+		}
+		
+		if s.HasRunWithinWeek() {
+			fmt.Printf("Batch run was already executed within the past week (last run: %s).\n", s.LastBatchRun.Format("2006-01-02 15:04:05"))
+			stateFile := filepath.Join(flags.WorkDir, ".gitsyncer-state.json")
+			fmt.Printf("State file location: %s\n", stateFile)
+			fmt.Println("Skipping batch run. Use --full and --showcase directly to force execution.")
+			os.Exit(0)
+		}
+		
+		// If we get here, we can proceed with the batch run
+		fmt.Println("Starting weekly batch run (--full --showcase)...")
+		
+		// Update the state to record this batch run (we'll save it after successful completion)
+		// Store the state manager for later use
+		flags.BatchRunStateManager = stateManager
+		flags.BatchRunState = s
 	}
 
 	// Handle delete repository flag
@@ -106,6 +147,11 @@ func main() {
 			if showcaseCode != 0 {
 				os.Exit(showcaseCode)
 			}
+		}
+		
+		// Save batch run state if this was a successful batch run
+		if exitCode == 0 {
+			saveBatchRunState(flags)
 		}
 		
 		os.Exit(exitCode)

@@ -4,6 +4,8 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
+	
+	"codeberg.org/snonux/gitsyncer/internal/state"
 )
 
 // Flags holds all command-line flag values
@@ -27,6 +29,11 @@ type Flags struct {
 	Backup             bool
 	Showcase           bool
 	Force              bool
+	BatchRun           bool
+	
+	// Internal fields for batch run state management (not set by flags)
+	BatchRunStateManager *state.Manager
+	BatchRunState        *state.State
 }
 
 // ParseFlags parses command-line flags and returns the flags struct
@@ -54,6 +61,7 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.Backup, "backup", false, "enable syncing to backup locations")
 	flag.BoolVar(&f.Showcase, "showcase", false, "generate project showcase using Claude after syncing")
 	flag.BoolVar(&f.Force, "force", false, "force regeneration of cached data")
+	flag.BoolVar(&f.BatchRun, "batch-run", false, "enable --full and --showcase (runs only once per week)")
 	
 	flag.Parse()
 	
@@ -70,6 +78,17 @@ func ParseFlags() *Flags {
 	
 	// Handle --full flag by enabling all sync operations
 	if f.FullSync {
+		f.SyncCodebergPublic = true
+		f.SyncGitHubPublic = true
+		f.CreateGitHubRepos = true
+		f.CreateCodebergRepos = true
+	}
+	
+	// Handle --batch-run flag by enabling --full and --showcase
+	if f.BatchRun {
+		f.FullSync = true
+		f.Showcase = true
+		// Since we set FullSync, it will trigger the above logic too
 		f.SyncCodebergPublic = true
 		f.SyncGitHubPublic = true
 		f.CreateGitHubRepos = true
