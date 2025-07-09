@@ -27,6 +27,7 @@ GitSyncer is a tool for synchronizing git repositories between multiple organiza
 - GitHub token validation tool
 - Opt-in backup mode with --backup flag for resilient offline backups
 - AI-powered project showcase generation for documentation
+- Weekly batch run mode with --batch-run for automated synchronization
 
 ## Installation
 
@@ -109,6 +110,16 @@ Create a `gitsyncer.json` file:
 
 # With dry run to see what would happen
 ./gitsyncer --full --dry-run
+```
+
+### Automated weekly batch run
+```bash
+# Run full sync with showcase generation, but only once per week
+# This enables --full and --showcase with a weekly timer
+./gitsyncer --batch-run
+
+# The batch run state is saved to {workDir}/.gitsyncer-state.json
+# Subsequent runs within 7 days will be skipped
 ```
 
 ### List configured organizations
@@ -295,6 +306,27 @@ The showcase output is written to `~/git/foo.zone-content/gemtext/about/showcase
 Projects can be excluded from the showcase by creating a `.nosync` file in their repository root.
 
 ## Example Workflows
+
+### Automated weekly synchronization
+The `--batch-run` feature is designed for automated weekly synchronization from cron jobs or shell scripts:
+
+1. Add to your crontab or shell profile:
+   ```bash
+   # Run daily - gitsyncer will only execute once per week
+   0 2 * * * /path/to/gitsyncer --batch-run
+   ```
+
+2. On each run, GitSyncer will:
+   - Check if a week has passed since the last batch run
+   - If yes: Execute full sync (--full) and showcase generation (--showcase)
+   - If no: Skip execution and show when the last run occurred
+   - Save the timestamp to `.gitsyncer-state.json` in your work directory
+
+3. Benefits:
+   - Prevents excessive API usage
+   - Can be safely called daily/hourly without worry
+   - Maintains weekly sync cadence automatically
+   - Shows state file location for debugging
 
 ### Sync specific repositories
 1. Create repositories on all platforms (GitHub, Codeberg, etc.)
