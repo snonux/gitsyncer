@@ -312,7 +312,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 	
 	// Introduction paragraph
-	builder.WriteString("This page showcases my open source projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ordered by recent activity, with the most actively maintained projects listed first.\n\n")
+	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ordered by recent activity, with the most actively maintained projects listed first.\n\n")
 	
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
