@@ -2,6 +2,8 @@
 
 GitSyncer is a tool for synchronizing git repositories between multiple organizations (e.g., GitHub and Codeberg). It automatically keeps all branches in sync across different git hosting platforms.
 
+It has been vibe coded mainly using Claude Code CLI.
+
 ## Documentation
 
 📚 **[Full documentation is available in the doc/ directory](doc/README.md)**
