@@ -78,6 +78,33 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		fmt.Print(summary)
 	}
 	
+	// Generate script for abandoned branches
+	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
+		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
+	} else if scriptPath != "" {
+		fmt.Printf("\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n")
+		fmt.Printf("Generated script: %s\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("Usage:\n")
+		fmt.Printf("  bash %s --review       # Review diffs before deletion\n", scriptPath)
+		fmt.Printf("  bash %s --review-full  # Review full diffs\n", scriptPath)
+		fmt.Printf("  bash %s --dry-run      # Preview what will be deleted\n", scriptPath)
+		fmt.Printf("  bash %s                # Delete branches (with confirmation)\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("💡 Recommended workflow:\n")
+		fmt.Printf("  1. Review branches:  bash %s --review\n", scriptPath)
+		fmt.Printf("  2. Dry-run delete:   bash %s --dry-run\n", scriptPath)
+		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n")
+	}
+	
 	return 0
 }
 
@@ -309,6 +336,33 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		fmt.Print(summary)
 	}
 	
+	// Generate script for abandoned branches
+	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
+		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
+	} else if scriptPath != "" {
+		fmt.Printf("\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n")
+		fmt.Printf("Generated script: %s\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("Usage:\n")
+		fmt.Printf("  bash %s --review       # Review diffs before deletion\n", scriptPath)
+		fmt.Printf("  bash %s --review-full  # Review full diffs\n", scriptPath)
+		fmt.Printf("  bash %s --dry-run      # Preview what will be deleted\n", scriptPath)
+		fmt.Printf("  bash %s                # Delete branches (with confirmation)\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("💡 Recommended workflow:\n")
+		fmt.Printf("  1. Review branches:  bash %s --review\n", scriptPath)
+		fmt.Printf("  2. Dry-run delete:   bash %s --dry-run\n", scriptPath)
+		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n")
+	}
+	
 	if !flags.SyncGitHubPublic {
 		return 0
 	}
@@ -373,6 +427,33 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 	// Print abandoned branches summary
 	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
+	}
+	
+	// Generate script for abandoned branches
+	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
+		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
+	} else if scriptPath != "" {
+		fmt.Printf("\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n")
+		fmt.Printf("Generated script: %s\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("Usage:\n")
+		fmt.Printf("  bash %s --review       # Review diffs before deletion\n", scriptPath)
+		fmt.Printf("  bash %s --review-full  # Review full diffs\n", scriptPath)
+		fmt.Printf("  bash %s --dry-run      # Preview what will be deleted\n", scriptPath)
+		fmt.Printf("  bash %s                # Delete branches (with confirmation)\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("💡 Recommended workflow:\n")
+		fmt.Printf("  1. Review branches:  bash %s --review\n", scriptPath)
+		fmt.Printf("  2. Dry-run delete:   bash %s --dry-run\n", scriptPath)
+		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
+		fmt.Printf("\n")
+		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
+		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Printf("\n")
 	}
 
 	return 0

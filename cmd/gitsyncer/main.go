@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/state"
 )
 
@@ -20,6 +21,15 @@ func saveBatchRunState(flags *cli.Flags) {
 			fmt.Printf("Batch run completed successfully. State saved to: %s\n", stateFile)
 			fmt.Println("Next batch run allowed after one week.")
 		}
+	}
+}
+
+// runReleaseCheckIfEnabled runs release checking after successful sync operations
+func runReleaseCheckIfEnabled(cfg *config.Config, flags *cli.Flags) {
+	// Run release checks automatically unless disabled
+	if !flags.NoCheckReleases {
+		fmt.Println("\nChecking for missing releases...")
+		cli.HandleCheckReleases(cfg, flags)
 	}
 }
 
@@ -102,10 +112,13 @@ func main() {
 	// Handle sync operation
 	if flags.SyncRepo != "" {
 		exitCode := cli.HandleSync(cfg, flags)
-		if exitCode == 0 && flags.Showcase {
-			showcaseCode := cli.HandleShowcase(cfg, flags)
-			if showcaseCode != 0 {
-				os.Exit(showcaseCode)
+		if exitCode == 0 {
+			runReleaseCheckIfEnabled(cfg, flags)
+			if flags.Showcase {
+				showcaseCode := cli.HandleShowcase(cfg, flags)
+				if showcaseCode != 0 {
+					os.Exit(showcaseCode)
+				}
 			}
 		}
 		os.Exit(exitCode)
@@ -114,10 +127,13 @@ func main() {
 	// Handle sync all operation
 	if flags.SyncAll {
 		exitCode := cli.HandleSyncAll(cfg, flags)
-		if exitCode == 0 && flags.Showcase {
-			showcaseCode := cli.HandleShowcase(cfg, flags)
-			if showcaseCode != 0 {
-				os.Exit(showcaseCode)
+		if exitCode == 0 {
+			runReleaseCheckIfEnabled(cfg, flags)
+			if flags.Showcase {
+				showcaseCode := cli.HandleShowcase(cfg, flags)
+				if showcaseCode != 0 {
+					os.Exit(showcaseCode)
+				}
 			}
 		}
 		os.Exit(exitCode)
@@ -127,10 +143,13 @@ func main() {
 	if flags.SyncCodebergPublic {
 		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
 		if exitCode != 0 || !flags.SyncGitHubPublic {
-			if exitCode == 0 && flags.Showcase && !flags.SyncGitHubPublic {
-				showcaseCode := cli.HandleShowcase(cfg, flags)
-				if showcaseCode != 0 {
-					os.Exit(showcaseCode)
+			if exitCode == 0 {
+				runReleaseCheckIfEnabled(cfg, flags)
+				if flags.Showcase && !flags.SyncGitHubPublic {
+					showcaseCode := cli.HandleShowcase(cfg, flags)
+					if showcaseCode != 0 {
+						os.Exit(showcaseCode)
+					}
 				}
 			}
 			os.Exit(exitCode)
@@ -141,20 +160,28 @@ func main() {
 	if flags.SyncGitHubPublic {
 		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
 		
-		// Run showcase generation if requested and sync was successful
-		if exitCode == 0 && flags.Showcase {
-			showcaseCode := cli.HandleShowcase(cfg, flags)
-			if showcaseCode != 0 {
-				os.Exit(showcaseCode)
-			}
-		}
-		
-		// Save batch run state if this was a successful batch run
 		if exitCode == 0 {
+			// Run release checks after successful sync
+			runReleaseCheckIfEnabled(cfg, flags)
+			
+			// Run showcase generation if requested
+			if flags.Showcase {
+				showcaseCode := cli.HandleShowcase(cfg, flags)
+				if showcaseCode != 0 {
+					os.Exit(showcaseCode)
+				}
+			}
+			
+			// Save batch run state if this was a successful batch run
 			saveBatchRunState(flags)
 		}
 		
 		os.Exit(exitCode)
+	}
+	
+	// Handle check releases flag
+	if flags.CheckReleases {
+		os.Exit(cli.HandleCheckReleases(cfg, flags))
 	}
 	
 	// Handle standalone showcase mode (no sync operations specified)

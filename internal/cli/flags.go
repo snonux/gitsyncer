@@ -30,6 +30,9 @@ type Flags struct {
 	Showcase           bool
 	Force              bool
 	BatchRun           bool
+	CheckReleases      bool
+	NoCheckReleases    bool
+	AutoCreateReleases bool
 	
 	// Internal fields for batch run state management (not set by flags)
 	BatchRunStateManager *state.Manager
@@ -62,6 +65,9 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.Showcase, "showcase", false, "generate project showcase using Claude after syncing")
 	flag.BoolVar(&f.Force, "force", false, "force regeneration of cached data")
 	flag.BoolVar(&f.BatchRun, "batch-run", false, "enable --full and --showcase (runs only once per week)")
+	flag.BoolVar(&f.CheckReleases, "check-releases", false, "manually check for version tags without releases and create them (with confirmation)")
+	flag.BoolVar(&f.NoCheckReleases, "no-check-releases", false, "disable automatic release checking after sync operations")
+	flag.BoolVar(&f.AutoCreateReleases, "auto-create-releases", false, "automatically create releases without confirmation prompts")
 	
 	flag.Parse()
 	

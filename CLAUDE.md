@@ -30,7 +30,19 @@ task clean
 
 # Delete a repository from all configured organizations (with confirmation)
 ./gitsyncer --delete-repo <repository-name>
+
+# Manually check for version tags without releases
+./gitsyncer --check-releases
+
+# Disable automatic release checking during sync operations
+./gitsyncer --sync-all --no-check-releases
+
+# Automatically create releases without confirmation prompts
+./gitsyncer --check-releases --auto-create-releases
+./gitsyncer --sync-all --auto-create-releases
 ```
+
+Note: Release checking is enabled by default after sync operations. It will check for version tags (formats: vX.Y.Z, vX.Y, vX, X.Y.Z, X.Y, X) that don't have corresponding releases on GitHub/Codeberg and prompt for confirmation before creating them.
 
 Note: The Taskfile.yaml is configured for [go-task](https://taskfile.dev/). Install with:
 ```bash
@@ -68,7 +80,9 @@ This follows the standard Go project layout with:
 The application currently provides:
 - Version information system (internal/version)
 - CLI flag parsing for --version
-- Placeholder for main gitsyncer functionality
+- Automatic release checking and creation (internal/release)
+- Repository syncing across GitHub, Codeberg, and other platforms
+- Project showcase generation
 
 ## Next Steps
 
@@ -77,3 +91,8 @@ The project needs:
 2. Webhook support for automatic syncing
 3. Conflict resolution strategies
 4. Better handling of large repositories
+
+## Release Process
+
+- When releasing a version, increment the version in version.go, commit all changes to git and push. and tag the version and push to git.
+- Gitsyncer will automatically detect the new version tag and prompt to create releases on GitHub and Codeberg using the tokens from your gitsyncer configuration file.
