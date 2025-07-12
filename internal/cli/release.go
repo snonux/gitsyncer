@@ -22,8 +22,31 @@ func isVersionTag(tag string) bool {
 
 // HandleCheckReleases checks for version tags without releases and creates them with confirmation
 func HandleCheckReleases(cfg *config.Config, flags *Flags) int {
-	// Check all configured repositories
-	return HandleCheckReleasesForRepos(cfg, flags, cfg.Repositories)
+	// Get all repositories from work directory
+	entries, err := os.ReadDir(flags.WorkDir)
+	if err != nil {
+		fmt.Printf("Error reading work directory %s: %v\n", flags.WorkDir, err)
+		return 1
+	}
+	
+	var repositories []string
+	for _, entry := range entries {
+		if entry.IsDir() {
+			// Check if it's a git repository
+			gitPath := filepath.Join(flags.WorkDir, entry.Name(), ".git")
+			if _, err := os.Stat(gitPath); err == nil {
+				repositories = append(repositories, entry.Name())
+			}
+		}
+	}
+	
+	if len(repositories) == 0 {
+		fmt.Println("No repositories found in work directory")
+		return 1
+	}
+	
+	fmt.Printf("Found %d repositories in work directory\n", len(repositories))
+	return HandleCheckReleasesForRepos(cfg, flags, repositories)
 }
 
 // HandleCheckReleasesForRepo checks releases for a specific repository
@@ -366,129 +389,6 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 									fmt.Printf("  Error updating Codeberg release: %v\n", err)
 								} else {
 									fmt.Printf("  Updated Codeberg release for tag %s\n", tag)
-								}
-							}
-						}
-					}
-				}
-			}
-		}
-	}
-	
-	// Also check public repositories if they're synced
-	if flags.SyncGitHubPublic || flags.SyncCodebergPublic {
-		fmt.Println("\nChecking public repositories...")
-		
-		// Process synced public repos from work directory
-		entries, err := os.ReadDir(flags.WorkDir)
-		if err == nil {
-			for _, entry := range entries {
-				if !entry.IsDir() {
-					continue
-				}
-				
-				repoName := entry.Name()
-				repoPath := filepath.Join(flags.WorkDir, repoName)
-				
-				// Skip if it's already in configured repositories
-				isConfigured := false
-				for _, configuredRepo := range cfg.Repositories {
-					if configuredRepo == repoName {
-						isConfigured = true
-						break
-					}
-				}
-				
-				if isConfigured {
-					continue
-				}
-				
-				// Check if it's a git repository
-				if _, err := os.Stat(filepath.Join(repoPath, ".git")); os.IsNotExist(err) {
-					continue
-				}
-				
-				fmt.Printf("\nChecking releases for public repository: %s\n", repoName)
-				
-				// Get local tags
-				localTags, err := releaseManager.GetLocalTags(repoPath)
-				if err != nil {
-					fmt.Printf("  Error getting local tags: %v\n", err)
-					continue
-				}
-				
-				if len(localTags) == 0 {
-					fmt.Println("  No version tags found")
-					continue
-				}
-				
-				fmt.Printf("  Found %d version tags: %s\n", len(localTags), strings.Join(localTags, ", "))
-				
-				// Check releases on both platforms
-				githubOrg := cfg.FindGitHubOrg()
-				if githubOrg != nil && githubOrg.Name != "" {
-					githubReleases, err := releaseManager.GetGitHubReleases(githubOrg.Name, repoName)
-					if err == nil {
-						missingGitHub := releaseManager.FindMissingReleases(localTags, githubReleases)
-						if len(missingGitHub) > 0 {
-							fmt.Printf("  Missing GitHub releases: %s\n", strings.Join(missingGitHub, ", "))
-							
-							for _, tag := range missingGitHub {
-								// Generate release notes
-								releaseNotes := releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-								
-								msg := fmt.Sprintf("Create GitHub release for %s/%s tag %s?", githubOrg.Name, repoName, tag)
-								
-								// Check if auto-create is enabled
-								createRelease := false
-								if flags.AutoCreateReleases {
-									fmt.Printf("  Auto-creating GitHub release for %s/%s tag %s\n", githubOrg.Name, repoName, tag)
-									createRelease = true
-								} else {
-									createRelease = release.PromptConfirmationWithNotes(msg, releaseNotes)
-								}
-								
-								if createRelease {
-									if err := releaseManager.CreateGitHubRelease(githubOrg.Name, repoName, tag, releaseNotes); err != nil {
-										fmt.Printf("  Error creating GitHub release: %v\n", err)
-									} else {
-										fmt.Printf("  Created GitHub release for tag %s\n", tag)
-									}
-								}
-							}
-						}
-					}
-				}
-				
-				codebergOrg := cfg.FindCodebergOrg()
-				if codebergOrg != nil && codebergOrg.Name != "" {
-					codebergReleases, err := releaseManager.GetCodebergReleases(codebergOrg.Name, repoName)
-					if err == nil {
-						missingCodeberg := releaseManager.FindMissingReleases(localTags, codebergReleases)
-						if len(missingCodeberg) > 0 {
-							fmt.Printf("  Missing Codeberg releases: %s\n", strings.Join(missingCodeberg, ", "))
-							
-							for _, tag := range missingCodeberg {
-								// Generate release notes
-								releaseNotes := releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-								
-								msg := fmt.Sprintf("Create Codeberg release for %s/%s tag %s?", codebergOrg.Name, repoName, tag)
-								
-								// Check if auto-create is enabled
-								createRelease := false
-								if flags.AutoCreateReleases {
-									fmt.Printf("  Auto-creating Codeberg release for %s/%s tag %s\n", codebergOrg.Name, repoName, tag)
-									createRelease = true
-								} else {
-									createRelease = release.PromptConfirmationWithNotes(msg, releaseNotes)
-								}
-								
-								if createRelease {
-									if err := releaseManager.CreateCodebergRelease(codebergOrg.Name, repoName, tag, releaseNotes); err != nil {
-										fmt.Printf("  Error creating Codeberg release: %v\n", err)
-									} else {
-										fmt.Printf("  Created Codeberg release for tag %s\n", tag)
-									}
 								}
 							}
 						}
