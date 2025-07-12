@@ -330,8 +330,15 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	
 	// Run Claude CLI
 	fmt.Println("  Running Claude CLI command:")
-	fmt.Printf("  claude --model sonnet <prompt>\n")
+	fmt.Println("  claude --model sonnet \"...\"")
 	fmt.Printf("  Prompt length: %d characters\n", len(prompt.String()))
+	fmt.Println("  Prompt preview (first 500 chars):")
+	promptStr := prompt.String()
+	if len(promptStr) > 500 {
+		fmt.Printf("  %s...\n", promptStr[:500])
+	} else {
+		fmt.Printf("  %s\n", promptStr)
+	}
 	
 	cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
 	output, err := cmd.Output()
