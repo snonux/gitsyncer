@@ -330,15 +330,15 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	
 	// Run Claude CLI
 	fmt.Println("  Running Claude CLI command:")
-	fmt.Printf("  claude --model sonnet-3.5 <prompt>\n")
+	fmt.Printf("  claude --model sonnet-4 <prompt>\n")
 	fmt.Printf("  Prompt length: %d characters\n", len(prompt.String()))
 	
-	cmd := exec.Command("claude", "--model", "sonnet-3.5", prompt.String())
+	cmd := exec.Command("claude", "--model", "sonnet-4", prompt.String())
 	output, err := cmd.Output()
 	if err != nil {
-		// Try with sonnet-4 model
-		fmt.Println("  Trying with sonnet-4 model...")
-		cmd = exec.Command("claude", "--model", "sonnet-4", prompt.String())
+		// Try with sonnet-3.5 model
+		fmt.Println("  Trying with sonnet-3.5 model...")
+		cmd = exec.Command("claude", "--model", "sonnet-3.5", prompt.String())
 		output, err = cmd.Output()
 		if err != nil {
 			// Try with default model
