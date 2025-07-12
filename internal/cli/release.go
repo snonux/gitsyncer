@@ -44,10 +44,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		// Try config token first, then fallback to env var and file
 		token := githubOrg.GitHubToken
 		if token == "" {
-			fmt.Println("No GitHub token in config, checking environment variable...")
+			// Try environment variable
 			token = os.Getenv("GITHUB_TOKEN")
 			if token == "" {
-				fmt.Println("No GITHUB_TOKEN env var, checking ~/.gitsyncer_github_token file...")
+				// Try token file
 				home, err := os.UserHomeDir()
 				if err == nil {
 					tokenFile := filepath.Join(home, ".gitsyncer_github_token")
@@ -75,10 +75,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		// Try config token first, then fallback to env var and file
 		token := codebergOrg.CodebergToken
 		if token == "" {
-			fmt.Println("No Codeberg token in config, checking environment variable...")
+			// Try environment variable
 			token = os.Getenv("CODEBERG_TOKEN")
 			if token == "" {
-				fmt.Println("No CODEBERG_TOKEN env var, checking ~/.gitsyncer_codeberg_token file...")
+				// Try token file
 				home, err := os.UserHomeDir()
 				if err == nil {
 					tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
