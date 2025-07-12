@@ -65,12 +65,24 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 	aiReleaseNotesCache := loadAIReleaseNotesCache(cacheFile)
 	initialCacheSize := len(aiReleaseNotesCache)
 	
-	// Print cache summary at the end if cache was modified
+	// Track failed AI generations
+	failedAIGenerations := []string{}
+	
+	// Print summary at the end
 	defer func() {
 		if len(aiReleaseNotesCache) > initialCacheSize {
 			fmt.Printf("\nAI release notes cache updated: %d new entries added (total: %d entries)\n", 
 				len(aiReleaseNotesCache)-initialCacheSize, len(aiReleaseNotesCache))
 			fmt.Printf("Cache file: %s\n", cacheFile)
+		}
+		
+		if len(failedAIGenerations) > 0 {
+			fmt.Printf("\n⚠️  AI release notes generation failed for %d releases:\n", len(failedAIGenerations))
+			for _, failed := range failedAIGenerations {
+				fmt.Printf("  - %s\n", failed)
+			}
+			fmt.Println("\nThese releases were skipped. Their cache entries were cleared.")
+			fmt.Println("Run again to retry generation for these releases.")
 		}
 	}()
 	
@@ -220,7 +232,11 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 							fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
 							fmt.Printf("  Falling back to standard release notes\n")
 							releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-							// Don't cache on failure
+							// Clear cache on failure and track
+							delete(aiReleaseNotesCache, cacheKey)
+							failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", githubOrg.Name, repoName, tag))
+							// Save cache after clearing the failed entry
+							saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
 						} else {
 							releaseNotes = aiNotes
 							aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
@@ -290,7 +306,11 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 							fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
 							fmt.Printf("  Falling back to standard release notes\n")
 							releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-							// Don't cache on failure
+							// Clear cache on failure and track
+							delete(aiReleaseNotesCache, cacheKey)
+							failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", githubOrg.Name, repoName, tag))
+							// Save cache after clearing the failed entry
+							saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
 						} else {
 							releaseNotes = aiNotes
 							aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
@@ -370,6 +390,18 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 								aiNotes, err = releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
 								if err != nil {
 									fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+									// Clear cache on failure and track
+									delete(aiReleaseNotesCache, cacheKey)
+									// Determine which org we're updating for the failure message
+									orgName := ""
+									if githubOrg != nil && githubOrg.Name != "" {
+										orgName = githubOrg.Name
+									} else if codebergOrg != nil && codebergOrg.Name != "" {
+										orgName = codebergOrg.Name
+									}
+									failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", orgName, repoName, tag))
+									// Save cache after clearing the failed entry
+									saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
 									continue
 								}
 								aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
@@ -443,6 +475,18 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 								aiNotes, err = releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
 								if err != nil {
 									fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+									// Clear cache on failure and track
+									delete(aiReleaseNotesCache, cacheKey)
+									// Determine which org we're updating for the failure message
+									orgName := ""
+									if githubOrg != nil && githubOrg.Name != "" {
+										orgName = githubOrg.Name
+									} else if codebergOrg != nil && codebergOrg.Name != "" {
+										orgName = codebergOrg.Name
+									}
+									failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", orgName, repoName, tag))
+									// Save cache after clearing the failed entry
+									saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
 									continue
 								}
 								aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
