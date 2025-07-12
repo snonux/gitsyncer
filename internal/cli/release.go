@@ -63,11 +63,14 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 	// Load persistent AI release notes cache
 	cacheFile := filepath.Join(flags.WorkDir, ".gitsyncer-ai-release-notes-cache.json")
 	aiReleaseNotesCache := loadAIReleaseNotesCache(cacheFile)
+	initialCacheSize := len(aiReleaseNotesCache)
 	
-	// Defer saving the cache when we're done
+	// Print cache summary at the end if cache was modified
 	defer func() {
-		if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
-			fmt.Printf("Warning: Failed to save AI release notes cache: %v\n", err)
+		if len(aiReleaseNotesCache) > initialCacheSize {
+			fmt.Printf("\nAI release notes cache updated: %d new entries added (total: %d entries)\n", 
+				len(aiReleaseNotesCache)-initialCacheSize, len(aiReleaseNotesCache))
+			fmt.Printf("Cache file: %s\n", cacheFile)
 		}
 	}()
 	
@@ -221,6 +224,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 						} else {
 							releaseNotes = aiNotes
 							aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
+							// Save cache immediately after successful generation
+							if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
+								fmt.Printf("  Warning: Failed to save cache: %v\n", err)
+							}
 							fmt.Printf("  AI release notes generated successfully and cached\n")
 						}
 					}
@@ -287,6 +294,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 						} else {
 							releaseNotes = aiNotes
 							aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
+							// Save cache immediately after successful generation
+							if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
+								fmt.Printf("  Warning: Failed to save cache: %v\n", err)
+							}
 							fmt.Printf("  AI release notes generated successfully and cached\n")
 						}
 					}
@@ -362,6 +373,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 									continue
 								}
 								aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
+								// Save cache immediately after successful generation
+								if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
+									fmt.Printf("  Warning: Failed to save cache: %v\n", err)
+								}
 							}
 							
 							// Print release notes to stdout
@@ -431,6 +446,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 									continue
 								}
 								aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
+								// Save cache immediately after successful generation
+								if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
+									fmt.Printf("  Warning: Failed to save cache: %v\n", err)
+								}
 							}
 							
 							// Print release notes to stdout
@@ -497,6 +516,6 @@ func saveAIReleaseNotesCache(cacheFile string, cache map[string]string) error {
 		return fmt.Errorf("failed to write cache file: %w", err)
 	}
 	
-	fmt.Printf("Saved AI release notes cache with %d entries to %s\n", len(cache), cacheFile)
+	// Don't print on every save since we save after each generation
 	return nil
 }
