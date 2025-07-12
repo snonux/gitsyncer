@@ -341,21 +341,15 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	}
 	
 	cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
-	output, err := cmd.Output()
+	output, err := cmd.CombinedOutput() // Use CombinedOutput to capture stderr
 	if err != nil {
-		// Try with opus model
-		fmt.Println("  Trying with opus model...")
-		cmd = exec.Command("claude", "--model", "opus", prompt.String())
-		output, err = cmd.Output()
-		if err != nil {
-			// Try with default model
-			fmt.Println("  Trying with default model...")
-			cmd = exec.Command("claude", prompt.String())
-			output, err = cmd.Output()
-			if err != nil {
-				return "", fmt.Errorf("failed to run claude: %w", err)
-			}
+		// Check if it's an exit error and print the output
+		if exitErr, ok := err.(*exec.ExitError); ok {
+			fmt.Printf("  Claude CLI failed with exit code %d\n", exitErr.ExitCode())
+			fmt.Printf("  Error output: %s\n", string(output))
+			return "", fmt.Errorf("claude CLI failed: %s", string(output))
 		}
+		return "", fmt.Errorf("failed to run claude: %w", err)
 	}
 	
 	releaseNotes := strings.TrimSpace(string(output))
