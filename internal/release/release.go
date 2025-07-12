@@ -225,8 +225,6 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 		notes.WriteString("\n")
 	}
 	
-	notes.WriteString(fmt.Sprintf("\n**Full Changelog**: %s...%s", prevTag, tag))
-	
 	return notes.String()
 }
 
@@ -352,14 +350,10 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		return "", fmt.Errorf("received empty release notes from claude")
 	}
 	
-	// Add header and footer
+	// Add header
 	var finalNotes strings.Builder
 	finalNotes.WriteString(fmt.Sprintf("# Release %s\n\n", tag))
 	finalNotes.WriteString(releaseNotes)
-	finalNotes.WriteString("\n\n---\n\n")
-	if prevTag != "" {
-		finalNotes.WriteString(fmt.Sprintf("**Full Changelog**: %s...%s", prevTag, tag))
-	}
 	
 	return finalNotes.String(), nil
 }
