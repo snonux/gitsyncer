@@ -59,6 +59,9 @@ func HandleCheckReleasesForRepo(cfg *config.Config, flags *Flags, repoName strin
 func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories []string) int {
 	releaseManager := release.NewManager(flags.WorkDir)
 	
+	// Cache for AI release notes to avoid regenerating for the same repo/tag
+	aiReleaseNotesCache := make(map[string]string) // key: "repoName:tag"
+	
 	// Set tokens from config with fallback to environment variables and files
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg != nil {
@@ -189,15 +192,23 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 				// Generate release notes
 				var releaseNotes string
 				if flags.AIReleaseNotes {
-					fmt.Printf("  Generating AI release notes for %s...\n", tag)
-					aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-					if err != nil {
-						fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-						fmt.Printf("  Falling back to standard release notes\n")
-						releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
+					// Check cache first
+					cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
+					if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists {
+						fmt.Printf("  Using cached AI release notes for %s\n", tag)
+						releaseNotes = cachedNotes
 					} else {
-						releaseNotes = aiNotes
-						fmt.Printf("  AI release notes generated successfully\n")
+						fmt.Printf("  Generating AI release notes for %s...\n", tag)
+						aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
+						if err != nil {
+							fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+							fmt.Printf("  Falling back to standard release notes\n")
+							releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
+						} else {
+							releaseNotes = aiNotes
+							aiReleaseNotesCache[cacheKey] = aiNotes // Cache the result
+							fmt.Printf("  AI release notes generated successfully\n")
+						}
 					}
 				} else {
 					releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
@@ -242,15 +253,23 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 				// Generate release notes
 				var releaseNotes string
 				if flags.AIReleaseNotes {
-					fmt.Printf("  Generating AI release notes for %s...\n", tag)
-					aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-					if err != nil {
-						fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-						fmt.Printf("  Falling back to standard release notes\n")
-						releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
+					// Check cache first
+					cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
+					if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists {
+						fmt.Printf("  Using cached AI release notes for %s\n", tag)
+						releaseNotes = cachedNotes
 					} else {
-						releaseNotes = aiNotes
-						fmt.Printf("  AI release notes generated successfully\n")
+						fmt.Printf("  Generating AI release notes for %s...\n", tag)
+						aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
+						if err != nil {
+							fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+							fmt.Printf("  Falling back to standard release notes\n")
+							releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
+						} else {
+							releaseNotes = aiNotes
+							aiReleaseNotesCache[cacheKey] = aiNotes // Cache the result
+							fmt.Printf("  AI release notes generated successfully\n")
+						}
 					}
 				} else {
 					releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
@@ -305,11 +324,21 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 						
 						// Generate AI release notes
 						if flags.AIReleaseNotes {
-							fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
-							aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-							if err != nil {
-								fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-								continue
+							// Check cache first
+							cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
+							var aiNotes string
+							if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists {
+								fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
+								aiNotes = cachedNotes
+							} else {
+								fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
+								var err error
+								aiNotes, err = releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
+								if err != nil {
+									fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+									continue
+								}
+								aiReleaseNotesCache[cacheKey] = aiNotes // Cache the result
 							}
 							
 							// Print release notes to stdout
@@ -360,11 +389,21 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 						
 						// Generate AI release notes
 						if flags.AIReleaseNotes {
-							fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
-							aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-							if err != nil {
-								fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-								continue
+							// Check cache first
+							cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
+							var aiNotes string
+							if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists {
+								fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
+								aiNotes = cachedNotes
+							} else {
+								fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
+								var err error
+								aiNotes, err = releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
+								if err != nil {
+									fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+									continue
+								}
+								aiReleaseNotesCache[cacheKey] = aiNotes // Cache the result
 							}
 							
 							// Print release notes to stdout
