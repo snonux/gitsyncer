@@ -30,6 +30,7 @@ type ProjectSummary struct {
 	CodeSnippet  string   // Code snippet to show when no images
 	CodeLanguage string   // Language and file info for the snippet
 	AIAssisted   bool     // Whether AI was detected in the project
+	VibeCoded    bool     // Whether the project was vibe-coded
 }
 
 // LegacyRepoMetadata for backwards compatibility with old cache files
@@ -276,8 +277,9 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 	}
 	
-	// Check for AI assistance
+	// Check for AI assistance and vibe coding
 	aiAssisted := detectAIUsage(repoPath)
+	vibeCoded := detectVibeCodedProject(repoPath)
 	
 	projectSummary := &ProjectSummary{
 		Name:         repoName,
@@ -289,6 +291,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		CodeSnippet:  codeSnippet,
 		CodeLanguage: codeLanguage,
 		AIAssisted:   aiAssisted,
+		VibeCoded:    vibeCoded,
 	}
 	
 	// Save to cache
@@ -323,13 +326,17 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	totalLOC := 0
 	totalDocs := 0
 	aiAssistedCount := 0
+	vibeCodedCount := 0
 	releasedCount := 0
 	languageTotals := make(map[string]int)
 	docTotals := make(map[string]int)
 	
 	for _, summary := range summaries {
-		if summary.AIAssisted {
+		if summary.AIAssisted || summary.VibeCoded {
 			aiAssistedCount++
+		}
+		if summary.VibeCoded {
+			vibeCodedCount++
 		}
 		
 		if summary.Metadata != nil {
@@ -406,8 +413,13 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	if len(docStats) > 0 {
 		builder.WriteString(fmt.Sprintf("* 📚 Documentation: %s\n", FormatLanguagesWithPercentages(docStats)))
 	}
+	if vibeCodedCount > 0 {
+		builder.WriteString(fmt.Sprintf("* 🎵 Vibe-Coded Projects: %d out of %d (%.1f%%)\n",
+			vibeCodedCount, totalProjects,
+			float64(vibeCodedCount)*100/float64(totalProjects)))
+	}
 	nonAICount := totalProjects - aiAssistedCount
-	builder.WriteString(fmt.Sprintf("* 🤖 AI-Assisted Projects: %d out of %d (%.1f%% AI-assisted, %.1f%% human-only)\n", 
+	builder.WriteString(fmt.Sprintf("* 🤖 AI-Assisted Projects (including vibe-coded): %d out of %d (%.1f%% AI-assisted, %.1f%% human-only)\n", 
 		aiAssistedCount, totalProjects, 
 		float64(aiAssistedCount)*100/float64(totalProjects),
 		float64(nonAICount)*100/float64(totalProjects)))
@@ -457,8 +469,10 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 				builder.WriteString("* 🧪 Status: Experimental (no releases yet)\n")
 			}
 			
-			// Add AI-Assisted notice if detected
-			if summary.AIAssisted {
+			// Add AI-Assisted or Vibe-Coded notice if detected
+			if summary.VibeCoded {
+				builder.WriteString("* 🎵 Vibe-Coded: This project has been vibe coded\n")
+			} else if summary.AIAssisted {
 				builder.WriteString("* 🤖 AI-Assisted: This project was partially created with the help of generative AI\n")
 			}
 			
@@ -711,6 +725,32 @@ func formatNumber(n int) string {
 	}
 	
 	return string(result)
+}
+
+// detectVibeCodedProject checks if the repository mentions "vibe code" in README
+func detectVibeCodedProject(repoPath string) bool {
+	// Check for "vibe code" in README files
+	readmeFiles := []string{
+		"README.md", "readme.md", "Readme.md",
+		"README.MD", "README.txt", "readme.txt",
+		"README", "readme",
+	}
+	
+	for _, readmeFile := range readmeFiles {
+		filePath := filepath.Join(repoPath, readmeFile)
+		content, err := os.ReadFile(filePath)
+		if err != nil {
+			continue
+		}
+		
+		// Case-insensitive search for "vibe code"
+		lowerContent := strings.ToLower(string(content))
+		if strings.Contains(lowerContent, "vibe code") {
+			return true
+		}
+	}
+	
+	return false
 }
 
 // detectAIUsage checks if the repository was generated with AI assistance
