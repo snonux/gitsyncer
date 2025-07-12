@@ -331,14 +331,9 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	// Run Claude CLI
 	fmt.Println("  Running Claude CLI command:")
 	fmt.Println("  claude --model sonnet \"...\"")
-	fmt.Printf("  Prompt length: %d characters\n", len(prompt.String()))
-	fmt.Println("  Prompt preview (first 500 chars):")
-	promptStr := prompt.String()
-	if len(promptStr) > 500 {
-		fmt.Printf("  %s...\n", promptStr[:500])
-	} else {
-		fmt.Printf("  %s\n", promptStr)
-	}
+	fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
+	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
+	fmt.Printf("  Total prompt length: %d characters\n", len(prompt.String()))
 	
 	cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
 	output, err := cmd.CombinedOutput() // Use CombinedOutput to capture stderr
