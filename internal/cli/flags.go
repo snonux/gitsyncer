@@ -33,6 +33,8 @@ type Flags struct {
 	CheckReleases      bool
 	NoCheckReleases    bool
 	AutoCreateReleases bool
+	AIReleaseNotes     bool
+	UpdateReleases     bool
 	
 	// Internal fields for batch run state management (not set by flags)
 	BatchRunStateManager *state.Manager
@@ -68,6 +70,8 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.CheckReleases, "check-releases", false, "manually check for version tags without releases and create them (with confirmation)")
 	flag.BoolVar(&f.NoCheckReleases, "no-check-releases", false, "disable automatic release checking after sync operations")
 	flag.BoolVar(&f.AutoCreateReleases, "auto-create-releases", false, "automatically create releases without confirmation prompts")
+	flag.BoolVar(&f.AIReleaseNotes, "ai-release-notes", false, "generate release notes using Claude AI based on git diff")
+	flag.BoolVar(&f.UpdateReleases, "update-releases", false, "update existing releases with new AI-generated notes")
 	
 	flag.Parse()
 	

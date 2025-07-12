@@ -230,6 +230,138 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 	return notes.String()
 }
 
+// GetDiffBetweenTags gets the diff between two tags
+func (m *Manager) GetDiffBetweenTags(repoPath, fromTag, toTag string) (string, error) {
+	// Use git diff to get changes between tags
+	// If fromTag is empty, get all changes up to toTag
+	var cmd *exec.Cmd
+	if fromTag == "" {
+		// Get diff from the beginning to toTag
+		cmd = exec.Command("git", "-C", repoPath, "show", "--format=", "--no-patch", toTag)
+		// This won't work well, so let's get the first commit
+		firstCommitCmd := exec.Command("git", "-C", repoPath, "rev-list", "--max-parents=0", "HEAD")
+		firstCommitOutput, err := firstCommitCmd.Output()
+		if err != nil {
+			// Fallback to just showing the tag
+			cmd = exec.Command("git", "-C", repoPath, "diff", "--stat", toTag)
+		} else {
+			firstCommit := strings.TrimSpace(string(firstCommitOutput))
+			cmd = exec.Command("git", "-C", repoPath, "diff", "--stat", fmt.Sprintf("%s..%s", firstCommit, toTag))
+		}
+	} else {
+		cmd = exec.Command("git", "-C", repoPath, "diff", "--stat", fmt.Sprintf("%s..%s", fromTag, toTag))
+	}
+	
+	output, err := cmd.Output()
+	if err != nil {
+		return "", fmt.Errorf("failed to get diff: %w", err)
+	}
+	
+	// Also get the actual diff for key files (limit to prevent huge outputs)
+	var diffCmd *exec.Cmd
+	if fromTag == "" {
+		diffCmd = exec.Command("git", "-C", repoPath, "show", toTag, "--", "*.go", "*.js", "*.py", "*.rs", "*.c", "*.cpp", "*.java", "*.ts", "*.jsx", "*.tsx", "README*", "*.md")
+	} else {
+		diffCmd = exec.Command("git", "-C", repoPath, "diff", fmt.Sprintf("%s..%s", fromTag, toTag), "--", "*.go", "*.js", "*.py", "*.rs", "*.c", "*.cpp", "*.java", "*.ts", "*.jsx", "*.tsx", "README*", "*.md")
+	}
+	
+	diffOutput, err := diffCmd.Output()
+	if err != nil {
+		// If error, just use the stat output
+		return string(output), nil
+	}
+	
+	// Combine stat and limited diff (truncate if too long)
+	fullOutput := string(output) + "\n\n" + string(diffOutput)
+	maxLength := 50000 // Limit to 50KB to avoid overwhelming Claude
+	if len(fullOutput) > maxLength {
+		fullOutput = fullOutput[:maxLength] + "\n\n... (diff truncated)"
+	}
+	
+	return fullOutput, nil
+}
+
+// GenerateAIReleaseNotes generates prose release notes using Claude CLI
+func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags []string, commits []string) (string, error) {
+	// Find the previous tag
+	var prevTag string
+	tagIndex := -1
+	for i, t := range allTags {
+		if t == tag {
+			tagIndex = i
+			break
+		}
+	}
+	
+	if tagIndex > 0 {
+		prevTag = allTags[tagIndex-1]
+	}
+	
+	// Get the diff between tags
+	diff, err := m.GetDiffBetweenTags(repoPath, prevTag, tag)
+	if err != nil {
+		return "", fmt.Errorf("failed to get diff: %w", err)
+	}
+	
+	// Prepare the prompt for Claude
+	var prompt strings.Builder
+	prompt.WriteString(fmt.Sprintf("Generate professional release notes for %s version %s.\n\n", repoName, tag))
+	
+	if prevTag != "" {
+		prompt.WriteString(fmt.Sprintf("Previous version: %s\n", prevTag))
+	}
+	
+	prompt.WriteString("\nCommit messages:\n")
+	for _, commit := range commits {
+		prompt.WriteString(fmt.Sprintf("- %s\n", commit))
+	}
+	
+	prompt.WriteString("\nCode changes:\n")
+	prompt.WriteString(diff)
+	prompt.WriteString("\n\nBased on the commits and code changes above, write professional release notes that:\n")
+	prompt.WriteString("1. Start with a brief overview of what this release accomplishes\n")
+	prompt.WriteString("2. Group changes into logical sections (Features, Improvements, Bug Fixes, etc.)\n")
+	prompt.WriteString("3. Explain WHY each change is useful to users, not just what changed\n")
+	prompt.WriteString("4. Use clear, non-technical language where possible\n")
+	prompt.WriteString("5. Highlight any breaking changes or migration steps\n")
+	prompt.WriteString("6. Keep it concise but informative\n")
+	prompt.WriteString("7. Format using Markdown\n")
+	prompt.WriteString("\nDo not include the version number in the title as it will be added automatically.")
+	
+	// Run Claude CLI
+	cmd := exec.Command("claude", "--model", "sonnet-3.5", prompt.String())
+	output, err := cmd.Output()
+	if err != nil {
+		// Try with sonnet-4 model
+		cmd = exec.Command("claude", "--model", "sonnet-4", prompt.String())
+		output, err = cmd.Output()
+		if err != nil {
+			// Try with default model
+			cmd = exec.Command("claude", prompt.String())
+			output, err = cmd.Output()
+			if err != nil {
+				return "", fmt.Errorf("failed to run claude: %w", err)
+			}
+		}
+	}
+	
+	releaseNotes := strings.TrimSpace(string(output))
+	if releaseNotes == "" {
+		return "", fmt.Errorf("received empty release notes from claude")
+	}
+	
+	// Add header and footer
+	var finalNotes strings.Builder
+	finalNotes.WriteString(fmt.Sprintf("# Release %s\n\n", tag))
+	finalNotes.WriteString(releaseNotes)
+	finalNotes.WriteString("\n\n---\n\n")
+	if prevTag != "" {
+		finalNotes.WriteString(fmt.Sprintf("**Full Changelog**: %s...%s", prevTag, tag))
+	}
+	
+	return finalNotes.String(), nil
+}
+
 // GetGitHubReleases fetches releases from GitHub
 func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
@@ -458,4 +590,148 @@ func PromptConfirmationWithNotes(message, releaseNotes string) bool {
 	
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
+}
+
+// UpdateGitHubRelease updates an existing release on GitHub
+func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) error {
+	if m.githubToken == "" {
+		return fmt.Errorf("GitHub token is required for updating releases")
+	}
+
+	// First, get the release ID
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "Bearer "+m.githubToken)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to get release: %s - %s", resp.Status, string(body))
+	}
+
+	var releaseInfo struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil {
+		return err
+	}
+
+	// Now update the release
+	updateURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/%d", owner, repo, releaseInfo.ID)
+	
+	release := Release{
+		TagName: tag,
+		Name:    tag,
+		Body:    releaseNotes,
+	}
+
+	jsonData, err := json.Marshal(release)
+	if err != nil {
+		return err
+	}
+
+	updateReq, err := http.NewRequest("PATCH", updateURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	updateReq.Header.Set("Authorization", "Bearer "+m.githubToken)
+	updateReq.Header.Set("Content-Type", "application/json")
+	updateReq.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	updateResp, err := client.Do(updateReq)
+	if err != nil {
+		return err
+	}
+	defer updateResp.Body.Close()
+
+	if updateResp.StatusCode != 200 {
+		body, _ := io.ReadAll(updateResp.Body)
+		return fmt.Errorf("failed to update GitHub release: %s - %s", updateResp.Status, string(body))
+	}
+
+	return nil
+}
+
+// UpdateCodebergRelease updates an existing release on Codeberg
+func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) error {
+	if m.codebergToken == "" {
+		return fmt.Errorf("Codeberg token is required for updating releases")
+	}
+
+	// First, get the release ID
+	url := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases/tags/%s", owner, repo, tag)
+	
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return err
+	}
+
+	req.Header.Set("Authorization", "token "+m.codebergToken)
+
+	client := &http.Client{}
+	resp, err := client.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to get release: %s - %s", resp.Status, string(body))
+	}
+
+	var releaseInfo struct {
+		ID int64 `json:"id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil {
+		return err
+	}
+
+	// Now update the release
+	updateURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases/%d", owner, repo, releaseInfo.ID)
+	
+	release := Release{
+		TagName: tag,
+		Name:    tag,
+		Body:    releaseNotes,
+	}
+
+	jsonData, err := json.Marshal(release)
+	if err != nil {
+		return err
+	}
+
+	updateReq, err := http.NewRequest("PATCH", updateURL, bytes.NewBuffer(jsonData))
+	if err != nil {
+		return err
+	}
+
+	updateReq.Header.Set("Authorization", "token "+m.codebergToken)
+	updateReq.Header.Set("Content-Type", "application/json")
+
+	updateResp, err := client.Do(updateReq)
+	if err != nil {
+		return err
+	}
+	defer updateResp.Body.Close()
+
+	if updateResp.StatusCode != 200 {
+		body, _ := io.ReadAll(updateResp.Body)
+		return fmt.Errorf("failed to update Codeberg release: %s - %s", updateResp.Status, string(body))
+	}
+
+	return nil
 }

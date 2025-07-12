@@ -33,6 +33,15 @@ func runReleaseCheckIfEnabled(cfg *config.Config, flags *cli.Flags) {
 	}
 }
 
+// runReleaseCheckForRepoIfEnabled runs release checking for a specific repository
+func runReleaseCheckForRepoIfEnabled(cfg *config.Config, flags *cli.Flags, repoName string) {
+	// Run release checks automatically unless disabled
+	if !flags.NoCheckReleases {
+		fmt.Println("\nChecking for missing releases...")
+		cli.HandleCheckReleasesForRepo(cfg, flags, repoName)
+	}
+}
+
 func main() {
 	// Parse command-line flags
 	flags := cli.ParseFlags()
@@ -113,7 +122,7 @@ func main() {
 	if flags.SyncRepo != "" {
 		exitCode := cli.HandleSync(cfg, flags)
 		if exitCode == 0 {
-			runReleaseCheckIfEnabled(cfg, flags)
+			runReleaseCheckForRepoIfEnabled(cfg, flags, flags.SyncRepo)
 			if flags.Showcase {
 				showcaseCode := cli.HandleShowcase(cfg, flags)
 				if showcaseCode != 0 {
