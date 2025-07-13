@@ -556,16 +556,21 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 		body = fmt.Sprintf("Release %s", tag)
 	}
 	
-	release := Release{
-		TagName: tag,
-		Name:    tag,
-		Body:    body,
+	// Codeberg uses Gitea API
+	// According to Gitea API docs, only tag_name is required
+	release := map[string]interface{}{
+		"tag_name": tag,
+		"name":     tag,  // Use simple tag name like working releases
+		"body":     body,
+		"draft":    false,
+		"prerelease": false,
 	}
 
 	jsonData, err := json.Marshal(release)
 	if err != nil {
 		return err
 	}
+	
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -574,6 +579,7 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 
 	req.Header.Set("Authorization", "token "+m.codebergToken)
 	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{}
 	resp, err := client.Do(req)
@@ -584,6 +590,17 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 
 	if resp.StatusCode != 201 {
 		body, _ := io.ReadAll(resp.Body)
+		
+		// Special handling for known Gitea issue
+		if resp.StatusCode == 409 && strings.Contains(string(body), "Release is has no Tag") {
+			// This is a known Gitea bug - the tag exists but Gitea can't create a release for it
+			// Check if it's one of the problematic old tags
+			fmt.Printf("\nWARNING: Codeberg/Gitea returned 'Release is has no Tag' error for tag %s\n", tag)
+			fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
+			fmt.Printf("You may need to create this release manually through the Codeberg web interface.\n\n")
+			return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
+		}
+		
 		return fmt.Errorf("failed to create Codeberg release: %s - %s", resp.Status, string(body))
 	}
 

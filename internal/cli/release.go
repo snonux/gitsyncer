@@ -142,6 +142,7 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		
 		if token != "" {
 			releaseManager.SetCodebergToken(token)
+			fmt.Printf("  Codeberg token loaded (length: %d)\n", len(token))
 		} else {
 			fmt.Println("WARNING: No Codeberg token found - cannot create Codeberg releases")
 		}
