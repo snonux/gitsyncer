@@ -41,9 +41,11 @@ gitsyncer release check
 # Disable automatic release checking during sync operations
 gitsyncer sync all --no-releases
 
-# Automatically create releases without confirmation prompts
+# Automatically create releases without confirmation prompts (AI notes enabled by default)
 gitsyncer release create --auto
-gitsyncer release create --auto --ai-notes
+
+# Create releases without AI notes
+gitsyncer release create --auto --no-ai-notes
 ```
 
 Note: Release checking is enabled by default after sync operations. It will check for version tags (formats: vX.Y.Z, vX.Y, vX, X.Y.Z, X.Y, X) that don't have corresponding releases on GitHub/Codeberg and prompt for confirmation before creating them.

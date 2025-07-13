@@ -13,6 +13,7 @@ var (
 	createRepos    bool
 	noReleases     bool
 	autoCreate     bool
+	noAIReleaseNotes bool
 )
 
 var syncCmd = &cobra.Command{
@@ -28,14 +29,17 @@ var syncRepoCmd = &cobra.Command{
 	Short: "Sync a specific repository",
 	Long:  `Synchronize a specific repository across all configured organizations.`,
 	Args:  cobra.ExactArgs(1),
-	Example: `  # Sync a single repository
+	Example: `  # Sync a single repository (AI release notes enabled by default)
   gitsyncer sync repo myproject
   
   # Sync with backup locations
   gitsyncer sync repo myproject --backup
   
   # Preview what would be synced
-  gitsyncer sync repo myproject --dry-run`,
+  gitsyncer sync repo myproject --dry-run
+  
+  # Sync without AI-generated release notes
+  gitsyncer sync repo myproject --no-ai-release-notes`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncRepo = args[0]
@@ -179,6 +183,8 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&backup, "backup", false, "include backup locations")
 	syncCmd.PersistentFlags().BoolVar(&createRepos, "create-repos", false, "auto-create missing repositories")
 	syncCmd.PersistentFlags().BoolVar(&noReleases, "no-releases", false, "skip release checking after sync")
+	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
+	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 }
 
 func buildFlags() *cli.Flags {
@@ -189,5 +195,6 @@ func buildFlags() *cli.Flags {
 		Backup:       backup,
 		NoCheckReleases: noReleases,
 		AutoCreateReleases: autoCreate,
+		AIReleaseNotes: !noAIReleaseNotes,
 	}
 }

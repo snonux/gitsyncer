@@ -9,7 +9,7 @@ import (
 
 var (
 	autoRelease    bool
-	aiNotes        bool
+	noAINotes      bool
 	updateExisting bool
 	templatePath   string
 )
@@ -57,25 +57,25 @@ var releaseCreateCmd = &cobra.Command{
 	Long: `Create releases for version tags that don't have them.
 If no repository is specified, processes all configured repositories.`,
 	Args: cobra.MaximumNArgs(1),
-	Example: `  # Create releases with confirmation prompts
+	Example: `  # Create releases (AI notes enabled by default)
   gitsyncer release create
   
   # Auto-create without prompts
   gitsyncer release create --auto
   
-  # Create with AI-generated notes
-  gitsyncer release create --ai-notes
+  # Create without AI-generated notes
+  gitsyncer release create --no-ai-notes
   
   # Update existing releases with AI notes
-  gitsyncer release create --update-existing --ai-notes
+  gitsyncer release create --update-existing
   
-  # Create for specific repository
-  gitsyncer release create myproject --ai-notes`,
+  # Create for specific repository without AI
+  gitsyncer release create myproject --no-ai-notes`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.CheckReleases = true
 		flags.AutoCreateReleases = autoRelease
-		flags.AIReleaseNotes = aiNotes
+		flags.AIReleaseNotes = !noAINotes
 		flags.UpdateReleases = updateExisting
 		
 		if len(args) > 0 {
@@ -100,7 +100,7 @@ func init() {
 	
 	// Create-specific flags
 	releaseCreateCmd.Flags().BoolVar(&autoRelease, "auto", false, "skip confirmation prompts")
-	releaseCreateCmd.Flags().BoolVar(&aiNotes, "ai-notes", false, "generate release notes using Claude AI based on git diff")
+	releaseCreateCmd.Flags().BoolVar(&noAINotes, "no-ai-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 	releaseCreateCmd.Flags().BoolVar(&updateExisting, "update-existing", false, "update existing releases with new AI-generated notes")
 	releaseCreateCmd.Flags().StringVar(&templatePath, "template", "", "custom template for release notes")
 }

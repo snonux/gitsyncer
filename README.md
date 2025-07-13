@@ -96,6 +96,12 @@ gitsyncer sync repo myproject --backup
 
 # Preview what would be synced
 gitsyncer sync repo myproject --dry-run
+
+# Sync without AI-generated release notes
+gitsyncer sync repo myproject --no-ai-release-notes
+
+# Auto-create releases without prompts (AI notes enabled by default)
+gitsyncer sync repo myproject --auto-create-releases
 ```
 
 #### Sync all configured repositories
@@ -152,20 +158,20 @@ gitsyncer release check myproject
 
 #### Create releases
 ```bash
-# Create releases with confirmation prompts
+# Create releases with confirmation prompts (AI notes enabled by default)
 gitsyncer release create
 
 # Auto-create without prompts
 gitsyncer release create --auto
 
-# Create with AI-generated notes
-gitsyncer release create --ai-notes
+# Create without AI-generated notes
+gitsyncer release create --no-ai-notes
 
 # Update existing releases with AI notes
-gitsyncer release create --update-existing --ai-notes
+gitsyncer release create --update-existing
 
-# Create for specific repository
-gitsyncer release create myproject --ai-notes
+# Create for specific repository without AI
+gitsyncer release create myproject --no-ai-notes
 ```
 
 ### Project Showcase
