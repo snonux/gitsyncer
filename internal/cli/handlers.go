@@ -69,7 +69,7 @@ func findDefaultConfigPath() string {
 	// Check common config locations
 	configLocations := []string{
 		filepath.Join(".", "gitsyncer.json"),
-		filepath.Join(home, ".config", "gitsyncer", "config"),
+		filepath.Join(home, ".config", "gitsyncer", "config.json"),
 		filepath.Join(home, ".gitsyncer.json"),
 	}
 
@@ -88,7 +88,7 @@ func ShowConfigHelp() {
 	
 	fmt.Println("No configuration file found. Please create one of:")
 	fmt.Printf("  - ./gitsyncer.json\n")
-	fmt.Printf("  - %s/.config/gitsyncer/config\n", home)
+	fmt.Printf("  - %s/.config/gitsyncer/config.json\n", home)
 	fmt.Printf("  - %s/.gitsyncer.json\n", home)
 	fmt.Println("\nOr specify a config file with --config flag")
 	fmt.Println("\nExample configuration:")

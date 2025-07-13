@@ -39,7 +39,7 @@ go build -o gitsyncer ./cmd/gitsyncer
 
 ## Configuration
 
-Create a configuration file at `~/.config/gitsyncer/config` (or specify a custom path with `-c`):
+Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a custom path with `-c`):
 
 ```json
 {
@@ -251,7 +251,7 @@ gitsyncer version
 
 These options are available for all commands:
 
-- `-c, --config` - Path to configuration file (default: ~/.config/gitsyncer/config)
+- `-c, --config` - Path to configuration file (default: ~/.config/gitsyncer/config.json)
 - `-w, --work-dir` - Working directory (default: ~/git/gitsyncer-workdir)
 - `-h, --help` - Show help for any command
 
