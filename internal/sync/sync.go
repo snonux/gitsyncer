@@ -224,13 +224,19 @@ func (s *Syncer) fetchAll() error {
 		return err
 	}
 
-	// Get remotes map to check if it's a backup location
-	remotesMap := s.getRemotesMap()
+	// Check all organizations to identify backup locations
+	// We need to check ALL orgs, not just active ones
+	allOrgsMap := make(map[string]*config.Organization)
+	for i := range s.config.Organizations {
+		org := &s.config.Organizations[i]
+		remoteName := s.getRemoteName(org)
+		allOrgsMap[remoteName] = org
+	}
 
 	// Fetch from each remote
 	for remote := range remotes {
-		// Skip backup locations if backup is not enabled
-		if org, exists := remotesMap[remote]; exists && org.BackupLocation {
+		// Check if this remote is a backup location
+		if org, exists := allOrgsMap[remote]; exists && org.BackupLocation {
 			if !s.backupEnabled {
 				// Silently skip - don't even print a message since backup is not enabled
 				continue
@@ -240,6 +246,7 @@ func (s *Syncer) fetchAll() error {
 			continue
 		}
 
+		fmt.Printf("Fetching %s\n", remote)
 		if err := fetchRemote(remote); err != nil {
 			return err
 		}

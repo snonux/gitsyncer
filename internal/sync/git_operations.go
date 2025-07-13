@@ -127,7 +127,6 @@ func getRemotesList() (map[string]bool, error) {
 
 // fetchRemote fetches from a single remote with error handling
 func fetchRemote(remote string) error {
-	fmt.Printf("Fetching %s\n", remote)
 	cmd := exec.Command("git", "fetch", remote, "--prune", "--tags")
 	output, err := cmd.CombinedOutput()
 
