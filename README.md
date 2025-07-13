@@ -66,89 +66,190 @@ Create a `gitsyncer.json` file:
 
 ## Usage
 
-### Sync a single repository
+### Command Structure
+
+GitSyncer uses a modern command-based structure that provides:
+- Clear organization of related functionality
+- Built-in help for every command and subcommand
+- Consistent flag naming and behavior
+- Better discoverability of features
+
+### Quick Start
+
+Explore available commands and get help:
+
 ```bash
-./gitsyncer --sync repo-name
+# Show available commands
+gitsyncer --help
+
+# Show help for a specific command
+gitsyncer sync --help
+```
+
+### Synchronization Commands
+
+```bash
+gitsyncer sync repo myproject
 
 # Include backup locations
-./gitsyncer --sync repo-name --backup
+gitsyncer sync repo myproject --backup
+
+# Preview what would be synced
+gitsyncer sync repo myproject --dry-run
 ```
 
-### Sync all configured repositories
+#### Sync all configured repositories
 ```bash
-./gitsyncer --sync-all
+gitsyncer sync all
 
 # Include backup locations
-./gitsyncer --sync-all --backup
+gitsyncer sync all --backup
 ```
 
-### Sync all public Codeberg repositories to GitHub
+#### Sync Codeberg to GitHub
 ```bash
-# Dry run - see what would be synced
-./gitsyncer --sync-codeberg-public --dry-run
+# Sync all public Codeberg repositories to GitHub
+gitsyncer sync codeberg-to-github
 
-# Actually sync all public repos
-./gitsyncer --sync-codeberg-public
+# Auto-create missing GitHub repos
+gitsyncer sync codeberg-to-github --create-repos
 
-# With automatic GitHub repo creation
-./gitsyncer --sync-codeberg-public --create-github-repos
+# Preview changes
+gitsyncer sync codeberg-to-github --dry-run
 ```
 
-### Sync all public GitHub repositories to Codeberg
+#### Sync GitHub to Codeberg
 ```bash
-# Dry run - see what would be synced
-./gitsyncer --sync-github-public --dry-run
+# Sync all public GitHub repositories to Codeberg
+gitsyncer sync github-to-codeberg
 
-# Actually sync all public repos
-./gitsyncer --sync-github-public
+# Auto-create missing Codeberg repos
+gitsyncer sync github-to-codeberg --create-repos
 ```
 
-### Full bidirectional sync
+#### Full bidirectional sync
 ```bash
-# Sync all public repos from both Codeberg and GitHub
-# This enables --sync-codeberg-public --sync-github-public 
-# --create-github-repos --create-codeberg-repos
-./gitsyncer --full
+# Complete bidirectional sync of all public repos
+gitsyncer sync bidirectional
 
-# With dry run to see what would happen
-./gitsyncer --full --dry-run
+# Preview what would be synced
+gitsyncer sync bidirectional --dry-run
+
+# Include backup locations
+gitsyncer sync bidirectional --backup
 ```
 
-### Automated weekly batch run
+### Release Management
+
+#### Check for missing releases
 ```bash
-# Run full sync with showcase generation, but only once per week
-# This enables --full and --showcase with a weekly timer
-./gitsyncer --batch-run
+# Check all repositories
+gitsyncer release check
 
-# The batch run state is saved to {workDir}/.gitsyncer-state.json
-# Subsequent runs within 7 days will be skipped
+# Check specific repository
+gitsyncer release check myproject
 ```
 
-### List configured organizations
+#### Create releases
 ```bash
-./gitsyncer --list-orgs
+# Create releases with confirmation prompts
+gitsyncer release create
+
+# Auto-create without prompts
+gitsyncer release create --auto
+
+# Create with AI-generated notes
+gitsyncer release create --ai-notes
+
+# Update existing releases with AI notes
+gitsyncer release create --update-existing --ai-notes
+
+# Create for specific repository
+gitsyncer release create myproject --ai-notes
 ```
 
-### List configured repositories  
+### Project Showcase
+
 ```bash
-./gitsyncer --list-repos
+# Generate showcase with cached summaries
+gitsyncer showcase
+
+# Force regeneration of all summaries
+gitsyncer showcase --force
+
+# Custom output path
+gitsyncer showcase --output ~/my-showcase.md
+
+# Different output format
+gitsyncer showcase --format markdown
+
+# Exclude certain repositories
+gitsyncer showcase --exclude "test-.*"
 ```
 
-### Show version
+### Repository Management
+
+#### Delete repository
 ```bash
-./gitsyncer --version
+# Delete repository from all organizations (with confirmation)
+gitsyncer manage delete-repo old-project
 ```
 
-### Generate project showcase
+#### Clean workspace
 ```bash
-# Generate a showcase of all your projects using Claude AI
-./gitsyncer --showcase
+# Clean work directory (with confirmation)
+gitsyncer manage clean
 
-# Force regeneration of cached summaries
-./gitsyncer --showcase --force
+# Force clean without confirmation
+gitsyncer manage clean --force
 ```
 
-### The --backup Flag
+#### Automated weekly sync
+```bash
+# Run weekly batch sync (full sync + showcase)
+gitsyncer manage batch-run
+
+# Force run even if already run this week
+gitsyncer manage batch-run --force
+```
+
+### Testing and Information
+
+#### Test authentication
+```bash
+# Test GitHub token
+gitsyncer test github-token
+
+# Test Codeberg token
+gitsyncer test codeberg-token
+
+# Validate configuration
+gitsyncer test config
+```
+
+#### List configured items
+```bash
+# List organizations
+gitsyncer list orgs
+
+# List repositories
+gitsyncer list repos
+```
+
+#### Show version
+```bash
+gitsyncer version
+```
+
+### Global Options
+
+These options are available for all commands:
+
+- `-c, --config` - Path to configuration file (default: ~/.gitsyncer.json)
+- `-w, --work-dir` - Working directory (default: ~/git/gitsyncer-workdir)
+- `-h, --help` - Show help for any command
+
+## The --backup Flag
 
 The `--backup` flag enables syncing to backup locations configured in your `gitsyncer.json`. This is particularly useful when:
 - Your backup server might be offline (e.g., home NAS)
@@ -160,10 +261,10 @@ With `--backup`: GitSyncer also pushes to backup locations marked with `"backupL
 
 ```bash
 # Regular sync (backup locations ignored)
-./gitsyncer --sync myrepo
+gitsyncer sync repo myrepo
 
 # Sync with backup enabled
-./gitsyncer --sync myrepo --backup
+gitsyncer sync repo myrepo --backup
 ```
 
 ## How It Works
@@ -231,16 +332,16 @@ You can configure SSH backup locations for one-way repository backups to private
 # Backup locations are DISABLED by default to handle offline servers
 
 # Sync without backup (default behavior)
-./gitsyncer --sync myrepo
+gitsyncer sync repo myrepo
 
 # Sync WITH backup enabled
-./gitsyncer --sync myrepo --backup
+gitsyncer sync repo myrepo --backup
 
 # Sync all repositories with backup
-./gitsyncer --sync-all --backup
+gitsyncer sync all --backup
 
 # Full sync with backup
-./gitsyncer --full --backup
+gitsyncer sync bidirectional --backup
 ```
 
 The backup location path format is: `user@host:path/REPONAME.git`
@@ -281,10 +382,13 @@ GitSyncer can generate a comprehensive showcase of all your projects using Claud
 
 ```bash
 # Generate showcase (uses cached summaries when available)
-./gitsyncer --showcase
+gitsyncer showcase
 
 # Force regeneration of all summaries
-./gitsyncer --showcase --force
+gitsyncer showcase --force
+
+# Custom output path and format
+gitsyncer showcase --output ~/showcase.md --format markdown
 ```
 
 ### Output
@@ -310,17 +414,17 @@ Projects can be excluded from the showcase by creating a `.nosync` file in their
 ## Example Workflows
 
 ### Automated weekly synchronization
-The `--batch-run` feature is designed for automated weekly synchronization from cron jobs or shell scripts:
+The batch-run feature is designed for automated weekly synchronization from cron jobs or shell scripts:
 
 1. Add to your crontab or shell profile:
    ```bash
    # Run daily - gitsyncer will only execute once per week
-   0 2 * * * /path/to/gitsyncer --batch-run
+   0 2 * * * /path/to/gitsyncer manage batch-run
    ```
 
 2. On each run, GitSyncer will:
    - Check if a week has passed since the last batch run
-   - If yes: Execute full sync (--full) and showcase generation (--showcase)
+   - If yes: Execute full sync and showcase generation
    - If no: Skip execution and show when the last run occurred
    - Save the timestamp to `.gitsyncer-state.json` in your work directory
 
@@ -333,7 +437,7 @@ The `--batch-run` feature is designed for automated weekly synchronization from 
 ### Sync specific repositories
 1. Create repositories on all platforms (GitHub, Codeberg, etc.)
 2. Add the repository name to your `gitsyncer.json`
-3. Run `./gitsyncer --sync repo-name`
+3. Run `gitsyncer sync repo repo-name`
 4. GitSyncer will:
    - Clone from the first organization
    - Push all branches to other organizations
@@ -341,7 +445,7 @@ The `--batch-run` feature is designed for automated weekly synchronization from 
 
 ### Sync all public Codeberg repositories
 1. Ensure Codeberg is in your organizations list
-2. Run `./gitsyncer --sync-codeberg-public`
+2. Run `gitsyncer sync codeberg-to-github`
 3. GitSyncer will:
    - Fetch all public repositories from your Codeberg account
    - Sync each one to all other configured organizations

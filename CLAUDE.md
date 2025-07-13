@@ -24,22 +24,26 @@ task fmt
 
 # Clean build artifacts
 task clean
+```
 
+## Usage Examples
+
+```bash
 # Show version
-./gitsyncer --version
+gitsyncer version
 
 # Delete a repository from all configured organizations (with confirmation)
-./gitsyncer --delete-repo <repository-name>
+gitsyncer manage delete-repo <repository-name>
 
 # Manually check for version tags without releases
-./gitsyncer --check-releases
+gitsyncer release check
 
 # Disable automatic release checking during sync operations
-./gitsyncer --sync-all --no-check-releases
+gitsyncer sync all --no-releases
 
 # Automatically create releases without confirmation prompts
-./gitsyncer --check-releases --auto-create-releases
-./gitsyncer --sync-all --auto-create-releases
+gitsyncer release create --auto
+gitsyncer release create --auto --ai-notes
 ```
 
 Note: Release checking is enabled by default after sync operations. It will check for version tags (formats: vX.Y.Z, vX.Y, vX, X.Y.Z, X.Y, X) that don't have corresponding releases on GitHub/Codeberg and prompt for confirmation before creating them.

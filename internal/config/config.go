@@ -28,8 +28,15 @@ type Config struct {
 
 // Load reads and parses the configuration file
 func Load(path string) (*Config, error) {
-	// Expand home directory if needed
-	if path[:2] == "~/" {
+	// If no path provided, use default
+	if path == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get home directory: %w", err)
+		}
+		path = filepath.Join(home, ".gitsyncer.json")
+	} else if len(path) >= 2 && path[:2] == "~/" {
+		// Expand home directory if needed
 		home, err := os.UserHomeDir()
 		if err != nil {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
