@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"os/exec"
 	"regexp"
 	"sort"
@@ -333,14 +334,36 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
 	fmt.Printf("  Total prompt length: %d characters\n", len(prompt.String()))
 	
+	// Check if claude CLI is available
+	if _, err := exec.LookPath("claude"); err != nil {
+		return "", fmt.Errorf("claude CLI not found in PATH. Please ensure claude CLI is installed and available")
+	}
+	
+	// Skip auth check - it may hang or cause issues
+	// Users can manually run 'claude auth status' if needed
+	
 	cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
+	cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1") // Enable debug mode if supported
 	output, err := cmd.CombinedOutput() // Use CombinedOutput to capture stderr
 	if err != nil {
 		// Check if it's an exit error and print the output
 		if exitErr, ok := err.(*exec.ExitError); ok {
 			fmt.Printf("  Claude CLI failed with exit code %d\n", exitErr.ExitCode())
 			fmt.Printf("  Error output: %s\n", string(output))
-			return "", fmt.Errorf("claude CLI failed: %s", string(output))
+			
+			// Provide more helpful error messages based on common issues
+			errorMsg := string(output)
+			fmt.Printf("  Raw error output: %q\n", errorMsg) // Show with quotes to see whitespace
+			if strings.Contains(errorMsg, "Execution error") && len(errorMsg) < 50 {
+				fmt.Println("  Hint: This generic error often indicates:")
+				fmt.Println("    - Authentication issues (try: claude auth login)")
+				fmt.Println("    - Network connectivity problems")
+				fmt.Println("    - Rate limiting")
+				fmt.Println("    - Invalid model name (valid: opus, sonnet, haiku)")
+				fmt.Println("    - Try running manually: claude --model sonnet \"Hello\"")
+			}
+			
+			return "", fmt.Errorf("claude CLI failed: %s", errorMsg)
 		}
 		return "", fmt.Errorf("failed to run claude: %w", err)
 	}
@@ -348,6 +371,33 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	releaseNotes := strings.TrimSpace(string(output))
 	if releaseNotes == "" {
 		return "", fmt.Errorf("received empty release notes from claude")
+	}
+	
+	// Check for known error messages in the output
+	if releaseNotes == "Execution error" || strings.HasPrefix(releaseNotes, "Error:") {
+		// Try to provide more context about the error
+		fmt.Println("  Claude CLI error details:")
+		fmt.Printf("  - Output: %s\n", releaseNotes)
+		fmt.Printf("  - Prompt length: %d characters\n", len(prompt.String()))
+		fmt.Println("  - Possible causes:")
+		fmt.Println("    1. Authentication issue - try: claude auth login")
+		fmt.Println("    2. Rate limiting - wait a few minutes")
+		fmt.Println("    3. Network connectivity issue")
+		fmt.Println("    4. Prompt too long (max ~200k tokens)")
+		fmt.Println("    5. Invalid model name (valid: opus, sonnet, haiku)")
+		
+		// Try running a simple test command to diagnose
+		testCmd := exec.Command("claude", "--model", "sonnet", "Say 'test'")
+		if testOutput, testErr := testCmd.CombinedOutput(); testErr != nil {
+			fmt.Printf("  - Test command failed: %v\n", testErr)
+			if len(testOutput) > 0 {
+				fmt.Printf("  - Test output: %s\n", strings.TrimSpace(string(testOutput)))
+			}
+		} else {
+			fmt.Printf("  - Test command succeeded: %s\n", strings.TrimSpace(string(testOutput)))
+		}
+		
+		return "", fmt.Errorf("claude CLI returned an error: %s", releaseNotes)
 	}
 	
 	// Add header
