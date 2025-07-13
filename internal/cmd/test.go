@@ -44,7 +44,7 @@ var testConfigCmd = &cobra.Command{
   gitsyncer test config
   
   # Test specific config file
-  gitsyncer test config -c ~/my-gitsyncer.json`,
+  gitsyncer test config -c ~/my-config.json`,
 	Run: func(cmd *cobra.Command, args []string) {
 		// Try to load and validate config
 		cfg, err := config.Load(cfgFile)

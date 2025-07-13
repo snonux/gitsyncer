@@ -39,7 +39,7 @@ go build -o gitsyncer ./cmd/gitsyncer
 
 ## Configuration
 
-Create a `gitsyncer.json` file:
+Create a configuration file at `~/.config/gitsyncer/config` (or specify a custom path with `-c`):
 
 ```json
 {
@@ -245,13 +245,13 @@ gitsyncer version
 
 These options are available for all commands:
 
-- `-c, --config` - Path to configuration file (default: ~/.gitsyncer.json)
+- `-c, --config` - Path to configuration file (default: ~/.config/gitsyncer/config)
 - `-w, --work-dir` - Working directory (default: ~/git/gitsyncer-workdir)
 - `-h, --help` - Show help for any command
 
 ## The --backup Flag
 
-The `--backup` flag enables syncing to backup locations configured in your `gitsyncer.json`. This is particularly useful when:
+The `--backup` flag enables syncing to backup locations configured in your config file. This is particularly useful when:
 - Your backup server might be offline (e.g., home NAS)
 - You want to control when backups happen
 - You need to separate regular syncing from backup operations
@@ -328,7 +328,7 @@ You can configure SSH backup locations for one-way repository backups to private
 ### SSH Backup Example
 
 ```bash
-# Configure your gitsyncer.json with an SSH backup location
+# Configure your config file with an SSH backup location
 # Backup locations are DISABLED by default to handle offline servers
 
 # Sync without backup (default behavior)
@@ -436,7 +436,7 @@ The batch-run feature is designed for automated weekly synchronization from cron
 
 ### Sync specific repositories
 1. Create repositories on all platforms (GitHub, Codeberg, etc.)
-2. Add the repository name to your `gitsyncer.json`
+2. Add the repository name to your configuration file
 3. Run `gitsyncer sync repo repo-name`
 4. GitSyncer will:
    - Clone from the first organization
@@ -444,7 +444,7 @@ The batch-run feature is designed for automated weekly synchronization from cron
    - Keep them in sync going forward
 
 ### Sync all public Codeberg repositories
-1. Ensure Codeberg is in your organizations list
+1. Ensure Codeberg is in your organizations list in the config
 2. Run `gitsyncer sync codeberg-to-github`
 3. GitSyncer will:
    - Fetch all public repositories from your Codeberg account

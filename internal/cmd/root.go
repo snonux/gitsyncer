@@ -53,7 +53,7 @@ func Execute() {
 
 func init() {
 	// Global flags
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "configuration file (default: ~/.gitsyncer.json)")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "configuration file (default: ~/.config/gitsyncer/config)")
 	
 	// Set default work directory
 	home, err := os.UserHomeDir()

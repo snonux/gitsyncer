@@ -34,7 +34,8 @@ func Load(path string) (*Config, error) {
 		if err != nil {
 			return nil, fmt.Errorf("failed to get home directory: %w", err)
 		}
-		path = filepath.Join(home, ".gitsyncer.json")
+		// Use XDG config directory
+		path = filepath.Join(home, ".config", "gitsyncer", "config")
 	} else if len(path) >= 2 && path[:2] == "~/" {
 		// Expand home directory if needed
 		home, err := os.UserHomeDir()
