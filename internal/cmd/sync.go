@@ -196,5 +196,7 @@ func buildFlags() *cli.Flags {
 		NoCheckReleases: noReleases,
 		AutoCreateReleases: autoCreate,
 		AIReleaseNotes: !noAIReleaseNotes,
+		CreateGitHubRepos: createRepos,
+		CreateCodebergRepos: createRepos,
 	}
 }

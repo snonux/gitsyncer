@@ -21,6 +21,14 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 		}
 	}
 	
+	// If create-codeberg-repos is enabled, create the repo if needed
+	if flags.CreateCodebergRepos {
+		if err := createCodebergRepoIfNeeded(cfg, flags.SyncRepo); err != nil {
+			fmt.Printf("ERROR: %v\n", err)
+			return 1
+		}
+	}
+	
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(flags.Backup)
 	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
@@ -47,6 +55,16 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		}
 	}
 
+	// Initialize Codeberg client if needed
+	var codebergClient codeberg.Client
+	var hasCodebergClient bool
+	if flags.CreateCodebergRepos {
+		if client := initCodebergClient(cfg); client != nil {
+			codebergClient = *client
+			hasCodebergClient = true
+		}
+	}
+
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(flags.Backup)
 	successCount := 0
@@ -60,6 +78,14 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 				fmt.Printf("ERROR: Failed to create GitHub repo %s: %v\n", repo, err)
 				fmt.Printf("Stopping sync due to error.\n")
 				return 1
+			}
+		}
+		
+		// Create Codeberg repo if needed
+		if hasCodebergClient {
+			fmt.Printf("Checking/creating Codeberg repository %s...\n", repo)
+			if err := codebergClient.CreateRepo(repo, fmt.Sprintf("Mirror of %s", repo), false); err != nil {
+				fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repo, err)
 			}
 		}
 		
@@ -223,6 +249,23 @@ func createGitHubRepoIfNeeded(cfg *config.Config, repoName string) error {
 	
 	fmt.Println("Checking/creating GitHub repository...")
 	return githubClient.CreateRepo(repoName, fmt.Sprintf("Mirror of %s", repoName), false)
+}
+
+func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
+	codebergOrg := cfg.FindCodebergOrg()
+	if codebergOrg == nil {
+		return nil
+	}
+	
+	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
+	codebergClient := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
+	if !codebergClient.HasToken() {
+		fmt.Println("Warning: No Codeberg token found. Cannot create repository.")
+		return nil
+	}
+	
+	fmt.Println("Checking/creating Codeberg repository...")
+	return codebergClient.CreateRepo(repoName, fmt.Sprintf("Mirror of %s", repoName), false)
 }
 
 func initGitHubClient(cfg *config.Config) *github.Client {
