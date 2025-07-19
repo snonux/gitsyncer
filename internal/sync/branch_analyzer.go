@@ -541,6 +541,24 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 				fmt.Fprintf(file, "else\n")
 				fmt.Fprintf(file, "    echo \"  🔸 Deleting branch: %s (last commit: %s)\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
 				
+				// Check if we're on the branch to be deleted, and switch to main/master if so
+				fmt.Fprintf(file, "    # Check if we're on the branch to be deleted\n")
+				fmt.Fprintf(file, "    current_branch=$(git branch --show-current)\n")
+				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]]; then\n", branch.Name)
+				fmt.Fprintf(file, "        echo \"    Switching from %s to main/master branch before deletion...\"\n", branch.Name)
+				fmt.Fprintf(file, "        main_branch=$(find_main_branch)\n")
+				fmt.Fprintf(file, "        if [[ -n \"$main_branch\" ]]; then\n")
+				fmt.Fprintf(file, "            execute_cmd git checkout \"$main_branch\"\n")
+				fmt.Fprintf(file, "        else\n")
+				fmt.Fprintf(file, "            echo \"    ⚠️  No main/master branch found to switch to!\"\n")
+				fmt.Fprintf(file, "            echo \"    Skipping deletion of %s\"\n", branch.Name)
+				fmt.Fprintf(file, "        fi\n")
+				fmt.Fprintf(file, "    fi\n")
+				fmt.Fprintf(file, "    # Skip to next branch if we couldn't switch\n")
+				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name)
+				fmt.Fprintf(file, "        continue\n")
+				fmt.Fprintf(file, "    fi\n")
+				
 				// Delete from remotes
 				for _, remote := range branch.RemotesWithBranch {
 					fmt.Fprintf(file, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name)
@@ -562,6 +580,24 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 				fmt.Fprintf(file, "    fi\n")
 				fmt.Fprintf(file, "else\n")
 				fmt.Fprintf(file, "    echo \"  🔹 Deleting ignored branch: %s (last commit: %s)\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
+				
+				// Check if we're on the branch to be deleted, and switch to main/master if so
+				fmt.Fprintf(file, "    # Check if we're on the branch to be deleted\n")
+				fmt.Fprintf(file, "    current_branch=$(git branch --show-current)\n")
+				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]]; then\n", branch.Name)
+				fmt.Fprintf(file, "        echo \"    Switching from %s to main/master branch before deletion...\"\n", branch.Name)
+				fmt.Fprintf(file, "        main_branch=$(find_main_branch)\n")
+				fmt.Fprintf(file, "        if [[ -n \"$main_branch\" ]]; then\n")
+				fmt.Fprintf(file, "            execute_cmd git checkout \"$main_branch\"\n")
+				fmt.Fprintf(file, "        else\n")
+				fmt.Fprintf(file, "            echo \"    ⚠️  No main/master branch found to switch to!\"\n")
+				fmt.Fprintf(file, "            echo \"    Skipping deletion of %s\"\n", branch.Name)
+				fmt.Fprintf(file, "        fi\n")
+				fmt.Fprintf(file, "    fi\n")
+				fmt.Fprintf(file, "    # Skip to next branch if we couldn't switch\n")
+				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name)
+				fmt.Fprintf(file, "        continue\n")
+				fmt.Fprintf(file, "    fi\n")
 				
 				// Delete from remotes
 				for _, remote := range branch.RemotesWithBranch {
