@@ -59,6 +59,7 @@ func HandleCheckReleasesForRepo(cfg *config.Config, flags *Flags, repoName strin
 // HandleCheckReleasesForRepos checks for version tags without releases and creates them with confirmation
 func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories []string) int {
 	releaseManager := release.NewManager(flags.WorkDir)
+	releaseManager.SetAITool(flags.AITool)
 	
 	// Load persistent AI release notes cache
 	cacheFile := filepath.Join(flags.WorkDir, ".gitsyncer-ai-release-notes-cache.json")

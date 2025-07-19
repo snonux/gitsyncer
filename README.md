@@ -172,6 +172,9 @@ gitsyncer release create --update-existing
 
 # Create for specific repository without AI
 gitsyncer release create myproject --no-ai-notes
+
+# Use aichat instead of claude for AI release notes
+gitsyncer release create --ai-tool aichat
 ```
 
 ### Project Showcase

@@ -35,6 +35,7 @@ type Flags struct {
 	AutoCreateReleases bool
 	AIReleaseNotes     bool
 	UpdateReleases     bool
+	AITool             string
 	
 	// Internal fields for batch run state management (not set by flags)
 	BatchRunStateManager *state.Manager

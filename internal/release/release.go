@@ -30,6 +30,7 @@ type Manager struct {
 	workDir       string
 	githubToken   string
 	codebergToken string
+	aiTool        string
 }
 
 // NewManager creates a new release manager
@@ -47,6 +48,11 @@ func (m *Manager) SetGitHubToken(token string) {
 // SetCodebergToken sets the Codeberg token for API authentication
 func (m *Manager) SetCodebergToken(token string) {
 	m.codebergToken = token
+}
+
+// SetAITool sets the AI tool to use for release notes generation
+func (m *Manager) SetAITool(tool string) {
+	m.aiTool = tool
 }
 
 // isVersionTag checks if a tag name is a version tag
@@ -327,56 +333,91 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	prompt.WriteString("7. Format using Markdown\n")
 	prompt.WriteString("\nDo not include the version number in the title as it will be added automatically.")
 	
-	// Run Claude CLI
-	fmt.Println("  Running Claude CLI command:")
-	fmt.Println("  claude --model sonnet \"...\"")
+	// Run AI CLI
+	fmt.Printf("  Running %s CLI command:\n", m.aiTool)
+	if m.aiTool == "claude" || m.aiTool == "" {
+		fmt.Println("  claude --model sonnet \"...\"")
+	} else if m.aiTool == "aichat" {
+		fmt.Println("  aichat \"...\"")
+	}
 	fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
 	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
 	fmt.Printf("  Total prompt length: %d characters\n", len(prompt.String()))
 	
-	// Check if claude CLI is available
-	if _, err := exec.LookPath("claude"); err != nil {
-		return "", fmt.Errorf("claude CLI not found in PATH. Please ensure claude CLI is installed and available")
+	// Determine which AI tool to use (default to claude if not set)
+	aiTool := m.aiTool
+	if aiTool == "" {
+		aiTool = "claude"
 	}
 	
-	// Skip auth check - it may hang or cause issues
-	// Users can manually run 'claude auth status' if needed
+	var cmd *exec.Cmd
 	
-	cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
-	cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1") // Enable debug mode if supported
+	switch aiTool {
+	case "claude":
+		// Check if claude CLI is available
+		if _, err := exec.LookPath("claude"); err != nil {
+			return "", fmt.Errorf("claude CLI not found in PATH. Please ensure claude CLI is installed and available")
+		}
+		
+		// Skip auth check - it may hang or cause issues
+		// Users can manually run 'claude auth status' if needed
+		
+		cmd = exec.Command("claude", "--model", "sonnet", prompt.String())
+		cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1") // Enable debug mode if supported
+		
+	case "aichat":
+		// Check if aichat CLI is available
+		if _, err := exec.LookPath("aichat"); err != nil {
+			return "", fmt.Errorf("aichat CLI not found in PATH. Please ensure aichat CLI is installed and available")
+		}
+		
+		// For aichat, we need to pipe the prompt through stdin
+		cmd = exec.Command("aichat", prompt.String())
+		
+	default:
+		return "", fmt.Errorf("unsupported AI tool: %s (supported: claude, aichat)", aiTool)
+	}
 	
 	output, err := cmd.CombinedOutput() // Use CombinedOutput to capture stderr
 	if err != nil {
 		// Check if it's an exit error and print the output
 		if exitErr, ok := err.(*exec.ExitError); ok {
-			fmt.Printf("  Claude CLI failed with exit code %d\n", exitErr.ExitCode())
+			fmt.Printf("  %s CLI failed with exit code %d\n", aiTool, exitErr.ExitCode())
 			fmt.Printf("  Error output: %s\n", string(output))
 			
 			// Provide more helpful error messages based on common issues
 			errorMsg := string(output)
 			fmt.Printf("  Raw error output: %q\n", errorMsg) // Show with quotes to see whitespace
-			if strings.Contains(errorMsg, "Execution error") && len(errorMsg) < 50 {
-				fmt.Println("  Hint: This generic error often indicates:")
-				fmt.Println("    - Authentication issues (try: claude auth login)")
-				fmt.Println("    - Network connectivity problems")
-				fmt.Println("    - Rate limiting")
-				fmt.Println("    - Invalid model name (valid: opus, sonnet, haiku)")
-				fmt.Println("    - Try running manually: claude --model sonnet \"Hello\"")
+			
+			if aiTool == "claude" {
+				if strings.Contains(errorMsg, "Execution error") && len(errorMsg) < 50 {
+					fmt.Println("  Hint: This generic error often indicates:")
+					fmt.Println("    - Authentication issues (try: claude auth login)")
+					fmt.Println("    - Network connectivity problems")
+					fmt.Println("    - Rate limiting")
+					fmt.Println("    - Invalid model name (valid: opus, sonnet, haiku)")
+					fmt.Println("    - Try running manually: claude --model sonnet \"Hello\"")
+				}
+			} else if aiTool == "aichat" {
+				fmt.Println("  Hint: Common aichat issues:")
+				fmt.Println("    - Check configuration file (usually ~/.config/aichat/config.yaml)")
+				fmt.Println("    - Ensure API keys are set correctly")
+				fmt.Println("    - Try running manually: echo \"Hello\" | aichat \"Say hello back\"")
 			}
 			
-			return "", fmt.Errorf("claude CLI failed: %s", errorMsg)
+			return "", fmt.Errorf("%s CLI failed: %s", aiTool, errorMsg)
 		}
-		return "", fmt.Errorf("failed to run claude: %w", err)
+		return "", fmt.Errorf("failed to run %s: %w", aiTool, err)
 	}
 	
 	releaseNotes := strings.TrimSpace(string(output))
 	if releaseNotes == "" {
-		return "", fmt.Errorf("received empty release notes from claude")
+		return "", fmt.Errorf("received empty release notes from %s", aiTool)
 	}
 	
 	// Check for known error messages in the output
 	if releaseNotes == "Execution error" || strings.HasPrefix(releaseNotes, "Error:") {
-		return "", fmt.Errorf("claude CLI returned an error: %s", releaseNotes)
+		return "", fmt.Errorf("%s CLI returned an error: %s", aiTool, releaseNotes)
 	}
 	
 	// Add header

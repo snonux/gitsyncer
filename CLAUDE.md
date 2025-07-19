@@ -46,6 +46,9 @@ gitsyncer release create --auto
 
 # Create releases without AI notes
 gitsyncer release create --auto --no-ai-notes
+
+# Use aichat instead of claude for AI release notes
+gitsyncer release create --auto --ai-tool aichat
 ```
 
 Note: Release checking is enabled by default after sync operations. It will check for version tags (formats: vX.Y.Z, vX.Y, vX, X.Y.Z, X.Y, X) that don't have corresponding releases on GitHub/Codeberg and prompt for confirmation before creating them.

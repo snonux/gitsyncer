@@ -14,6 +14,7 @@ var (
 	noReleases     bool
 	autoCreate     bool
 	noAIReleaseNotes bool
+	syncAITool     string
 )
 
 var syncCmd = &cobra.Command{
@@ -39,7 +40,10 @@ var syncRepoCmd = &cobra.Command{
   gitsyncer sync repo myproject --dry-run
   
   # Sync without AI-generated release notes
-  gitsyncer sync repo myproject --no-ai-release-notes`,
+  gitsyncer sync repo myproject --no-ai-release-notes
+  
+  # Auto-create releases using aichat for AI notes
+  gitsyncer sync repo myproject --auto-create-releases --ai-tool aichat`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncRepo = args[0]
@@ -185,6 +189,7 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&noReleases, "no-releases", false, "skip release checking after sync")
 	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
 	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
+	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "claude", "AI tool to use for release notes when auto-creating (claude or aichat)")
 }
 
 func buildFlags() *cli.Flags {
@@ -196,6 +201,7 @@ func buildFlags() *cli.Flags {
 		NoCheckReleases: noReleases,
 		AutoCreateReleases: autoCreate,
 		AIReleaseNotes: !noAIReleaseNotes,
+		AITool:       syncAITool,
 		CreateGitHubRepos: createRepos,
 		CreateCodebergRepos: createRepos,
 	}
