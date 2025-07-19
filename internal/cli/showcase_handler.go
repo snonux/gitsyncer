@@ -24,6 +24,11 @@ func HandleShowcase(cfg *config.Config, flags *Flags) int {
 	// Create showcase generator
 	generator := showcase.New(cfg, flags.WorkDir)
 	
+	// Set AI tool if specified
+	if flags.AITool != "" {
+		generator.SetAITool(flags.AITool)
+	}
+	
 	// Generate showcase with optional filter
 	if err := generator.GenerateShowcase(repoFilter, flags.Force); err != nil {
 		log.Printf("ERROR: Failed to generate showcase: %v\n", err)

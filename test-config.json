@@ -1,0 +1,16 @@
+{
+  "organizations": [
+    {
+      "host": "github.com",
+      "name": "test-org",
+      "github_token": "test-token"
+    },
+    {
+      "host": "codeberg.org",
+      "name": "test-org",
+      "codeberg_token": "test-token"
+    }
+  ],
+  "repositories": ["test-repo"],
+  "work_dir": "/tmp/gitsyncer-test"
+}

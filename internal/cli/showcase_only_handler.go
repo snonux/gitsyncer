@@ -45,6 +45,11 @@ func HandleShowcaseOnly(cfg *config.Config, flags *Flags) int {
 	fmt.Println("\nGenerating showcase for all repositories...")
 	generator := showcase.New(cfg, flags.WorkDir)
 	
+	// Set AI tool if specified
+	if flags.AITool != "" {
+		generator.SetAITool(flags.AITool)
+	}
+	
 	// Pass empty filter to process all repos
 	if err := generator.GenerateShowcase(nil, flags.Force); err != nil {
 		log.Printf("ERROR: Failed to generate showcase: %v\n", err)

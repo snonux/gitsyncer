@@ -17,6 +17,7 @@ import (
 type Generator struct {
 	config  *config.Config
 	workDir string
+	aiTool  string
 }
 
 // ProjectSummary holds the summary information for a project
@@ -49,7 +50,13 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
+		aiTool:  "claude", // default to claude
 	}
+}
+
+// SetAITool sets the AI tool to use for generating summaries
+func (g *Generator) SetAITool(tool string) {
+	g.aiTool = tool
 }
 
 // GenerateShowcase generates a showcase for repositories
@@ -184,16 +191,16 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	var haveCachedSummary bool
 	if !forceRegenerate {
 		if cached, err := g.loadFromCache(cacheFile); err == nil {
-			fmt.Printf("Using cached Claude summary (cache file: %s)\n", cacheFile)
+			fmt.Printf("Using cached AI summary (cache file: %s)\n", cacheFile)
 			cachedSummary = cached.Summary
 			haveCachedSummary = true
 		}
 	}
 
-	// Check if claude command exists (only if we need to run it)
+	// Check if AI tool command exists (only if we need to run it)
 	if !haveCachedSummary {
-		if _, err := exec.LookPath("claude"); err != nil {
-			return nil, fmt.Errorf("claude command not found. Please install Claude CLI")
+		if _, err := exec.LookPath(g.aiTool); err != nil {
+			return nil, fmt.Errorf("%s command not found. Please install %s CLI", g.aiTool, g.aiTool)
 		}
 	}
 
@@ -216,27 +223,63 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		// Continue anyway with partial metadata
 	}
 
-	// Get the summary - either from cache or by running Claude
+	// Get the summary - either from cache or by running AI tool
 	var summary string
 	if haveCachedSummary {
 		summary = cachedSummary
-		fmt.Printf("Using cached Claude summary\n")
+		fmt.Printf("Using cached AI summary\n")
 	} else {
-		// Run claude command
 		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
 		
-		fmt.Printf("Running Claude command:\n")
-		fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
+		var cmd *exec.Cmd
 		
-		cmd := exec.Command("claude", "--model", "sonnet", prompt)
+		switch g.aiTool {
+		case "claude":
+			fmt.Printf("Running Claude command:\n")
+			fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
+			cmd = exec.Command("claude", "--model", "sonnet", prompt)
+		case "aichat":
+			// For aichat, we need to read README.md and pipe it to aichat
+			fmt.Printf("Running aichat command:\n")
+			
+			// Find README file
+			readmeFiles := []string{
+				"README.md", "readme.md", "Readme.md",
+				"README.MD", "README.txt", "readme.txt",
+				"README", "readme",
+			}
+			
+			var readmeContent []byte
+			var readmeFound bool
+			for _, readmeFile := range readmeFiles {
+				content, err := os.ReadFile(readmeFile)
+				if err == nil {
+					readmeContent = content
+					readmeFound = true
+					fmt.Printf("  Using %s as input\n", readmeFile)
+					break
+				}
+			}
+			
+			if !readmeFound {
+				return nil, fmt.Errorf("no README file found for aichat input")
+			}
+			
+			fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
+			cmd = exec.Command("aichat", prompt)
+			cmd.Stdin = strings.NewReader(string(readmeContent))
+		default:
+			return nil, fmt.Errorf("unsupported AI tool: %s", g.aiTool)
+		}
+		
 		output, err := cmd.Output()
 		if err != nil {
-			return nil, fmt.Errorf("failed to run claude: %w", err)
+			return nil, fmt.Errorf("failed to run %s: %w", g.aiTool, err)
 		}
 
 		summary = strings.TrimSpace(string(output))
 		if summary == "" {
-			return nil, fmt.Errorf("received empty summary from claude")
+			return nil, fmt.Errorf("received empty summary from %s", g.aiTool)
 		}
 	}
 

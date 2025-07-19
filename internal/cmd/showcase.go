@@ -13,14 +13,15 @@ var (
 	outputPath      string
 	outputFormat    string
 	excludePattern  string
+	showcaseAITool  string
 )
 
 var showcaseCmd = &cobra.Command{
 	Use:   "showcase",
 	Short: "Generate AI-powered project showcase",
-	Long: `Generate a comprehensive showcase of all your projects using Claude AI.
+	Long: `Generate a comprehensive showcase of all your projects using AI.
 This feature creates a formatted document with project summaries, statistics, 
-and code snippets.`,
+and code snippets. By default uses Claude, but can also use aichat.`,
 	Example: `  # Generate showcase with cached summaries
   gitsyncer showcase
   
@@ -34,11 +35,15 @@ and code snippets.`,
   gitsyncer showcase --format markdown
   
   # Exclude certain repositories
-  gitsyncer showcase --exclude "test-.*"`,
+  gitsyncer showcase --exclude "test-.*"
+  
+  # Use aichat instead of claude for AI summaries
+  gitsyncer showcase --ai-tool aichat`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.Showcase = true
 		flags.Force = forceRegenerate
+		flags.AITool = showcaseAITool
 		
 		fmt.Println("Running showcase generation for all repositories...")
 		exitCode := cli.HandleShowcaseOnly(cfg, flags)
@@ -54,4 +59,5 @@ func init() {
 	showcaseCmd.Flags().StringVarP(&outputPath, "output", "o", "", "custom output path (default: ~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl)")
 	showcaseCmd.Flags().StringVar(&outputFormat, "format", "gemtext", "output format: gemtext, markdown, html")
 	showcaseCmd.Flags().StringVar(&excludePattern, "exclude", "", "exclude repos matching pattern")
+	showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "claude", "AI tool to use for project summaries (claude or aichat)")
 }
