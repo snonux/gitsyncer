@@ -65,7 +65,7 @@ func (g *Generator) SetAITool(tool string) {
 func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) error {
 	var repos []string
 	var err error
-	
+
 	if len(repoFilter) > 0 {
 		// Use the provided filter
 		repos = repoFilter
@@ -83,23 +83,23 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 
 	// Filter out excluded repositories
 	filteredRepos := g.filterExcludedRepos(repos)
-	
-	fmt.Printf("Found %d repositories to process (after filtering %d excluded)\n", 
+
+	fmt.Printf("Found %d repositories to process (after filtering %d excluded)\n",
 		len(filteredRepos), len(repos)-len(filteredRepos))
 
 	// Generate summaries for each repository
 	summaries := make([]ProjectSummary, 0, len(filteredRepos))
 	successCount := 0
-	
+
 	for i, repo := range filteredRepos {
 		fmt.Printf("\n[%d/%d] Processing %s...\n", i+1, len(filteredRepos), repo)
-		
+
 		summary, err := g.generateProjectSummary(repo, forceRegenerate)
 		if err != nil {
 			fmt.Printf("WARNING: Failed to generate summary for %s: %v\n", repo, err)
 			continue
 		}
-		
+
 		// Print the generated summary to stdout
 		fmt.Printf("\n--- Generated summary for %s ---\n", repo)
 		fmt.Println(summary.Summary)
@@ -113,7 +113,7 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 			fmt.Printf("Avg. age of last 42 commits: %.1f days\n", summary.Metadata.AvgCommitAge)
 		}
 		fmt.Println("--- End of summary ---")
-		
+
 		summaries = append(summaries, *summary)
 		successCount++
 	}
@@ -181,11 +181,11 @@ func (g *Generator) getRepositories() ([]string, error) {
 // generateProjectSummary generates a summary for a single project
 func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool) (*ProjectSummary, error) {
 	repoPath := filepath.Join(g.workDir, repoName)
-	
+
 	// Check cache first
 	cacheDir := filepath.Join(g.workDir, ".gitsyncer-showcase-cache")
 	cacheFile := filepath.Join(cacheDir, repoName+".json")
-	
+
 	// Try to load cached summary (but we'll still update metadata and images)
 	var cachedSummary string
 	var haveCachedSummary bool
@@ -230,9 +230,9 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		fmt.Printf("Using cached AI summary\n")
 	} else {
 		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
-		
+
 		var cmd *exec.Cmd
-		
+
 		switch g.aiTool {
 		case "claude":
 			fmt.Printf("Running Claude command:\n")
@@ -241,14 +241,14 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		case "aichat":
 			// For aichat, we need to read README.md and pipe it to aichat
 			fmt.Printf("Running aichat command:\n")
-			
+
 			// Find README file
 			readmeFiles := []string{
 				"README.md", "readme.md", "Readme.md",
 				"README.MD", "README.txt", "readme.txt",
 				"README", "readme",
 			}
-			
+
 			var readmeContent []byte
 			var readmeFound bool
 			for _, readmeFile := range readmeFiles {
@@ -260,18 +260,18 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 					break
 				}
 			}
-			
+
 			if !readmeFound {
 				return nil, fmt.Errorf("no README file found for aichat input")
 			}
-			
+
 			fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
 			cmd = exec.Command("aichat", prompt)
 			cmd.Stdin = strings.NewReader(string(readmeContent))
 		default:
 			return nil, fmt.Errorf("unsupported AI tool: %s", g.aiTool)
 		}
-		
+
 		output, err := cmd.Output()
 		if err != nil {
 			return nil, fmt.Errorf("failed to run %s: %w", g.aiTool, err)
@@ -286,11 +286,11 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	// Build URLs
 	codebergURL := ""
 	githubURL := ""
-	
+
 	if codebergOrg := g.config.FindCodebergOrg(); codebergOrg != nil {
 		codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
 	}
-	
+
 	if githubOrg := g.config.FindGitHubOrg(); githubOrg != nil {
 		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
 	}
@@ -319,11 +319,11 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 			codeLanguage = lang
 		}
 	}
-	
+
 	// Check for AI assistance and vibe coding
 	aiAssisted := detectAIUsage(repoPath)
 	vibeCoded := detectVibeCodedProject(repoPath)
-	
+
 	projectSummary := &ProjectSummary{
 		Name:         repoName,
 		Summary:      summary,
@@ -336,14 +336,14 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		AIAssisted:   aiAssisted,
 		VibeCoded:    vibeCoded,
 	}
-	
+
 	// Save to cache
 	if err := g.saveToCache(cacheFile, projectSummary); err != nil {
 		fmt.Printf("Warning: Failed to save to cache: %v\n", err)
 	} else {
 		fmt.Printf("Summary cached at: %s\n", cacheFile)
 	}
-	
+
 	return projectSummary, nil
 }
 
@@ -353,16 +353,16 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 
 	// Header
 	builder.WriteString("# Project Showcase\n\n")
-	
+
 	// Generated date at the top
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
-	
+
 	// Introduction paragraph
 	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ordered by recent activity, with the most actively maintained projects listed first.\n\n")
-	
+
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
-	
+
 	// Calculate total stats
 	totalProjects := len(summaries)
 	totalCommits := 0
@@ -373,7 +373,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	releasedCount := 0
 	languageTotals := make(map[string]int)
 	docTotals := make(map[string]int)
-	
+
 	for _, summary := range summaries {
 		if summary.AIAssisted || summary.VibeCoded {
 			aiAssistedCount++
@@ -381,29 +381,29 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		if summary.VibeCoded {
 			vibeCodedCount++
 		}
-		
+
 		if summary.Metadata != nil {
 			totalCommits += summary.Metadata.CommitCount
 			totalLOC += summary.Metadata.LinesOfCode
 			totalDocs += summary.Metadata.LinesOfDocs
-			
+
 			// Count projects with releases
 			if summary.Metadata.HasReleases {
 				releasedCount++
 			}
-			
+
 			// Aggregate language statistics
 			for _, lang := range summary.Metadata.Languages {
 				languageTotals[lang.Name] += lang.Lines
 			}
-			
+
 			// Aggregate documentation statistics
 			for _, doc := range summary.Metadata.Documentation {
 				docTotals[doc.Name] += doc.Lines
 			}
 		}
 	}
-	
+
 	// Calculate language percentages
 	var languageStats []LanguageStats
 	for name, lines := range languageTotals {
@@ -417,12 +417,12 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			Percentage: percentage,
 		})
 	}
-	
+
 	// Sort languages by percentage
 	sort.Slice(languageStats, func(i, j int) bool {
 		return languageStats[i].Percentage > languageStats[j].Percentage
 	})
-	
+
 	// Calculate documentation percentages
 	var docStats []LanguageStats
 	for name, lines := range docTotals {
@@ -436,12 +436,12 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			Percentage: percentage,
 		})
 	}
-	
+
 	// Sort documentation by percentage
 	sort.Slice(docStats, func(i, j int) bool {
 		return docStats[i].Percentage > docStats[j].Percentage
 	})
-	
+
 	// Write total stats section
 	builder.WriteString("## Overall Statistics\n\n")
 	builder.WriteString(fmt.Sprintf("* 📦 Total Projects: %d\n", totalProjects))
@@ -462,8 +462,8 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			float64(vibeCodedCount)*100/float64(totalProjects)))
 	}
 	nonAICount := totalProjects - aiAssistedCount
-	builder.WriteString(fmt.Sprintf("* 🤖 AI-Assisted Projects (including vibe-coded): %d out of %d (%.1f%% AI-assisted, %.1f%% human-only)\n", 
-		aiAssistedCount, totalProjects, 
+	builder.WriteString(fmt.Sprintf("* 🤖 AI-Assisted Projects (including vibe-coded): %d out of %d (%.1f%% AI-assisted, %.1f%% human-only)\n",
+		aiAssistedCount, totalProjects,
 		float64(aiAssistedCount)*100/float64(totalProjects),
 		float64(nonAICount)*100/float64(totalProjects)))
 	experimentalCount := totalProjects - releasedCount
@@ -483,7 +483,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		}
 
 		builder.WriteString(fmt.Sprintf("### %s\n\n", summary.Name))
-		
+
 		// Add metadata if available
 		if summary.Metadata != nil {
 			if len(summary.Metadata.Languages) > 0 {
@@ -500,7 +500,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString(fmt.Sprintf("* 📅 Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
 			builder.WriteString(fmt.Sprintf("* 🔥 Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
 			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
-			
+
 			// Add release information or experimental status
 			if summary.Metadata.HasReleases && summary.Metadata.LatestTag != "" {
 				if summary.Metadata.LatestTagDate != "" {
@@ -511,14 +511,14 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			} else {
 				builder.WriteString("* 🧪 Status: Experimental (no releases yet)\n")
 			}
-			
+
 			// Add AI-Assisted or Vibe-Coded notice if detected
 			if summary.VibeCoded {
 				builder.WriteString("* 🎵 Vibe-Coded: This project has been vibe coded\n")
 			} else if summary.AIAssisted {
 				builder.WriteString("* 🤖 AI-Assisted: This project was partially created with the help of generative AI\n")
 			}
-			
+
 			// Check if project might be obsolete (avg age > 2 years AND last commit > 1 year)
 			if summary.Metadata.AvgCommitAge > 730 && summary.Metadata.LastCommitDate != "" {
 				// Parse the last commit date
@@ -532,25 +532,25 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			}
 			builder.WriteString("\n\n")
 		}
-		
+
 		// Handle images and paragraphs
 		paragraphs := strings.Split(summary.Summary, "\n\n")
-		
+
 		// If we have images, distribute them nicely
 		if len(summary.Images) > 0 {
 			// First image after metadata, before text
 			builder.WriteString(fmt.Sprintf("=> %s %s screenshot\n\n", summary.Images[0], summary.Name))
-			
+
 			// First paragraph
 			if len(paragraphs) > 0 {
 				builder.WriteString(fmt.Sprintf("%s\n\n", strings.TrimSpace(paragraphs[0])))
 			}
-			
+
 			// Second image after first paragraph (if we have 2 images and multiple paragraphs)
 			if len(summary.Images) > 1 && len(paragraphs) > 1 {
 				builder.WriteString(fmt.Sprintf("=> %s %s screenshot\n\n", summary.Images[1], summary.Name))
 			}
-			
+
 			// Remaining paragraphs
 			for i := 1; i < len(paragraphs); i++ {
 				builder.WriteString(fmt.Sprintf("%s\n\n", strings.TrimSpace(paragraphs[i])))
@@ -569,7 +569,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		if summary.GitHubURL != "" {
 			builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
 		}
-		
+
 	}
 
 	return builder.String()
@@ -604,7 +604,7 @@ func (g *Generator) writeShowcaseFile(content string) error {
 func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 	// Load existing summaries from cache files instead of parsing Gemtext
 	existingSummaries := make(map[string]ProjectSummary)
-	
+
 	// Get all repositories in work directory to load their cached summaries
 	repos, err := g.getRepositories()
 	if err == nil {
@@ -614,7 +614,7 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 			if g.isExcluded(repo) {
 				continue
 			}
-			
+
 			cacheFile := filepath.Join(cacheDir, repo+".json")
 			if cached, err := g.loadFromCache(cacheFile); err == nil {
 				existingSummaries[repo] = *cached
@@ -632,7 +632,7 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 	for _, summary := range existingSummaries {
 		allSummaries = append(allSummaries, summary)
 	}
-	
+
 	// Sort by average commit age (newest first)
 	sort.Slice(allSummaries, func(i, j int) bool {
 		// If metadata is missing, put at the end
@@ -655,19 +655,18 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 	return nil
 }
 
-
 // loadFromCache loads a project summary from cache
 func (g *Generator) loadFromCache(cacheFile string) (*ProjectSummary, error) {
 	data, err := os.ReadFile(cacheFile)
 	if err != nil {
 		return nil, err
 	}
-	
+
 	var summary ProjectSummary
 	if err := json.Unmarshal(data, &summary); err != nil {
 		return nil, err
 	}
-	
+
 	return &summary, nil
 }
 
@@ -678,13 +677,13 @@ func (g *Generator) saveToCache(cacheFile string, summary *ProjectSummary) error
 	if err := os.MkdirAll(cacheDir, 0755); err != nil {
 		return err
 	}
-	
+
 	// Marshal to JSON
 	data, err := json.MarshalIndent(summary, "", "  ")
 	if err != nil {
 		return err
 	}
-	
+
 	// Write to file
 	return os.WriteFile(cacheFile, data, 0644)
 }
@@ -694,21 +693,21 @@ func (g *Generator) verifyImages(summary *ProjectSummary) error {
 	if len(summary.Images) == 0 {
 		return nil
 	}
-	
+
 	home, err := os.UserHomeDir()
 	if err != nil {
 		return err
 	}
-	
+
 	showcaseDir := filepath.Join(home, "git", "foo.zone-content", "gemtext", "about")
-	
+
 	for _, imgPath := range summary.Images {
 		fullPath := filepath.Join(showcaseDir, imgPath)
 		if _, err := os.Stat(fullPath); err != nil {
 			return fmt.Errorf("image not found: %s", imgPath)
 		}
 	}
-	
+
 	return nil
 }
 
@@ -717,13 +716,13 @@ func (g *Generator) filterExcludedRepos(repos []string) []string {
 	if len(g.config.ExcludeFromShowcase) == 0 {
 		return repos
 	}
-	
+
 	// Create a map for quick lookup
 	excludeMap := make(map[string]bool)
 	for _, excluded := range g.config.ExcludeFromShowcase {
 		excludeMap[excluded] = true
 	}
-	
+
 	// Filter repositories
 	var filtered []string
 	for _, repo := range repos {
@@ -733,7 +732,7 @@ func (g *Generator) filterExcludedRepos(repos []string) []string {
 			fmt.Printf("Excluding repository from showcase: %s\n", repo)
 		}
 	}
-	
+
 	return filtered
 }
 
@@ -753,7 +752,7 @@ func formatNumber(n int) string {
 	if len(str) <= 3 {
 		return str
 	}
-	
+
 	// Insert commas from right to left
 	var result []byte
 	for i := len(str) - 1; i >= 0; i-- {
@@ -762,7 +761,7 @@ func formatNumber(n int) string {
 		}
 		result = append([]byte{str[i]}, result...)
 	}
-	
+
 	return string(result)
 }
 
@@ -774,47 +773,47 @@ func detectVibeCodedProject(repoPath string) bool {
 		"README.MD", "README.txt", "readme.txt",
 		"README", "readme",
 	}
-	
+
 	for _, readmeFile := range readmeFiles {
 		filePath := filepath.Join(repoPath, readmeFile)
 		content, err := os.ReadFile(filePath)
 		if err != nil {
 			continue
 		}
-		
+
 		// Case-insensitive search for "vibe code"
 		lowerContent := strings.ToLower(string(content))
 		if strings.Contains(lowerContent, "vibe code") {
 			return true
 		}
 	}
-	
+
 	return false
 }
 
 // detectAIUsage checks if the repository was generated with AI assistance
+// It looks for CLAUDE.md, GEMINI.md, AGENTS.md, or AGENT.md in the repo root.
 func detectAIUsage(repoPath string) bool {
 	// Check for AI-related files
-	aiFiles := []string{"CLAUDE.md", "GEMINI.md", "AGENTS.md"}
+	aiFiles := []string{"CLAUDE.md", "GEMINI.md", "AGENTS.md", "AGENT.md"}
 	for _, aiFile := range aiFiles {
 		filePath := filepath.Join(repoPath, aiFile)
 		if _, err := os.Stat(filePath); err == nil {
 			return true
 		}
 	}
-	
+
 	// Search for "agentic coding" string in the repository
 	cmd := exec.Command("rg", "-i", "--max-count", "1", "agentic coding", repoPath)
 	if output, err := cmd.Output(); err == nil && len(output) > 0 {
 		return true
 	}
-	
+
 	// Fallback to grep if rg is not available
 	cmd = exec.Command("grep", "-r", "-i", "-m", "1", "agentic coding", repoPath)
 	if output, err := cmd.Output(); err == nil && len(output) > 0 {
 		return true
 	}
-	
+
 	return false
 }
-
