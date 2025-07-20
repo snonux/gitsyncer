@@ -570,10 +570,6 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
 		}
 		
-		// Add code snippet at the end for all projects
-		if summary.CodeSnippet != "" {
-			builder.WriteString(fmt.Sprintf("\n%s:\n\n```AUTO\n%s\n```\n", summary.CodeLanguage, summary.CodeSnippet))
-		}
 	}
 
 	return builder.String()
