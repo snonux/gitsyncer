@@ -795,7 +795,7 @@ func detectVibeCodedProject(repoPath string) bool {
 // detectAIUsage checks if the repository was generated with AI assistance
 func detectAIUsage(repoPath string) bool {
 	// Check for AI-related files
-	aiFiles := []string{"CLAUDE.md", "GEMINI.md"}
+	aiFiles := []string{"CLAUDE.md", "GEMINI.md", "AGENTS.md"}
 	for _, aiFile := range aiFiles {
 		filePath := filepath.Join(repoPath, aiFile)
 		if _, err := os.Stat(filePath); err == nil {
