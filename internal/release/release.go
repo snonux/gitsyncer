@@ -74,7 +74,7 @@ func (m *Manager) GetLocalTags(repoPath string) ([]string, error) {
 
 	var versionTags []string
 	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
-	
+
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
 		if tag != "" && isVersionTag(tag) {
@@ -108,7 +108,7 @@ func compareVersions(v1, v2 string) int {
 
 	for i := 0; i < maxLen; i++ {
 		var n1, n2 int
-		
+
 		if i < len(parts1) {
 			fmt.Sscanf(parts1[i], "%d", &n1)
 		}
@@ -136,7 +136,7 @@ func (m *Manager) GetCommitsSinceTag(repoPath, fromTag, toTag string) ([]string,
 	} else {
 		cmd = exec.Command("git", "-C", repoPath, "log", "--pretty=format:%s", fmt.Sprintf("%s..%s", fromTag, toTag))
 	}
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		// If error, it might be because fromTag doesn't exist, try without it
@@ -156,7 +156,7 @@ func (m *Manager) GetCommitsSinceTag(repoPath, fromTag, toTag string) ([]string,
 	for i, j := 0, len(commits)-1; i < j; i, j = i+1, j-1 {
 		commits[i], commits[j] = commits[j], commits[i]
 	}
-	
+
 	return commits, nil
 }
 
@@ -171,24 +171,24 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 			break
 		}
 	}
-	
+
 	if tagIndex > 0 {
 		prevTag = allTags[tagIndex-1]
 	}
-	
+
 	// Get commits since previous tag
 	commits, err := m.GetCommitsSinceTag(repoPath, prevTag, tag)
 	if err != nil {
 		return fmt.Sprintf("Release %s", tag)
 	}
-	
+
 	if len(commits) == 0 {
 		return fmt.Sprintf("Release %s", tag)
 	}
-	
+
 	// Group commits by type
 	var features, fixes, other []string
-	
+
 	for _, commit := range commits {
 		lower := strings.ToLower(commit)
 		if strings.HasPrefix(lower, "feat:") || strings.HasPrefix(lower, "feature:") {
@@ -199,15 +199,15 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 			other = append(other, commit)
 		}
 	}
-	
+
 	// Build release notes
 	var notes strings.Builder
 	notes.WriteString(fmt.Sprintf("Release %s\n\n", tag))
-	
+
 	if prevTag != "" {
 		notes.WriteString(fmt.Sprintf("Changes since %s:\n\n", prevTag))
 	}
-	
+
 	if len(features) > 0 {
 		notes.WriteString("## New Features\n\n")
 		for _, feat := range features {
@@ -215,7 +215,7 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 		}
 		notes.WriteString("\n")
 	}
-	
+
 	if len(fixes) > 0 {
 		notes.WriteString("## Bug Fixes\n\n")
 		for _, fix := range fixes {
@@ -223,7 +223,7 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 		}
 		notes.WriteString("\n")
 	}
-	
+
 	if len(other) > 0 {
 		notes.WriteString("## Other Changes\n\n")
 		for _, commit := range other {
@@ -231,7 +231,7 @@ func (m *Manager) GenerateReleaseNotes(repoPath, tag string, allTags []string) s
 		}
 		notes.WriteString("\n")
 	}
-	
+
 	return notes.String()
 }
 
@@ -256,12 +256,12 @@ func (m *Manager) GetDiffBetweenTags(repoPath, fromTag, toTag string) (string, e
 	} else {
 		cmd = exec.Command("git", "-C", repoPath, "diff", "--stat", fmt.Sprintf("%s..%s", fromTag, toTag))
 	}
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("failed to get diff: %w", err)
 	}
-	
+
 	// Also get the actual diff for key files (limit to prevent huge outputs)
 	var diffCmd *exec.Cmd
 	if fromTag == "" {
@@ -269,24 +269,46 @@ func (m *Manager) GetDiffBetweenTags(repoPath, fromTag, toTag string) (string, e
 	} else {
 		diffCmd = exec.Command("git", "-C", repoPath, "diff", fmt.Sprintf("%s..%s", fromTag, toTag), "--", "*.go", "*.js", "*.py", "*.rs", "*.c", "*.cpp", "*.java", "*.ts", "*.jsx", "*.tsx", "README*", "*.md")
 	}
-	
+
 	diffOutput, err := diffCmd.Output()
 	if err != nil {
 		// If error, just use the stat output
 		return string(output), nil
 	}
-	
+
 	// Combine stat and limited diff (truncate if too long)
 	fullOutput := string(output) + "\n\n" + string(diffOutput)
 	maxLength := 50000 // Limit to 50KB to avoid overwhelming Claude
 	if len(fullOutput) > maxLength {
 		fullOutput = fullOutput[:maxLength] + "\n\n... (diff truncated)"
 	}
-	
+
 	return fullOutput, nil
 }
 
-// GenerateAIReleaseNotes generates prose release notes using Claude CLI
+// executeAICommand executes an AI command and returns the output or an error
+func (m *Manager) executeAICommand(cmd *exec.Cmd, toolName string) (string, error) {
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return "", fmt.Errorf("%s command failed: %w. Output: %s", toolName, err, string(output))
+	}
+
+	content := strings.TrimSpace(string(output))
+	if content == "" {
+		return "", fmt.Errorf("received empty output from %s", toolName)
+	}
+
+	// Check for common error indicators in the output
+	if strings.HasPrefix(content, "Error:") ||
+		(toolName == "claude" && strings.Contains(content, "API Error")) ||
+		(toolName == "claude" && strings.Contains(content, "authentication_error")) {
+		return "", fmt.Errorf("%s returned an error: %s", toolName, content)
+	}
+
+	return content, nil
+}
+
+// GenerateAIReleaseNotes generates prose release notes using an AI tool, with fallback.
 func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags []string, commits []string) (string, error) {
 	// Find the previous tag
 	var prevTag string
@@ -297,30 +319,30 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 			break
 		}
 	}
-	
+
 	if tagIndex > 0 {
 		prevTag = allTags[tagIndex-1]
 	}
-	
+
 	// Get the diff between tags
 	diff, err := m.GetDiffBetweenTags(repoPath, prevTag, tag)
 	if err != nil {
 		return "", fmt.Errorf("failed to get diff: %w", err)
 	}
-	
-	// Prepare the prompt for Claude
+
+	// Prepare the prompt for the AI
 	var prompt strings.Builder
 	prompt.WriteString(fmt.Sprintf("Generate professional release notes for %s version %s.\n\n", repoName, tag))
-	
+
 	if prevTag != "" {
 		prompt.WriteString(fmt.Sprintf("Previous version: %s\n", prevTag))
 	}
-	
+
 	prompt.WriteString("\nCommit messages:\n")
 	for _, commit := range commits {
 		prompt.WriteString(fmt.Sprintf("- %s\n", commit))
 	}
-	
+
 	prompt.WriteString("\nCode changes:\n")
 	prompt.WriteString(diff)
 	prompt.WriteString("\n\nBased on the commits and code changes above, write professional release notes that:\n")
@@ -332,106 +354,69 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	prompt.WriteString("6. Keep it concise but informative\n")
 	prompt.WriteString("7. Format using Markdown\n")
 	prompt.WriteString("\nDo not include the version number in the title as it will be added automatically.")
-	
-	// Run AI CLI
-	fmt.Printf("  Running %s CLI command:\n", m.aiTool)
-	if m.aiTool == "claude" || m.aiTool == "" {
-		fmt.Println("  claude --model sonnet \"...\"")
-	} else if m.aiTool == "aichat" {
-		fmt.Println("  aichat \"...\"")
-	}
+
 	fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
 	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
 	fmt.Printf("  Total prompt length: %d characters\n", len(prompt.String()))
-	
+
 	// Determine which AI tool to use (default to claude if not set)
 	aiTool := m.aiTool
 	if aiTool == "" {
 		aiTool = "claude"
 	}
-	
-	var cmd *exec.Cmd
-	
-	switch aiTool {
-	case "claude":
-		// Check if claude CLI is available
+
+	var releaseNotes string
+
+	if aiTool == "claude" {
+		fmt.Println("  Running claude CLI command...")
 		if _, err := exec.LookPath("claude"); err != nil {
-			return "", fmt.Errorf("claude CLI not found in PATH. Please ensure claude CLI is installed and available")
-		}
-		
-		// Skip auth check - it may hang or cause issues
-		// Users can manually run 'claude auth status' if needed
-		
-		cmd = exec.Command("claude", "--model", "sonnet", prompt.String())
-		cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1") // Enable debug mode if supported
-		
-	case "aichat":
-		// Check if aichat CLI is available
-		if _, err := exec.LookPath("aichat"); err != nil {
-			return "", fmt.Errorf("aichat CLI not found in PATH. Please ensure aichat CLI is installed and available")
-		}
-		
-		// For aichat, we need to pipe the prompt through stdin
-		cmd = exec.Command("aichat", prompt.String())
-		
-	default:
-		return "", fmt.Errorf("unsupported AI tool: %s (supported: claude, aichat)", aiTool)
-	}
-	
-	output, err := cmd.CombinedOutput() // Use CombinedOutput to capture stderr
-	if err != nil {
-		// Check if it's an exit error and print the output
-		if exitErr, ok := err.(*exec.ExitError); ok {
-			fmt.Printf("  %s CLI failed with exit code %d\n", aiTool, exitErr.ExitCode())
-			fmt.Printf("  Error output: %s\n", string(output))
-			
-			// Provide more helpful error messages based on common issues
-			errorMsg := string(output)
-			fmt.Printf("  Raw error output: %q\n", errorMsg) // Show with quotes to see whitespace
-			
-			if aiTool == "claude" {
-				if strings.Contains(errorMsg, "Execution error") && len(errorMsg) < 50 {
-					fmt.Println("  Hint: This generic error often indicates:")
-					fmt.Println("    - Authentication issues (try: claude auth login)")
-					fmt.Println("    - Network connectivity problems")
-					fmt.Println("    - Rate limiting")
-					fmt.Println("    - Invalid model name (valid: opus, sonnet, haiku)")
-					fmt.Println("    - Try running manually: claude --model sonnet \"Hello\"")
-				}
-			} else if aiTool == "aichat" {
-				fmt.Println("  Hint: Common aichat issues:")
-				fmt.Println("    - Check configuration file (usually ~/.config/aichat/config.yaml)")
-				fmt.Println("    - Ensure API keys are set correctly")
-				fmt.Println("    - Try running manually: echo \"Hello\" | aichat \"Say hello back\"")
+			fmt.Println("  claude CLI not found, falling back to aichat...")
+			aiTool = "aichat"
+		} else {
+			cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
+			cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
+
+			notes, err := m.executeAICommand(cmd, "claude")
+			if err != nil {
+				fmt.Printf("  Claude CLI failed: %v\n", err)
+				fmt.Println("  Falling back to aichat...")
+				aiTool = "aichat"
+			} else {
+				releaseNotes = notes
 			}
-			
-			return "", fmt.Errorf("%s CLI failed: %s", aiTool, errorMsg)
 		}
-		return "", fmt.Errorf("failed to run %s: %w", aiTool, err)
 	}
-	
-	releaseNotes := strings.TrimSpace(string(output))
+
+	if aiTool == "aichat" {
+		fmt.Println("  Running aichat CLI command...")
+		if _, err := exec.LookPath("aichat"); err != nil {
+			return "", fmt.Errorf("aichat CLI not found in PATH and claude fallback failed")
+		}
+
+		cmd := exec.Command("aichat", prompt.String())
+		notes, err := m.executeAICommand(cmd, "aichat")
+		if err != nil {
+			return "", fmt.Errorf("aichat CLI failed: %w", err)
+		}
+		releaseNotes = notes
+	}
+
 	if releaseNotes == "" {
-		return "", fmt.Errorf("received empty release notes from %s", aiTool)
+		return "", fmt.Errorf("all AI tools failed to generate release notes")
 	}
-	
-	// Check for known error messages in the output
-	if releaseNotes == "Execution error" || strings.HasPrefix(releaseNotes, "Error:") {
-		return "", fmt.Errorf("%s CLI returned an error: %s", aiTool, releaseNotes)
-	}
-	
+
 	// Add header
 	var finalNotes strings.Builder
 	finalNotes.WriteString(fmt.Sprintf("# Release %s\n\n", tag))
 	finalNotes.WriteString(releaseNotes)
-	
+
 	return finalNotes.String(), nil
 }
 
 // GetGitHubReleases fetches releases from GitHub
 func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -476,7 +461,7 @@ func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 // GetCodebergReleases fetches releases from Codeberg
 func (m *Manager) GetCodebergReleases(owner, repo string) ([]string, error) {
 	url := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases", owner, repo)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return nil, err
@@ -541,13 +526,13 @@ func (m *Manager) CreateGitHubRelease(owner, repo, tag, releaseNotes string) err
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
-	
+
 	// Use provided release notes or default
 	body := releaseNotes
 	if body == "" {
 		body = fmt.Sprintf("Release %s", tag)
 	}
-	
+
 	release := Release{
 		TagName: tag,
 		Name:    tag,
@@ -590,20 +575,20 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	}
 
 	url := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases", owner, repo)
-	
+
 	// Use provided release notes or default
 	body := releaseNotes
 	if body == "" {
 		body = fmt.Sprintf("Release %s", tag)
 	}
-	
+
 	// Codeberg uses Gitea API
 	// According to Gitea API docs, only tag_name is required
 	release := map[string]interface{}{
-		"tag_name": tag,
-		"name":     tag,  // Use simple tag name like working releases
-		"body":     body,
-		"draft":    false,
+		"tag_name":   tag,
+		"name":       tag, // Use simple tag name like working releases
+		"body":       body,
+		"draft":      false,
 		"prerelease": false,
 	}
 
@@ -611,7 +596,6 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	if err != nil {
 		return err
 	}
-	
 
 	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
 	if err != nil {
@@ -631,7 +615,7 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 
 	if resp.StatusCode != 201 {
 		body, _ := io.ReadAll(resp.Body)
-		
+
 		// Special handling for known Gitea issue
 		if resp.StatusCode == 409 && strings.Contains(string(body), "Release is has no Tag") {
 			// This is a known Gitea bug - the tag exists but Gitea can't create a release for it
@@ -641,7 +625,7 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 			fmt.Printf("You may need to create this release manually through the Codeberg web interface.\n\n")
 			return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
 		}
-		
+
 		return fmt.Errorf("failed to create Codeberg release: %s - %s", resp.Status, string(body))
 	}
 
@@ -651,10 +635,10 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 // PromptConfirmation asks for user confirmation
 func PromptConfirmation(message string) bool {
 	fmt.Printf("%s [y/N]: ", message)
-	
+
 	var response string
 	fmt.Scanln(&response)
-	
+
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
 }
@@ -665,12 +649,12 @@ func PromptConfirmationWithNotes(message, releaseNotes string) bool {
 	fmt.Printf("Release Notes:\n%s\n", strings.Repeat("-", 70))
 	fmt.Println(releaseNotes)
 	fmt.Printf("%s\n\n", strings.Repeat("-", 70))
-	
+
 	fmt.Printf("%s [y/N]: ", message)
-	
+
 	var response string
 	fmt.Scanln(&response)
-	
+
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
 }
@@ -683,7 +667,7 @@ func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) err
 
 	// First, get the release ID
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -713,7 +697,7 @@ func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) err
 
 	// Now update the release
 	updateURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/%d", owner, repo, releaseInfo.ID)
-	
+
 	release := Release{
 		TagName: tag,
 		Name:    tag,
@@ -756,7 +740,7 @@ func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) e
 
 	// First, get the release ID
 	url := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases/tags/%s", owner, repo, tag)
-	
+
 	req, err := http.NewRequest("GET", url, nil)
 	if err != nil {
 		return err
@@ -785,7 +769,7 @@ func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) e
 
 	// Now update the release
 	updateURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases/%d", owner, repo, releaseInfo.ID)
-	
+
 	release := Release{
 		TagName: tag,
 		Name:    tag,
