@@ -151,9 +151,9 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		fmt.Println("No Codeberg organization found in config")
 	}
 	
-	// Process the specified repositories
-	for _, repoName := range repositories {
-		fmt.Printf("\nChecking releases for repository: %s\n", repoName)
+        // Process the specified repositories
+        for _, repoName := range repositories {
+            fmt.Printf("\nChecking releases for repository: %s\n", repoName)
 		
 		// Check if the repository is cloned locally
 		repoPath := filepath.Join(flags.WorkDir, repoName)
@@ -174,41 +174,84 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 			continue
 		}
 		
-		fmt.Printf("  Found %d version tags: %s\n", len(localTags), strings.Join(localTags, ", "))
+            fmt.Printf("  Found %d version tags: %s\n", len(localTags), strings.Join(localTags, ", "))
+            // Log configured skip rules for this repo, if any
+            if cfg.SkipReleases != nil {
+                if skipTags, ok := cfg.SkipReleases[repoName]; ok && len(skipTags) > 0 {
+                    fmt.Printf("  Config skip_releases for %s: %s\n", repoName, strings.Join(skipTags, ", "))
+                }
+            }
 		
 		// Check GitHub releases if GitHub is configured
 		var missingGitHub []string
 		githubOrg := cfg.FindGitHubOrg()
-		if githubOrg != nil && githubOrg.Name != "" {
-			githubReleases, err := releaseManager.GetGitHubReleases(githubOrg.Name, repoName)
-			if err != nil {
-				fmt.Printf("  Error checking GitHub releases: %v\n", err)
-			} else {
-				missingGitHub = releaseManager.FindMissingReleases(localTags, githubReleases)
-				if len(missingGitHub) > 0 {
-					fmt.Printf("  Missing GitHub releases: %s\n", strings.Join(missingGitHub, ", "))
-				}
-			}
-		}
+            if githubOrg != nil && githubOrg.Name != "" {
+                githubReleases, err := releaseManager.GetGitHubReleases(githubOrg.Name, repoName)
+                if err != nil {
+                    fmt.Printf("  Error checking GitHub releases: %v\n", err)
+                } else {
+                    missingGitHub = releaseManager.FindMissingReleases(localTags, githubReleases)
+                    // Filter out tags that should be skipped per config
+                    if len(missingGitHub) > 0 {
+                        var filtered []string
+                        var skipped []string
+                        for _, t := range missingGitHub {
+                            if cfg.ShouldSkipRelease(repoName, t) {
+                                skipped = append(skipped, t)
+                            } else {
+                                filtered = append(filtered, t)
+                            }
+                        }
+                        if len(skipped) > 0 {
+                            fmt.Printf("  Skipping GitHub releases per config for tags: %s\n", strings.Join(skipped, ", "))
+                        }
+                        missingGitHub = filtered
+                        if len(missingGitHub) > 0 {
+                            fmt.Printf("  Missing GitHub releases: %s\n", strings.Join(missingGitHub, ", "))
+                        }
+                    }
+                }
+            }
 		
 		// Check Codeberg releases if Codeberg is configured
 		var missingCodeberg []string
 		codebergOrg := cfg.FindCodebergOrg()
-		if codebergOrg != nil && codebergOrg.Name != "" {
-			codebergReleases, err := releaseManager.GetCodebergReleases(codebergOrg.Name, repoName)
-			if err != nil {
-				fmt.Printf("  Error checking Codeberg releases: %v\n", err)
-			} else {
-				missingCodeberg = releaseManager.FindMissingReleases(localTags, codebergReleases)
-				if len(missingCodeberg) > 0 {
-					fmt.Printf("  Missing Codeberg releases: %s\n", strings.Join(missingCodeberg, ", "))
-				}
-			}
-		}
+            if codebergOrg != nil && codebergOrg.Name != "" {
+                codebergReleases, err := releaseManager.GetCodebergReleases(codebergOrg.Name, repoName)
+                if err != nil {
+                    fmt.Printf("  Error checking Codeberg releases: %v\n", err)
+                } else {
+                    missingCodeberg = releaseManager.FindMissingReleases(localTags, codebergReleases)
+                    // Filter out tags that should be skipped per config
+                    if len(missingCodeberg) > 0 {
+                        var filtered []string
+                        var skipped []string
+                        for _, t := range missingCodeberg {
+                            if cfg.ShouldSkipRelease(repoName, t) {
+                                skipped = append(skipped, t)
+                            } else {
+                                filtered = append(filtered, t)
+                            }
+                        }
+                        if len(skipped) > 0 {
+                            fmt.Printf("  Skipping Codeberg releases per config for tags: %s\n", strings.Join(skipped, ", "))
+                        }
+                        missingCodeberg = filtered
+                        if len(missingCodeberg) > 0 {
+                            fmt.Printf("  Missing Codeberg releases: %s\n", strings.Join(missingCodeberg, ", "))
+                        }
+                    }
+                }
+            }
 		
 		// Create missing releases with confirmation
-		if len(missingGitHub) > 0 && githubOrg != nil {
-			for _, tag := range missingGitHub {
+            if len(missingGitHub) > 0 && githubOrg != nil {
+                for _, tag := range missingGitHub {
+                    // Skip if configured to skip this repo/tag
+                    if cfg.ShouldSkipRelease(repoName, tag) {
+                        fmt.Printf("  Skipping GitHub release for %s:%s per config skip_releases\n", repoName, tag)
+                        continue
+                    }
 				// Get commits for this tag
 				commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
 				if err != nil {
@@ -281,8 +324,13 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 			}
 		}
 		
-		if len(missingCodeberg) > 0 && codebergOrg != nil {
-			for _, tag := range missingCodeberg {
+            if len(missingCodeberg) > 0 && codebergOrg != nil {
+                for _, tag := range missingCodeberg {
+                    // Skip if configured to skip this repo/tag
+                    if cfg.ShouldSkipRelease(repoName, tag) {
+                        fmt.Printf("  Skipping Codeberg release for %s:%s per config skip_releases\n", repoName, tag)
+                        continue
+                    }
 				// Get commits for this tag
 				commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
 				if err != nil {

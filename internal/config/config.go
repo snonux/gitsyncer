@@ -19,11 +19,14 @@ type Organization struct {
 
 // Config holds the application configuration
 type Config struct {
-	Organizations       []Organization `json:"organizations"`
-	Repositories        []string       `json:"repositories,omitempty"`
-	ExcludeBranches     []string       `json:"exclude_branches,omitempty"`     // Regex patterns for branches to exclude
-	WorkDir             string         `json:"work_dir,omitempty"`             // Working directory for cloning repositories
-	ExcludeFromShowcase []string       `json:"exclude_from_showcase,omitempty"` // Repository names to exclude from showcase
+    Organizations       []Organization `json:"organizations"`
+    Repositories        []string       `json:"repositories,omitempty"`
+    ExcludeBranches     []string       `json:"exclude_branches,omitempty"`     // Regex patterns for branches to exclude
+    WorkDir             string         `json:"work_dir,omitempty"`             // Working directory for cloning repositories
+    ExcludeFromShowcase []string       `json:"exclude_from_showcase,omitempty"` // Repository names to exclude from showcase
+    // SkipReleases maps a repository name to a list of tag names for which
+    // releases should NOT be created on any platform (GitHub/Codeberg)
+    SkipReleases        map[string][]string `json:"skip_releases,omitempty"`
 }
 
 // Load reads and parses the configuration file
@@ -99,7 +102,25 @@ func (c *Config) Validate() error {
 		}
 	}
 
-	return nil
+    return nil
+}
+
+// ShouldSkipRelease returns true if the configuration specifies that
+// the given repo/tag combination should not have a release created.
+func (c *Config) ShouldSkipRelease(repo, tag string) bool {
+    if c == nil || c.SkipReleases == nil {
+        return false
+    }
+    tags, ok := c.SkipReleases[repo]
+    if !ok {
+        return false
+    }
+    for _, t := range tags {
+        if t == tag {
+            return true
+        }
+    }
+    return false
 }
 
 // GetGitURL returns the git URL for an organization
@@ -157,4 +178,3 @@ func (o *Organization) IsSSH() bool {
 	return !o.IsGitHub() && !o.IsCodeberg() && !strings.HasPrefix(o.Host, "file://") &&
 		(strings.Contains(o.Host, "@") || strings.Contains(o.Host, ":"))
 }
-

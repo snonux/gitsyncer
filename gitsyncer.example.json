@@ -17,5 +17,8 @@
     "gitsyncer",
     "another-repo",
     "yet-another-repo"
-  ]
+  ],
+  "skip_releases": {
+    "fapi": ["0.0.1"]
+  }
 }

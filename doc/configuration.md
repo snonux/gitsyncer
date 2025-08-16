@@ -65,6 +65,19 @@ Array of repository names to sync. If empty, use `--sync-codeberg-public` or `--
 #### exclude_branches (optional)
 Array of regex patterns for branches to exclude from synchronization.
 
+#### skip_releases (optional)
+Map of repository names to an array of tag names for which releases should not be created on any platform (GitHub and Codeberg). Useful to suppress auto-release for specific historical tags.
+
+Example:
+```json
+{
+  "skip_releases": {
+    "fapi": ["0.0.1", "0.0.2"],
+    "another-repo": ["v1.0.0"]
+  }
+}
+```
+
 ## Examples
 
 ### Minimal Configuration
