@@ -59,5 +59,5 @@ func init() {
 	showcaseCmd.Flags().StringVarP(&outputPath, "output", "o", "", "custom output path (default: ~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl)")
 	showcaseCmd.Flags().StringVar(&outputFormat, "format", "gemtext", "output format: gemtext, markdown, html")
 	showcaseCmd.Flags().StringVar(&excludePattern, "exclude", "", "exclude repos matching pattern")
-	showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "claude", "AI tool to use for project summaries (claude or aichat)")
+    showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "claude", "AI tool to use for project summaries (claude or aichat)")
 }

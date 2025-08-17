@@ -177,6 +177,13 @@ gitsyncer release create myproject --no-ai-notes
 gitsyncer release create --ai-tool aichat
 ```
 
+#### AI Release Notes Engines
+
+- Default flow: tries `hexai` first by piping the generated commit/diff payload to stdin and passing an instruction prompt as the sole argument (equivalent to `cat SOMETEXT.txt | hexai PROMPT`).
+- Fallback: if `hexai` is not available or fails, falls back to `claude --model sonnet`, then to `aichat`.
+- Explicit tool: `--ai-tool claude` or `--ai-tool aichat` influences the fallback preference, but `hexai` is still attempted first when available.
+- Requirements: ensure `hexai`, `claude`, or `aichat` are installed and available in `PATH`.
+
 ### Project Showcase
 
 ```bash

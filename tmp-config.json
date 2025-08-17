@@ -1,0 +1,11 @@
+{
+  "organizations": [
+    {"host": "git@codeberg.org", "name": "dummy"},
+    {"host": "git@github.com", "name": "dummy"}
+  ],
+  "repositories": ["fapi"],
+  "work_dir": "./tmp-work",
+  "skip_releases": {
+    "fapi": ["0.0.1"]
+  }
+}

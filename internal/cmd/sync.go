@@ -189,7 +189,7 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&noReleases, "no-releases", false, "skip release checking after sync")
 	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
 	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
-	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "claude", "AI tool to use for release notes when auto-creating (claude or aichat)")
+    syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "claude", "AI tool to use for release notes when auto-creating (claude or aichat; hexai is tried first if available)")
 }
 
 func buildFlags() *cli.Flags {

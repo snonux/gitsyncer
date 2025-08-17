@@ -16,10 +16,11 @@ var (
 )
 
 var releaseCmd = &cobra.Command{
-	Use:   "release",
-	Short: "Manage releases across platforms",
-	Long: `Check for version tags without releases and create them across 
-GitHub and Codeberg. Supports AI-generated release notes using Claude.`,
+    Use:   "release",
+    Short: "Manage releases across platforms",
+    Long: `Check for version tags without releases and create them across 
+GitHub and Codeberg. Supports AI-generated release notes via hexai (stdin pipeline),
+with fallback to Claude or aichat.`,
 }
 
 var releaseCheckCmd = &cobra.Command{
@@ -108,5 +109,5 @@ func init() {
 	releaseCreateCmd.Flags().BoolVar(&noAINotes, "no-ai-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 	releaseCreateCmd.Flags().BoolVar(&updateExisting, "update-existing", false, "update existing releases with new AI-generated notes")
 	releaseCreateCmd.Flags().StringVar(&templatePath, "template", "", "custom template for release notes")
-	releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "claude", "AI tool to use for release notes (claude or aichat)")
+    releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "claude", "AI tool to use for release notes (claude or aichat; hexai is tried first if available)")
 }
