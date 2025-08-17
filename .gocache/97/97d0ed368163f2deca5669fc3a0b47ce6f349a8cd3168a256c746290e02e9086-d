@@ -1,0 +1,5 @@
+./code_extractor.go
+./images.go
+./language_detector.go
+./metadata.go
+./showcase.go

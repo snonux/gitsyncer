@@ -50,12 +50,12 @@ else
     exit 1
 fi
 
-# Test 1: Version flag
-print_test "Test 1: Version flag"
-if ./gitsyncer --version | grep -q "gitsyncer version"; then
-    print_success "Version flag works"
+# Test 1: Version command
+print_test "Test 1: Version command"
+if ./gitsyncer version | grep -q "gitsyncer version"; then
+    print_success "Version command works"
 else
-    print_failure "Version flag failed"
+    print_failure "Version command failed"
     exit 1
 fi
 
@@ -74,7 +74,7 @@ fi
 # Test 3: List organizations
 print_test "Test 3: List organizations"
 cd "$PROJECT_ROOT"
-if ./gitsyncer --config test/test-config.json --list-orgs | grep -q "org1"; then
+if ./gitsyncer --config test/test-config.json list orgs | grep -q "org1"; then
     print_success "Organizations listed successfully"
 else
     print_failure "Failed to list organizations"
@@ -84,7 +84,7 @@ fi
 # Test 4: Initial sync
 print_test "Test 4: Initial repository sync"
 rm -rf test/work
-if ./gitsyncer --config test/test-config.json --sync test-repo --work-dir test/work > /dev/null 2>&1; then
+if ./gitsyncer --config test/test-config.json sync repo test-repo --work-dir test/work > /dev/null 2>&1; then
     print_success "Initial sync completed"
     
     # Verify all branches are synced
@@ -105,7 +105,7 @@ fi
 print_test "Test 5: Idempotent sync (no changes)"
 cd "$PROJECT_ROOT"
 rm -rf test/work2
-if ./gitsyncer --config test/test-config.json --sync test-repo --work-dir test/work2 > /dev/null 2>&1; then
+if ./gitsyncer --config test/test-config.json sync repo test-repo --work-dir test/work2 > /dev/null 2>&1; then
     print_success "Idempotent sync successful"
 else
     print_failure "Idempotent sync failed"
@@ -130,7 +130,7 @@ git push -q origin main
 # Run sync
 cd "$PROJECT_ROOT"
 rm -rf test/work3
-if ./gitsyncer --config test/test-config.json --sync test-repo --work-dir test/work3 > /dev/null 2>&1; then
+if ./gitsyncer --config test/test-config.json sync repo test-repo --work-dir test/work3 > /dev/null 2>&1; then
     print_success "Sync with changes successful"
     
     # Verify change is in org2
@@ -170,7 +170,7 @@ fi
 
 # Test 8: Missing config file
 print_test "Test 8: Missing config file handling"
-if ./gitsyncer --config test/nonexistent.json --sync test-repo 2>&1 | grep -q "Failed to load configuration"; then
+if ./gitsyncer --config test/nonexistent.json sync repo test-repo 2>&1 | grep -q "Error loading configuration"; then
     print_success "Missing config file handled correctly"
 else
     print_failure "Missing config file not handled properly"
@@ -182,7 +182,7 @@ print_test "Test 9: Invalid configuration handling"
 cd "$TEST_DIR"
 echo '{"organizations": []}' > empty-config.json
 cd "$PROJECT_ROOT"
-if ./gitsyncer --config test/empty-config.json --sync test-repo 2>&1 | grep -q "no organizations configured"; then
+if ./gitsyncer --config test/empty-config.json sync repo test-repo 2>&1 | grep -q "invalid configuration: no organizations configured"; then
     print_success "Empty organization list handled correctly"
 else
     print_failure "Empty organization list not handled properly"
@@ -196,7 +196,7 @@ cd "$TEST_DIR"
 cd "$PROJECT_ROOT"
 
 # Test list-repos
-if ./gitsyncer --config test/multi-repo-config.json --list-repos | grep -q "repo1"; then
+if ./gitsyncer --config test/multi-repo-config.json list repos | grep -q "repo1"; then
     print_success "Repository listing works"
 else
     print_failure "Failed to list repositories"
@@ -204,7 +204,7 @@ else
 fi
 
 # Test sync-all
-if ./gitsyncer --config test/multi-repo-config.json --sync-all --work-dir test/work-multi > /dev/null 2>&1; then
+if ./gitsyncer --config test/multi-repo-config.json sync all --work-dir test/work-multi > /dev/null 2>&1; then
     print_success "Multiple repository sync completed"
 else
     print_failure "Multiple repository sync failed"

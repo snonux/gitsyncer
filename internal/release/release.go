@@ -330,50 +330,72 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		return "", fmt.Errorf("failed to get diff: %w", err)
 	}
 
-	// Prepare the prompt for the AI
-	var prompt strings.Builder
-	prompt.WriteString(fmt.Sprintf("Generate professional release notes for %s version %s.\n\n", repoName, tag))
+    // Prepare prompt/instructions and input payload
+    var instr strings.Builder
+    instr.WriteString(fmt.Sprintf("Generate professional release notes for %s version %s.\n", repoName, tag))
+    if prevTag != "" {
+        instr.WriteString(fmt.Sprintf("Previous version: %s\n", prevTag))
+    }
+    instr.WriteString("\nBased on the provided commits and code changes, write professional release notes that:\n")
+    instr.WriteString("1. Start with a brief overview of what this release accomplishes\n")
+    instr.WriteString("2. Group changes into logical sections (Features, Improvements, Bug Fixes, etc.)\n")
+    instr.WriteString("3. Explain WHY each change is useful to users, not just what changed\n")
+    instr.WriteString("4. Use clear, non-technical language where possible\n")
+    instr.WriteString("5. Highlight any breaking changes or migration steps\n")
+    instr.WriteString("6. Keep it concise but informative\n")
+    instr.WriteString("7. Format using Markdown\n")
+    instr.WriteString("\nDo not include the version number in the title as it will be added automatically.")
 
-	if prevTag != "" {
-		prompt.WriteString(fmt.Sprintf("Previous version: %s\n", prevTag))
-	}
+    var input strings.Builder
+    input.WriteString("Commit messages:\n")
+    for _, commit := range commits {
+        input.WriteString(fmt.Sprintf("- %s\n", commit))
+    }
+    input.WriteString("\nCode changes:\n")
+    input.WriteString(diff)
 
-	prompt.WriteString("\nCommit messages:\n")
-	for _, commit := range commits {
-		prompt.WriteString(fmt.Sprintf("- %s\n", commit))
-	}
+    fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
+    fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
+    fmt.Printf("  Total prompt length: %d characters\n", len(instr.String())+len(input.String()))
 
-	prompt.WriteString("\nCode changes:\n")
-	prompt.WriteString(diff)
-	prompt.WriteString("\n\nBased on the commits and code changes above, write professional release notes that:\n")
-	prompt.WriteString("1. Start with a brief overview of what this release accomplishes\n")
-	prompt.WriteString("2. Group changes into logical sections (Features, Improvements, Bug Fixes, etc.)\n")
-	prompt.WriteString("3. Explain WHY each change is useful to users, not just what changed\n")
-	prompt.WriteString("4. Use clear, non-technical language where possible\n")
-	prompt.WriteString("5. Highlight any breaking changes or migration steps\n")
-	prompt.WriteString("6. Keep it concise but informative\n")
-	prompt.WriteString("7. Format using Markdown\n")
-	prompt.WriteString("\nDo not include the version number in the title as it will be added automatically.")
+    // Determine which AI tool to use (default to claude if not set)
+    aiTool := m.aiTool
+    if aiTool == "" {
+        aiTool = "claude"
+    }
 
-	fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
-	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
-	fmt.Printf("  Total prompt length: %d characters\n", len(prompt.String()))
+    // Build a full prompt string for tools that read a single argument
+    fullPrompt := instr.String() + "\n\n" + input.String()
 
-	// Determine which AI tool to use (default to claude if not set)
-	aiTool := m.aiTool
-	if aiTool == "" {
-		aiTool = "claude"
-	}
+    var releaseNotes string
 
-	var releaseNotes string
+    // 1) Try hexai first: echo input to stdin and pass instructions as argument
+    // Note: print stderr to console, but only use stdout for notes
+    if _, err := exec.LookPath("hexai"); err == nil {
+        fmt.Println("  Running hexai CLI command (stdin payload)...")
+        cmd := exec.Command("hexai", instr.String())
+        cmd.Stdin = strings.NewReader(input.String())
+        cmd.Stderr = os.Stderr
+        out, err := cmd.Output()
+        if err != nil {
+            fmt.Printf("  hexai CLI failed: %v\n", err)
+        } else {
+            notes := strings.TrimSpace(string(out))
+            if notes == "" {
+                fmt.Println("  hexai returned empty output; will try fallbacks...")
+            } else {
+                releaseNotes = notes
+            }
+        }
+    }
 
-	if aiTool == "claude" {
-		fmt.Println("  Running claude CLI command...")
+    if releaseNotes == "" && aiTool == "claude" {
+        fmt.Println("  Running claude CLI command...")
 		if _, err := exec.LookPath("claude"); err != nil {
 			fmt.Println("  claude CLI not found, falling back to aichat...")
 			aiTool = "aichat"
 		} else {
-			cmd := exec.Command("claude", "--model", "sonnet", prompt.String())
+			cmd := exec.Command("claude", "--model", "sonnet", fullPrompt)
 			cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
 
 			notes, err := m.executeAICommand(cmd, "claude")
@@ -387,13 +409,13 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		}
 	}
 
-	if aiTool == "aichat" {
+    if releaseNotes == "" && aiTool == "aichat" {
 		fmt.Println("  Running aichat CLI command...")
 		if _, err := exec.LookPath("aichat"); err != nil {
 			return "", fmt.Errorf("aichat CLI not found in PATH and claude fallback failed")
 		}
 
-		cmd := exec.Command("aichat", prompt.String())
+		cmd := exec.Command("aichat", fullPrompt)
 		notes, err := m.executeAICommand(cmd, "aichat")
 		if err != nil {
 			return "", fmt.Errorf("aichat CLI failed: %w", err)
