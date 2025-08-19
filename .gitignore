@@ -37,3 +37,4 @@ test/work/
 test/work-*/
 test/repos/
 .gitsyncer-work/
+tmp-workdir/
