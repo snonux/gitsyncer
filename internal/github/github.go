@@ -196,7 +196,79 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 
 // HasToken returns whether a token is configured
 func (c *Client) HasToken() bool {
-	return c.token != ""
+    return c.token != ""
+}
+
+// GetRepo fetches a single repository by name
+// Returns the repository, a boolean indicating existence, and an error
+func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
+    var repo Repository
+    if c.token == "" {
+        return repo, false, fmt.Errorf("GitHub token required")
+    }
+
+    url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
+    req, err := http.NewRequest("GET", url, nil)
+    if err != nil {
+        return repo, false, err
+    }
+    req.Header.Set("Authorization", "Bearer "+c.token)
+    req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return repo, false, err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode == 404 {
+        return repo, false, nil
+    }
+    if resp.StatusCode != 200 {
+        body, _ := io.ReadAll(resp.Body)
+        return repo, false, fmt.Errorf("failed to get repo: status %d: %s", resp.StatusCode, string(body))
+    }
+
+    if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
+        return repo, false, fmt.Errorf("failed to decode repo: %w", err)
+    }
+    return repo, true, nil
+}
+
+// UpdateRepoDescription updates the repository description
+func (c *Client) UpdateRepoDescription(repoName, description string) error {
+    if c.token == "" {
+        return fmt.Errorf("GitHub token required to update repository")
+    }
+
+    url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
+    payload := map[string]interface{}{
+        "description": description,
+    }
+    body, err := json.Marshal(payload)
+    if err != nil {
+        return err
+    }
+
+    req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(body))
+    if err != nil {
+        return err
+    }
+    req.Header.Set("Authorization", "Bearer "+c.token)
+    req.Header.Set("Accept", "application/vnd.github.v3+json")
+    req.Header.Set("Content-Type", "application/json")
+
+    resp, err := http.DefaultClient.Do(req)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+
+    if resp.StatusCode != 200 {
+        b, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("failed to update GitHub description: %s - %s", resp.Status, string(b))
+    }
+    return nil
 }
 
 // Repository represents a GitHub repository
