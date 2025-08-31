@@ -14,50 +14,74 @@ import (
 // HandleShowcaseOnly handles showcase generation without syncing
 // It will clone repositories if they don't exist locally, but won't sync changes
 func HandleShowcaseOnly(cfg *config.Config, flags *Flags) int {
-	// Get all repositories from all sources
-	allRepos, err := getAllRepositories(cfg)
-	if err != nil {
-		log.Printf("ERROR: Failed to get repositories: %v\n", err)
-		return 1
-	}
-	
-	if len(allRepos) == 0 {
-		fmt.Println("No repositories found")
-		return 1
-	}
-	
-	fmt.Printf("Found %d repositories total\n", len(allRepos))
-	
-	// Create a minimal syncer just for cloning
-	syncer := sync.New(cfg, flags.WorkDir)
-	syncer.SetBackupEnabled(false) // Never use backup in showcase-only mode
-	
-	// Ensure repositories are cloned (but not synced)
-	fmt.Println("\nEnsuring repositories are cloned locally...")
-	for _, repo := range allRepos {
-		if err := syncer.EnsureRepositoryCloned(repo); err != nil {
-			fmt.Printf("WARNING: Failed to clone %s: %v\n", repo, err)
-			// Continue with other repos
-		}
-	}
-	
-	// Generate showcase for all repositories
-	fmt.Println("\nGenerating showcase for all repositories...")
-	generator := showcase.New(cfg, flags.WorkDir)
-	
-	// Set AI tool if specified
-	if flags.AITool != "" {
-		generator.SetAITool(flags.AITool)
-	}
-	
-	// Pass empty filter to process all repos
-	if err := generator.GenerateShowcase(nil, flags.Force); err != nil {
-		log.Printf("ERROR: Failed to generate showcase: %v\n", err)
-		return 1
-	}
-	
-	fmt.Println("Showcase generation completed!")
-	return 0
+    // If a specific repo is requested, only generate for that repo
+    if flags.SyncRepo != "" {
+        repo := flags.SyncRepo
+
+        // Ensure the repository is cloned
+        syncer := sync.New(cfg, flags.WorkDir)
+        syncer.SetBackupEnabled(false)
+        if err := syncer.EnsureRepositoryCloned(repo); err != nil {
+            fmt.Printf("ERROR: Failed to clone %s: %v\n", repo, err)
+            return 1
+        }
+
+        // Generate showcase for just this repository
+        fmt.Printf("\nGenerating showcase for repository: %s...\n", repo)
+        generator := showcase.New(cfg, flags.WorkDir)
+        if flags.AITool != "" {
+            generator.SetAITool(flags.AITool)
+        }
+        if err := generator.GenerateShowcase([]string{repo}, flags.Force); err != nil {
+            log.Printf("ERROR: Failed to generate showcase for %s: %v\n", repo, err)
+            return 1
+        }
+        fmt.Println("Showcase generation completed!")
+        return 0
+    }
+
+    // Otherwise, process all repositories
+    allRepos, err := getAllRepositories(cfg)
+    if err != nil {
+        log.Printf("ERROR: Failed to get repositories: %v\n", err)
+        return 1
+    }
+    if len(allRepos) == 0 {
+        fmt.Println("No repositories found")
+        return 1
+    }
+    fmt.Printf("Found %d repositories total\n", len(allRepos))
+
+    // Create a minimal syncer just for cloning
+    syncer := sync.New(cfg, flags.WorkDir)
+    syncer.SetBackupEnabled(false) // Never use backup in showcase-only mode
+
+    // Ensure repositories are cloned (but not synced)
+    fmt.Println("\nEnsuring repositories are cloned locally...")
+    for _, repo := range allRepos {
+        if err := syncer.EnsureRepositoryCloned(repo); err != nil {
+            fmt.Printf("WARNING: Failed to clone %s: %v\n", repo, err)
+            // Continue with other repos
+        }
+    }
+
+    // Generate showcase for all repositories
+    fmt.Println("\nGenerating showcase for all repositories...")
+    generator := showcase.New(cfg, flags.WorkDir)
+
+    // Set AI tool if specified
+    if flags.AITool != "" {
+        generator.SetAITool(flags.AITool)
+    }
+
+    // Pass empty filter to process all repos
+    if err := generator.GenerateShowcase(nil, flags.Force); err != nil {
+        log.Printf("ERROR: Failed to generate showcase: %v\n", err)
+        return 1
+    }
+
+    fmt.Println("Showcase generation completed!")
+    return 0
 }
 
 // getAllRepositories collects all unique repository names from all sources
