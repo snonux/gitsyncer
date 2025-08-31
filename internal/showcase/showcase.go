@@ -1,7 +1,8 @@
 package showcase
 
 import (
-	"encoding/json"
+    "context"
+    "encoding/json"
 	"fmt"
 	"os"
 	"os/exec"
@@ -153,6 +154,30 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 	return nil
 }
 
+// runCommandWithTimeout runs a command with a short timeout and returns trimmed stdout.
+// Stderr is included in the error message for easier debugging when GITSYNCER_DEBUG=1.
+func runCommandWithTimeout(name string, args ...string) (string, error) {
+    ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+    defer cancel()
+    cmd := exec.CommandContext(ctx, name, args...)
+    out, err := cmd.CombinedOutput()
+    if ctx.Err() == context.DeadlineExceeded {
+        return "", fmt.Errorf("command timed out")
+    }
+    if err != nil {
+        // include a snippet of output for debugging
+        msg := strings.TrimSpace(string(out))
+        if len(msg) > 300 {
+            msg = msg[:300] + "..."
+        }
+        if msg != "" {
+            return "", fmt.Errorf("%v: %s", err, msg)
+        }
+        return "", err
+    }
+    return string(out), nil
+}
+
 // getRepositories returns a list of repository directories in the work directory
 func (g *Generator) getRepositories() ([]string, error) {
 	entries, err := os.ReadDir(g.workDir)
@@ -197,12 +222,37 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 	}
 
-	// Check if AI tool command exists (only if we need to run it)
-	if !haveCachedSummary {
-		if _, err := exec.LookPath(g.aiTool); err != nil {
-			return nil, fmt.Errorf("%s command not found. Please install %s CLI", g.aiTool, g.aiTool)
-		}
-	}
+    // Determine which AI tool to use (only if we need to run it)
+    // Prefer hexai if available when default tool is "claude" (aligns with release flow)
+    selectedTool := g.aiTool
+    if !haveCachedSummary {
+        switch g.aiTool {
+        case "claude", "claude-code", "":
+            // Try hexai -> claude -> aichat
+            if _, err := exec.LookPath("hexai"); err == nil {
+                selectedTool = "hexai"
+            } else if _, err := exec.LookPath("claude"); err == nil {
+                selectedTool = "claude"
+            } else if _, err := exec.LookPath("codex"); err == nil {
+                selectedTool = "codex"
+            } else if _, err := exec.LookPath("aichat"); err == nil {
+                selectedTool = "aichat"
+            } else {
+                // No AI tool available; fall back to README-based summary later
+                selectedTool = ""
+            }
+        case "hexai", "aichat", "codex":
+            if _, err := exec.LookPath(g.aiTool); err != nil {
+                // Requested tool missing; fall back to README-based summary later
+                selectedTool = ""
+            } else {
+                selectedTool = g.aiTool
+            }
+        default:
+            // Unsupported tool configured; fall back to README-based summary later
+            selectedTool = ""
+        }
+    }
 
 	// Change to repository directory
 	originalDir, err := os.Getwd()
@@ -225,22 +275,50 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 
 	// Get the summary - either from cache or by running AI tool
 	var summary string
-	if haveCachedSummary {
-		summary = cachedSummary
-		fmt.Printf("Using cached AI summary\n")
-	} else {
-		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
+    if haveCachedSummary {
+        summary = cachedSummary
+        fmt.Printf("Using cached AI summary\n")
+    } else {
+        prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
 
-		var cmd *exec.Cmd
+        var cmd *exec.Cmd
 
-		switch g.aiTool {
-		case "claude":
-			fmt.Printf("Running Claude command:\n")
-			fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
-			cmd = exec.Command("claude", "--model", "sonnet", prompt)
-		case "aichat":
-			// For aichat, we need to read README.md and pipe it to aichat
-			fmt.Printf("Running aichat command:\n")
+        switch selectedTool {
+        case "claude":
+            fmt.Printf("Running Claude command:\n")
+            fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
+            cmd = exec.Command("claude", "--model", "sonnet", prompt)
+        case "hexai":
+            // Use README content as stdin and pass the prompt as argument
+            fmt.Printf("Running hexai command (stdin payload)\n")
+            // Find README file
+            readmeFiles := []string{
+                "README.md", "readme.md", "Readme.md",
+                "README.MD", "README.txt", "readme.txt",
+                "README", "readme",
+            }
+            var readmeContent []byte
+            var readmeFound bool
+            for _, readmeFile := range readmeFiles {
+                content, err := os.ReadFile(readmeFile)
+                if err == nil {
+                    readmeContent = content
+                    readmeFound = true
+                    fmt.Printf("  Using %s as input\n", readmeFile)
+                    break
+                }
+            }
+            if readmeFound {
+                fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
+                cmd = exec.Command("hexai", prompt)
+                cmd.Stdin = strings.NewReader(string(readmeContent))
+            } else {
+                // Will fall back below
+                cmd = nil
+            }
+        case "aichat":
+            // For aichat, we need to read README.md and pipe it to aichat
+            fmt.Printf("Running aichat command:\n")
 
 			// Find README file
 			readmeFiles := []string{
@@ -261,27 +339,89 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 				}
 			}
 
-			if !readmeFound {
-				return nil, fmt.Errorf("no README file found for aichat input")
-			}
+            if readmeFound {
+                fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
+                cmd = exec.Command("aichat", prompt)
+                cmd.Stdin = strings.NewReader(string(readmeContent))
+            } else {
+                // Will fall back below
+                cmd = nil
+            }
+        case "codex":
+            // Run codex CLI from inside the repository directory and let it infer context
+            // Try several non-interactive variants with a timeout, then fall back to prompt+stdin
+            fmt.Printf("Running codex CLI in repository directory...\n")
+            if os.Getenv("GITSYNCER_DEBUG") != "" {
+                if p, e := exec.LookPath("codex"); e == nil {
+                    fmt.Printf("  codex path: %s\n", p)
+                }
+            }
 
-			fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
-			cmd = exec.Command("aichat", prompt)
-			cmd.Stdin = strings.NewReader(string(readmeContent))
-		default:
-			return nil, fmt.Errorf("unsupported AI tool: %s", g.aiTool)
-		}
+            attempts := [][]string{
+                {},
+                {"describe"},
+                {"describe", "."},
+                {"project", "describe"},
+                {"summary"},
+            }
 
-		output, err := cmd.Output()
-		if err != nil {
-			return nil, fmt.Errorf("failed to run %s: %w", g.aiTool, err)
-		}
+            for _, a := range attempts {
+                out, err := runCommandWithTimeout("codex", a...)
+                if err == nil {
+                    trimmed := strings.TrimSpace(out)
+                    if trimmed != "" {
+                        summary = trimmed
+                        break
+                    }
+                } else if os.Getenv("GITSYNCER_DEBUG") != "" {
+                    fmt.Printf("  codex %s failed: %v\n", strings.Join(a, " "), err)
+                }
+            }
 
-		summary = strings.TrimSpace(string(output))
-		if summary == "" {
-			return nil, fmt.Errorf("received empty summary from %s", g.aiTool)
-		}
-	}
+            if summary == "" {
+                // Fall back to providing a prompt and synthesized context via stdin
+                fmt.Printf("  Falling back to prompt + stdin payload\n")
+                contextPayload, fromReadme := buildAIInputContext(repoPath)
+                if fromReadme {
+                    fmt.Printf("  Using README content as input\n")
+                } else {
+                    fmt.Printf("  No README found; using synthesized repo context\n")
+                }
+                cmd = exec.Command("codex", prompt)
+                cmd.Stdin = strings.NewReader(contextPayload)
+            }
+        default:
+            // No/unsupported tool; will fall back below
+            cmd = nil
+        }
+
+        if cmd != nil {
+            if output, err := cmd.Output(); err == nil {
+                summary = strings.TrimSpace(string(output))
+            }
+        }
+
+        // Fallback: create a minimal summary from README if AI unavailable/failed
+        if summary == "" {
+            readmeFiles := []string{
+                "README.md", "readme.md", "Readme.md",
+                "README.MD", "README.txt", "readme.txt",
+                "README", "readme",
+            }
+            for _, readmeFile := range readmeFiles {
+                if content, err := os.ReadFile(readmeFile); err == nil {
+                    parts := strings.Split(strings.TrimSpace(string(content)), "\n\n")
+                    if len(parts) > 0 {
+                        summary = strings.TrimSpace(parts[0])
+                        break
+                    }
+                }
+            }
+            if summary == "" {
+                summary = fmt.Sprintf("%s: source code repository.", repoName)
+            }
+        }
+    }
 
 	// Build URLs
 	codebergURL := ""
