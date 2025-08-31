@@ -233,15 +233,13 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
                 selectedTool = "hexai"
             } else if _, err := exec.LookPath("claude"); err == nil {
                 selectedTool = "claude"
-            } else if _, err := exec.LookPath("codex"); err == nil {
-                selectedTool = "codex"
             } else if _, err := exec.LookPath("aichat"); err == nil {
                 selectedTool = "aichat"
             } else {
                 // No AI tool available; fall back to README-based summary later
                 selectedTool = ""
             }
-        case "hexai", "aichat", "codex":
+        case "hexai", "aichat":
             if _, err := exec.LookPath(g.aiTool); err != nil {
                 // Requested tool missing; fall back to README-based summary later
                 selectedTool = ""
@@ -347,55 +345,12 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
                 // Will fall back below
                 cmd = nil
             }
-        case "codex":
-            // Run codex CLI from inside the repository directory and let it infer context
-            // Try several non-interactive variants with a timeout, then fall back to prompt+stdin
-            fmt.Printf("Running codex CLI in repository directory...\n")
-            if os.Getenv("GITSYNCER_DEBUG") != "" {
-                if p, e := exec.LookPath("codex"); e == nil {
-                    fmt.Printf("  codex path: %s\n", p)
-                }
-            }
-
-            attempts := [][]string{
-                {},
-                {"describe"},
-                {"describe", "."},
-                {"project", "describe"},
-                {"summary"},
-            }
-
-            for _, a := range attempts {
-                out, err := runCommandWithTimeout("codex", a...)
-                if err == nil {
-                    trimmed := strings.TrimSpace(out)
-                    if trimmed != "" {
-                        summary = trimmed
-                        break
-                    }
-                } else if os.Getenv("GITSYNCER_DEBUG") != "" {
-                    fmt.Printf("  codex %s failed: %v\n", strings.Join(a, " "), err)
-                }
-            }
-
-            if summary == "" {
-                // Fall back to providing a prompt and synthesized context via stdin
-                fmt.Printf("  Falling back to prompt + stdin payload\n")
-                contextPayload, fromReadme := buildAIInputContext(repoPath)
-                if fromReadme {
-                    fmt.Printf("  Using README content as input\n")
-                } else {
-                    fmt.Printf("  No README found; using synthesized repo context\n")
-                }
-                cmd = exec.Command("codex", prompt)
-                cmd.Stdin = strings.NewReader(contextPayload)
-            }
         default:
             // No/unsupported tool; will fall back below
             cmd = nil
         }
 
-        if cmd != nil {
+            if cmd != nil {
             if output, err := cmd.Output(); err == nil {
                 summary = strings.TrimSpace(string(output))
             }
