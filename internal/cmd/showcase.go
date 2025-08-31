@@ -23,7 +23,7 @@ var showcaseCmd = &cobra.Command{
     Long: `Generate a comprehensive showcase of all your projects using AI.
 This feature creates a formatted document with project summaries, statistics,
 and code snippets. By default uses Claude, but will try hexai first if available,
-then codex (if installed), and can also use aichat.`,
+and can also use aichat.`,
 	Example: `  # Generate showcase with cached summaries
   gitsyncer showcase
   
@@ -64,6 +64,6 @@ func init() {
     showcaseCmd.Flags().StringVarP(&outputPath, "output", "o", "", "custom output path (default: ~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl)")
     showcaseCmd.Flags().StringVar(&outputFormat, "format", "gemtext", "output format: gemtext, markdown, html")
     showcaseCmd.Flags().StringVar(&excludePattern, "exclude", "", "exclude repos matching pattern")
-    showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "claude", "AI tool for summaries: hexai, claude, claude-code, codex, or aichat (default tries hexai→claude→codex→aichat)")
+    showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "claude", "AI tool for summaries: hexai, claude, claude-code, or aichat (default tries hexai→claude→aichat)")
     showcaseCmd.Flags().StringVar(&showcaseRepo, "repo", "", "only generate showcase for a single repository")
 }
