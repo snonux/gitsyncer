@@ -52,7 +52,65 @@ func (m *Manager) SetCodebergToken(token string) {
 
 // SetAITool sets the AI tool to use for release notes generation
 func (m *Manager) SetAITool(tool string) {
-	m.aiTool = tool
+    m.aiTool = tool
+}
+
+// EnsureCodebergReleasesEnabled ensures that the Codeberg repository has the
+// Releases feature enabled. If it's disabled, attempts to enable it via API.
+func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
+    if m.codebergToken == "" {
+        return fmt.Errorf("Codeberg token is required to manage repository settings")
+    }
+
+    // Fetch repository metadata
+    infoURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
+    getReq, err := http.NewRequest("GET", infoURL, nil)
+    if err != nil {
+        return err
+    }
+    getReq.Header.Set("Authorization", "token "+m.codebergToken)
+    resp, err := (&http.Client{}).Do(getReq)
+    if err != nil {
+        return err
+    }
+    defer resp.Body.Close()
+    if resp.StatusCode != 200 {
+        body, _ := io.ReadAll(resp.Body)
+        return fmt.Errorf("failed to get repo info: %s - %s", resp.Status, string(body))
+    }
+
+    var repoInfo struct{
+        HasReleases bool `json:"has_releases"`
+    }
+    if err := json.NewDecoder(resp.Body).Decode(&repoInfo); err != nil {
+        return fmt.Errorf("failed to parse repo info: %w", err)
+    }
+    if repoInfo.HasReleases {
+        return nil
+    }
+
+    // Enable releases via PATCH
+    payload := map[string]any{"has_releases": true}
+    body, err := json.Marshal(payload)
+    if err != nil {
+        return err
+    }
+    patchReq, err := http.NewRequest("PATCH", infoURL, bytes.NewBuffer(body))
+    if err != nil {
+        return err
+    }
+    patchReq.Header.Set("Authorization", "token "+m.codebergToken)
+    patchReq.Header.Set("Content-Type", "application/json")
+    patchResp, err := (&http.Client{}).Do(patchReq)
+    if err != nil {
+        return err
+    }
+    defer patchResp.Body.Close()
+    if patchResp.StatusCode != 200 {
+        pbody, _ := io.ReadAll(patchResp.Body)
+        return fmt.Errorf("failed to enable releases: %s - %s", patchResp.Status, string(pbody))
+    }
+    return nil
 }
 
 // isVersionTag checks if a tag name is a version tag
@@ -635,21 +693,81 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode != 201 {
-		body, _ := io.ReadAll(resp.Body)
+    if resp.StatusCode != 201 {
+        body, _ := io.ReadAll(resp.Body)
 
-		// Special handling for known Gitea issue
-		if resp.StatusCode == 409 && strings.Contains(string(body), "Release is has no Tag") {
-			// This is a known Gitea bug - the tag exists but Gitea can't create a release for it
-			// Check if it's one of the problematic old tags
-			fmt.Printf("\nWARNING: Codeberg/Gitea returned 'Release is has no Tag' error for tag %s\n", tag)
-			fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
-			fmt.Printf("You may need to create this release manually through the Codeberg web interface.\n\n")
-			return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
-		}
+        // Provide a more actionable hint when the repository is missing or owner/repo is wrong
+        if resp.StatusCode == 404 {
+            // Probe repository details to distinguish scenarios
+            probeURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
+            probeReq, perr := http.NewRequest("GET", probeURL, nil)
+            if perr == nil {
+                // Prefer probing with the same token
+                if m.codebergToken != "" {
+                    probeReq.Header.Set("Authorization", "token "+m.codebergToken)
+                }
+                if probeResp, perr2 := (&http.Client{}).Do(probeReq); perr2 == nil {
+                    defer probeResp.Body.Close()
+                    if probeResp.StatusCode == 200 {
+                        // Try to detect if releases are disabled
+                        var repoInfo struct{ HasReleases bool `json:"has_releases"` }
+                        if data, rerr := io.ReadAll(probeResp.Body); rerr == nil {
+                            _ = json.Unmarshal(data, &repoInfo)
+                        if !repoInfo.HasReleases {
+                            // Try to enable releases automatically and retry creation
+                            if err := m.EnsureCodebergReleasesEnabled(owner, repo); err != nil {
+                                return fmt.Errorf(
+                                    "failed to create Codeberg release: releases are disabled for %s/%s and enabling via API failed: %v. Raw response: %s",
+                                    owner, repo, err, string(body),
+                                )
+                            }
+                            // Retry POST after enabling
+                            retryReq, rerr := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+                            if rerr != nil {
+                                return rerr
+                            }
+                            retryReq.Header.Set("Authorization", "token "+m.codebergToken)
+                            retryReq.Header.Set("Content-Type", "application/json")
+                            retryReq.Header.Set("Accept", "application/json")
+                            retryResp, rerr := (&http.Client{}).Do(retryReq)
+                            if rerr != nil {
+                                return rerr
+                            }
+                            defer retryResp.Body.Close()
+                            if retryResp.StatusCode != 201 {
+                                rbody, _ := io.ReadAll(retryResp.Body)
+                                return fmt.Errorf("failed to create Codeberg release after enabling releases: %s - %s", retryResp.Status, string(rbody))
+                            }
+                            // Success after enabling
+                            return nil
+                        }
+                        }
+                        // Repo exists and has releases; likely permission/scope issue
+                        return fmt.Errorf(
+                            "failed to create Codeberg release: repo %s/%s exists but returned 404 on release creation. This usually indicates the token lacks write permissions to this repository or owner. Ensure the token belongs to '%s' (or a collaborator/maintainer) and has repository write access. Raw response: %s",
+                            owner, repo, owner, string(body),
+                        )
+                    }
+                }
+            }
+            return fmt.Errorf(
+                "failed to create Codeberg release: repository %s/%s not found (404). Verify your Codeberg owner ('organizations[].name') matches the actual owner for this repo and that the repository exists. If needed, create it first, e.g.: gitsyncer sync repo %s --create-codeberg-repos. Raw response: %s",
+                owner, repo, repo, string(body),
+            )
+        }
 
-		return fmt.Errorf("failed to create Codeberg release: %s - %s", resp.Status, string(body))
-	}
+        // Special handling for known Gitea issue
+        if resp.StatusCode == 409 && strings.Contains(string(body), "Release is has no Tag") {
+            // This is a known Gitea bug - the tag exists but Gitea can't create a release for it
+            // Check if it's one of the problematic old tags
+            fmt.Printf("\nWARNING: Codeberg/Gitea returned 'Release is has no Tag' error for tag %s\n", tag)
+            fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
+            fmt.Printf("You may need to create this release manually through the Codeberg web interface.\n\n")
+            return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
+        }
+
+        return fmt.Errorf("failed to create Codeberg release: %s - %s", resp.Status, string(body))
+    }
 
 	return nil
 }

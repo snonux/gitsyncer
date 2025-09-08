@@ -325,6 +325,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		}
 		
             if len(missingCodeberg) > 0 && codebergOrg != nil {
+                // Ensure Releases feature is enabled on Codeberg before creating releases
+                if err := releaseManager.EnsureCodebergReleasesEnabled(codebergOrg.Name, repoName); err != nil {
+                    fmt.Printf("  Warning: Could not ensure Codeberg releases are enabled: %v\n", err)
+                }
                 for _, tag := range missingCodeberg {
                     // Skip if configured to skip this repo/tag
                     if cfg.ShouldSkipRelease(repoName, tag) {
