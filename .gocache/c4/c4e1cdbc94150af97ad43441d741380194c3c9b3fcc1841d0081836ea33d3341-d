@@ -1,6 +1,0 @@
-./flags.go
-./handlers.go
-./release.go
-./showcase_handler.go
-./showcase_only_handler.go
-./sync_handlers.go

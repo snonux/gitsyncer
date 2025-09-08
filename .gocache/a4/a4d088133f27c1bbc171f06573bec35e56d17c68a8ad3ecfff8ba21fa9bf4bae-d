@@ -1,6 +1,0 @@
-./branch_analyzer.go
-./branch_filter.go
-./branch_sync.go
-./git_operations.go
-./repository_setup.go
-./sync.go
