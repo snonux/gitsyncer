@@ -9,7 +9,7 @@ import (
 // trackRemotesWithBranch finds which remotes have a specific branch
 func (s *Syncer) trackRemotesWithBranch(branch string, remotes map[string]*config.Organization) map[string]bool {
 	remotesWithBranch := make(map[string]bool)
-	
+
 	for remoteName, org := range remotes {
 		// Skip checking backup locations as we don't sync from them
 		if org.BackupLocation {
@@ -19,7 +19,7 @@ func (s *Syncer) trackRemotesWithBranch(branch string, remotes map[string]*confi
 			remotesWithBranch[remoteName] = true
 		}
 	}
-	
+
 	return remotesWithBranch
 }
 
@@ -29,14 +29,14 @@ func mergeFromRemotes(branch string, remotesWithBranch map[string]bool) error {
 		fmt.Printf("  Branch %s is local only, will push to all remotes\n", branch)
 		return nil
 	}
-	
+
 	// Merge changes from all remotes that have this branch
 	for remoteName := range remotesWithBranch {
 		if err := mergeBranch(remoteName, branch); err != nil {
 			return err
 		}
 	}
-	
+
 	return nil
 }
 
@@ -56,7 +56,7 @@ func pushToAllRemotes(branch string, remotes map[string]*config.Organization, re
 			return err
 		}
 	}
-	
+
 	return nil
 }
 

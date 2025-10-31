@@ -20,21 +20,21 @@ func HandleShowcase(cfg *config.Config, flags *Flags) int {
 		// Process all repositories for --sync-all or public sync operations
 		fmt.Println("\nGenerating project showcase for all repositories...")
 	}
-	
+
 	// Create showcase generator
 	generator := showcase.New(cfg, flags.WorkDir)
-	
+
 	// Set AI tool if specified
 	if flags.AITool != "" {
 		generator.SetAITool(flags.AITool)
 	}
-	
+
 	// Generate showcase with optional filter
 	if err := generator.GenerateShowcase(repoFilter, flags.Force); err != nil {
 		log.Printf("ERROR: Failed to generate showcase: %v\n", err)
 		return 1
 	}
-	
+
 	fmt.Println("Showcase generated successfully!")
 	return 0
 }

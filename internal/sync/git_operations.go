@@ -242,24 +242,24 @@ func createSSHBareRepository(sshHost, repoPath string) error {
 	if len(parts) != 2 {
 		return fmt.Errorf("invalid SSH host format: %s", sshHost)
 	}
-	
+
 	userHost := parts[0]
 	basePath := parts[1]
-	
+
 	// Full path to the repository
 	fullRepoPath := fmt.Sprintf("%s/%s.git", basePath, repoPath)
-	
+
 	fmt.Printf("Creating bare repository at %s:%s\n", userHost, fullRepoPath)
-	
+
 	// Create the repository directory and initialize as bare
 	commands := fmt.Sprintf("mkdir -p %s && cd %s && git init --bare", fullRepoPath, fullRepoPath)
 	cmd := exec.Command("ssh", userHost, commands)
 	output, err := cmd.CombinedOutput()
-	
+
 	if err != nil {
 		return fmt.Errorf("failed to create bare repository: %w\n%s", err, string(output))
 	}
-	
+
 	fmt.Printf("Successfully created bare repository at %s:%s\n", userHost, fullRepoPath)
 	return nil
 }
@@ -280,18 +280,18 @@ func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool
 				if err != nil {
 					return fmt.Errorf("failed to get remote URL: %w", err)
 				}
-				
+
 				// Extract repo name from URL
 				repoName := extractRepoName(remoteURL)
 				if repoName == "" {
 					return fmt.Errorf("failed to extract repository name from URL: %s", remoteURL)
 				}
-				
+
 				// Create the bare repository
 				if err := createSSHBareRepository(org.Host, repoName); err != nil {
 					return fmt.Errorf("failed to create SSH repository: %w", err)
 				}
-				
+
 				// Try pushing again
 				cmd = exec.Command("git", "push", remoteName, branch, "--tags")
 				if err := cmd.Run(); err != nil {
@@ -300,7 +300,7 @@ func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool
 				fmt.Printf("    Successfully pushed to newly created backup repository\n")
 				return nil
 			}
-			
+
 			fmt.Printf("    Note: Remote repository %s does not exist - must be created manually\n", remoteName)
 			fmt.Printf("    Skipping push to %s\n", remoteName)
 			return nil // Not an error, just skip
@@ -341,7 +341,7 @@ func getRemoteURL(remoteName string) (string, error) {
 func extractRepoName(url string) string {
 	// Remove .git suffix if present
 	url = strings.TrimSuffix(url, ".git")
-	
+
 	// Extract the last component of the path
 	parts := strings.Split(url, "/")
 	if len(parts) > 0 {

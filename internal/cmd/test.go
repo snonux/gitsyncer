@@ -4,9 +4,9 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/spf13/cobra"
 	"codeberg.org/snonux/gitsyncer/internal/cli"
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/spf13/cobra"
 )
 
 var testCmd = &cobra.Command{
@@ -52,11 +52,11 @@ var testConfigCmd = &cobra.Command{
 			fmt.Fprintf(os.Stderr, "Configuration validation failed: %v\n", err)
 			os.Exit(1)
 		}
-		
+
 		fmt.Println("Configuration validation successful!")
 		fmt.Printf("  Organizations: %d\n", len(cfg.Organizations))
 		fmt.Printf("  Repositories: %d\n", len(cfg.Repositories))
-		
+
 		// Check for common issues
 		hasGitHub := false
 		hasCodeberg := false
@@ -74,11 +74,11 @@ var testConfigCmd = &cobra.Command{
 				}
 			}
 		}
-		
+
 		if !hasGitHub && !hasCodeberg {
 			fmt.Println("  ⚠️  Warning: No GitHub or Codeberg organizations configured")
 		}
-		
+
 		os.Exit(0)
 	},
 }

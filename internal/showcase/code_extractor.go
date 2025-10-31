@@ -22,34 +22,34 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 
 	// Get the primary language (highest percentage)
 	primaryLang := languages[0].Name
-	
+
 	// Define file extensions for each language
 	langExtensions := map[string][]string{
-		"Go":           {".go"},
-		"Python":       {".py"},
-		"JavaScript":   {".js"},
-		"TypeScript":   {".ts"},
-		"Java":         {".java"},
-		"C":            {".c", ".h"},
-		"C++":          {".cpp", ".cc", ".cxx", ".hpp"},
-		"C/C++":        {".h"},
-		"C#":           {".cs"},
-		"Ruby":         {".rb"},
-		"PHP":          {".php"},
-		"Swift":        {".swift"},
-		"Kotlin":       {".kt"},
-		"Rust":         {".rs"},
-		"Shell":        {".sh", ".bash"},
-		"Perl":         {".pl", ".pm"},
-		"Raku":         {".raku", ".rakumod", ".p6", ".pm6"},
-		"Haskell":      {".hs"},
-		"Lua":          {".lua"},
-		"HTML":         {".html", ".htm"},
-		"CSS":          {".css"},
-		"SQL":          {".sql"},
-		"Make":         {"Makefile", "makefile", "GNUmakefile"},
-		"HCL":          {".tf", ".tfvars", ".hcl"},
-		"AWK":          {".awk", ".cgi"},  // .cgi files can be AWK scripts
+		"Go":         {".go"},
+		"Python":     {".py"},
+		"JavaScript": {".js"},
+		"TypeScript": {".ts"},
+		"Java":       {".java"},
+		"C":          {".c", ".h"},
+		"C++":        {".cpp", ".cc", ".cxx", ".hpp"},
+		"C/C++":      {".h"},
+		"C#":         {".cs"},
+		"Ruby":       {".rb"},
+		"PHP":        {".php"},
+		"Swift":      {".swift"},
+		"Kotlin":     {".kt"},
+		"Rust":       {".rs"},
+		"Shell":      {".sh", ".bash"},
+		"Perl":       {".pl", ".pm"},
+		"Raku":       {".raku", ".rakumod", ".p6", ".pm6"},
+		"Haskell":    {".hs"},
+		"Lua":        {".lua"},
+		"HTML":       {".html", ".htm"},
+		"CSS":        {".css"},
+		"SQL":        {".sql"},
+		"Make":       {"Makefile", "makefile", "GNUmakefile"},
+		"HCL":        {".tf", ".tfvars", ".hcl"},
+		"AWK":        {".awk", ".cgi"}, // .cgi files can be AWK scripts
 	}
 
 	// Get file extensions for the primary language
@@ -79,13 +79,13 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		if info.IsDir() {
 			name := info.Name()
 			// Skip hidden directories and common non-code directories
-			if strings.HasPrefix(name, ".") && name != "." || 
-			   name == "node_modules" || 
-			   name == "vendor" || 
-			   name == "target" || 
-			   name == "dist" || 
-			   name == "build" || 
-			   name == "__pycache__" {
+			if strings.HasPrefix(name, ".") && name != "." ||
+				name == "node_modules" ||
+				name == "vendor" ||
+				name == "target" ||
+				name == "dist" ||
+				name == "build" ||
+				name == "__pycache__" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -99,7 +99,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		// Check if file matches extensions
 		basename := filepath.Base(path)
 		ext := filepath.Ext(path)
-		
+
 		matched := false
 		for _, validExt := range extensions {
 			if validExt == basename || (strings.HasPrefix(validExt, ".") && ext == validExt) {
@@ -107,7 +107,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 				break
 			}
 		}
-		
+
 		// For executable files, also check shebang if primary language is AWK and file has .cgi extension
 		if !matched && primaryLang == "AWK" && ext == ".cgi" && info.Mode()&0111 != 0 {
 			if file, err := os.Open(path); err == nil {
@@ -121,14 +121,14 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 				file.Close()
 			}
 		}
-		
+
 		if matched {
 			// Skip test files and generated files
-			if !strings.Contains(basename, "_test") && 
-			   !strings.Contains(basename, ".test.") &&
-			   !strings.Contains(basename, ".min.") &&
-			   !strings.Contains(path, "/test/") &&
-			   !strings.Contains(path, "/tests/") {
+			if !strings.Contains(basename, "_test") &&
+				!strings.Contains(basename, ".test.") &&
+				!strings.Contains(basename, ".min.") &&
+				!strings.Contains(path, "/test/") &&
+				!strings.Contains(path, "/tests/") {
 				codeFiles = append(codeFiles, path)
 			}
 		}
@@ -148,10 +148,10 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 	rand.Shuffle(len(codeFiles), func(i, j int) {
 		codeFiles[i], codeFiles[j] = codeFiles[j], codeFiles[i]
 	})
-	
+
 	var snippet string
 	var selectedFile string
-	
+
 	// Try up to 5 files to find a good snippet
 	for i := 0; i < len(codeFiles) && i < 5; i++ {
 		candidateFile := codeFiles[i]
@@ -159,28 +159,28 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		if err != nil {
 			continue
 		}
-		
+
 		// Check if this snippet has acceptable line lengths
 		if hasAcceptableLineLength(candidateSnippet, 80) {
 			snippet = candidateSnippet
 			selectedFile = candidateFile
 			break
 		}
-		
+
 		// Keep the first valid snippet as fallback
 		if snippet == "" {
 			snippet = candidateSnippet
 			selectedFile = candidateFile
 		}
 	}
-	
+
 	if snippet == "" {
 		return "", "", fmt.Errorf("no valid code snippets found")
 	}
 
 	// Get relative path for display
 	relPath, _ := filepath.Rel(repoPath, selectedFile)
-	
+
 	return snippet, fmt.Sprintf("%s from `%s`", primaryLang, relPath), nil
 }
 
@@ -236,9 +236,9 @@ func extractSnippetFromFile(filePath string, minLines, maxLines int) (string, er
 	skipLines := 0
 	for i, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		if trimmed != "" && !strings.HasPrefix(trimmed, "import") && 
-		   !strings.HasPrefix(trimmed, "package") && !strings.HasPrefix(trimmed, "using") &&
-		   !strings.HasPrefix(trimmed, "#include") && !strings.HasPrefix(trimmed, "from") {
+		if trimmed != "" && !strings.HasPrefix(trimmed, "import") &&
+			!strings.HasPrefix(trimmed, "package") && !strings.HasPrefix(trimmed, "using") &&
+			!strings.HasPrefix(trimmed, "#include") && !strings.HasPrefix(trimmed, "from") {
 			skipLines = i
 			break
 		}
@@ -260,19 +260,19 @@ func findSmallestCompleteFunction(lines []string) string {
 		end   int
 		size  int
 	}
-	
+
 	var functions []functionInfo
-	
+
 	// Keywords that typically start functions/methods
 	functionKeywords := []string{
 		"func ", "function ", "def ", "public ", "private ", "protected ",
 		"static ", "async ", "procedure ", "sub ", "method ",
 	}
-	
+
 	// Find all complete functions
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
-		
+
 		// Check if this line starts a function
 		isFunction := false
 		for _, keyword := range functionKeywords {
@@ -281,11 +281,11 @@ func findSmallestCompleteFunction(lines []string) string {
 				break
 			}
 		}
-		
+
 		if !isFunction {
 			continue
 		}
-		
+
 		// Try to find the end of this function
 		functionEnd := findFunctionEnd(lines, i)
 		if functionEnd > i {
@@ -300,7 +300,7 @@ func findSmallestCompleteFunction(lines []string) string {
 			}
 		}
 	}
-	
+
 	// Find the smallest function with acceptable line lengths
 	if len(functions) > 0 {
 		// First try to find a function with all lines <= 80 chars
@@ -310,7 +310,7 @@ func findSmallestCompleteFunction(lines []string) string {
 				return snippet
 			}
 		}
-		
+
 		// If none found, return the smallest function (will be broken later)
 		smallest := functions[0]
 		for _, f := range functions[1:] {
@@ -320,7 +320,7 @@ func findSmallestCompleteFunction(lines []string) string {
 		}
 		return strings.Join(lines[smallest.start:smallest.end+1], "\n")
 	}
-	
+
 	return ""
 }
 
@@ -329,11 +329,11 @@ func findFunctionEnd(lines []string, start int) int {
 	if start >= len(lines) {
 		return -1
 	}
-	
+
 	// For brace-based languages
 	braceCount := 0
 	inFunction := false
-	
+
 	// For Python - track initial indentation
 	isPython := strings.Contains(lines[start], "def ") || strings.Contains(lines[start], "class ")
 	var initialIndent int
@@ -346,11 +346,11 @@ func findFunctionEnd(lines []string, start int) int {
 			}
 		}
 	}
-	
+
 	for i := start; i < len(lines); i++ {
 		line := lines[i]
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Handle Python indentation
 		if isPython && i > start {
 			if trimmed == "" {
@@ -361,7 +361,7 @@ func findFunctionEnd(lines []string, start int) int {
 				return i - 1
 			}
 		}
-		
+
 		// Handle brace-based languages
 		for _, ch := range line {
 			if ch == '{' {
@@ -375,12 +375,12 @@ func findFunctionEnd(lines []string, start int) int {
 			}
 		}
 	}
-	
+
 	// If we're in Python and reached the end, return the last line
 	if isPython {
 		return len(lines) - 1
 	}
-	
+
 	return -1
 }
 
@@ -391,11 +391,11 @@ func findCompleteFunctionOrMethod(lines []string, minLines, maxLines int) (int, 
 		"func ", "function ", "def ", "public ", "private ", "protected ",
 		"static ", "async ", "procedure ", "sub ", "method ",
 	}
-	
+
 	// Try to find a function that fits within our size constraints
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
-		
+
 		// Check if this line starts a function
 		isFunction := false
 		for _, keyword := range functionKeywords {
@@ -404,11 +404,11 @@ func findCompleteFunctionOrMethod(lines []string, minLines, maxLines int) (int, 
 				break
 			}
 		}
-		
+
 		if !isFunction {
 			continue
 		}
-		
+
 		// Try to find the end of this function
 		functionEnd := findFunctionEnd(lines, i)
 		if functionEnd > i {
@@ -418,7 +418,7 @@ func findCompleteFunctionOrMethod(lines []string, minLines, maxLines int) (int, 
 			}
 		}
 	}
-	
+
 	return -1, -1
 }
 
@@ -435,7 +435,7 @@ func findInterestingStart(lines []string, snippetSize int) int {
 		line := strings.TrimSpace(lines[i])
 		// Skip empty lines and comments
 		if line == "" || strings.HasPrefix(line, "//") || strings.HasPrefix(line, "#") ||
-		   strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") {
+			strings.HasPrefix(line, "/*") || strings.HasPrefix(line, "*") {
 			continue
 		}
 
@@ -457,10 +457,10 @@ func stripComments(code string) string {
 	lines := strings.Split(code, "\n")
 	var result []string
 	inMultilineComment := false
-	
+
 	for _, line := range lines {
 		trimmed := strings.TrimSpace(line)
-		
+
 		// Handle multi-line comments for C-style languages
 		if strings.Contains(line, "/*") {
 			inMultilineComment = true
@@ -475,19 +475,19 @@ func stripComments(code string) string {
 				continue
 			}
 		}
-		
+
 		if inMultilineComment {
 			if strings.Contains(line, "*/") {
 				inMultilineComment = false
 			}
 			continue
 		}
-		
+
 		// Skip single-line comments
 		if trimmed == "" {
 			// Keep empty lines for readability
 			result = append(result, line)
-		} else if strings.HasPrefix(trimmed, "//") || 
+		} else if strings.HasPrefix(trimmed, "//") ||
 			strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "#include") && !strings.HasPrefix(trimmed, "#define") ||
 			strings.HasPrefix(trimmed, "<!--") ||
 			strings.HasPrefix(trimmed, "*") && len(trimmed) > 1 && trimmed[1] == ' ' {
@@ -509,7 +509,7 @@ func stripComments(code string) string {
 			result = append(result, line)
 		}
 	}
-	
+
 	// Remove leading and trailing empty lines
 	for len(result) > 0 && strings.TrimSpace(result[0]) == "" {
 		result = result[1:]
@@ -517,13 +517,13 @@ func stripComments(code string) string {
 	for len(result) > 0 && strings.TrimSpace(result[len(result)-1]) == "" {
 		result = result[:len(result)-1]
 	}
-	
+
 	// Remove unnecessary indentation
 	result = removeCommonIndentation(result)
-	
+
 	// Break long lines
 	result = breakLongLines(result, 80)
-	
+
 	return strings.Join(result, "\n")
 }
 
@@ -532,11 +532,11 @@ func removeCommonIndentation(lines []string) []string {
 	if len(lines) == 0 {
 		return lines
 	}
-	
+
 	// Find the common prefix of whitespace
 	var commonPrefix string
 	firstNonEmpty := -1
-	
+
 	// Find first non-empty line to use as reference
 	for i, line := range lines {
 		if strings.TrimSpace(line) != "" {
@@ -544,11 +544,11 @@ func removeCommonIndentation(lines []string) []string {
 			break
 		}
 	}
-	
+
 	if firstNonEmpty == -1 {
 		return lines
 	}
-	
+
 	// Get the whitespace prefix of the first non-empty line
 	firstLine := lines[firstNonEmpty]
 	for i, ch := range firstLine {
@@ -557,18 +557,18 @@ func removeCommonIndentation(lines []string) []string {
 			break
 		}
 	}
-	
+
 	// If the first line has no indentation, return as-is
 	if commonPrefix == "" {
 		return lines
 	}
-	
+
 	// Find the actual common prefix among all non-empty lines
 	for _, line := range lines {
 		if strings.TrimSpace(line) == "" {
 			continue
 		}
-		
+
 		// Reduce commonPrefix to what this line shares
 		for i := 0; i < len(commonPrefix); i++ {
 			if i >= len(line) || line[i] != commonPrefix[i] {
@@ -576,17 +576,17 @@ func removeCommonIndentation(lines []string) []string {
 				break
 			}
 		}
-		
+
 		if commonPrefix == "" {
 			break
 		}
 	}
-	
+
 	// If no common prefix found, return as-is
 	if commonPrefix == "" {
 		return lines
 	}
-	
+
 	// Remove common prefix from all lines
 	result := make([]string, len(lines))
 	prefixLen := len(commonPrefix)
@@ -599,7 +599,7 @@ func removeCommonIndentation(lines []string) []string {
 			result[i] = line
 		}
 	}
-	
+
 	return result
 }
 
@@ -617,18 +617,18 @@ func hasAcceptableLineLength(snippet string, maxLength int) bool {
 // breakLongLines breaks lines that exceed maxLength at appropriate points
 func breakLongLines(lines []string, maxLength int) []string {
 	var result []string
-	
+
 	for _, line := range lines {
 		if len(line) <= maxLength {
 			result = append(result, line)
 			continue
 		}
-		
+
 		// Try to break the line intelligently
 		broken := breakLine(line, maxLength)
 		result = append(result, broken...)
 	}
-	
+
 	return result
 }
 
@@ -638,7 +638,7 @@ func breakLine(line string, maxLength int) []string {
 	if len(line) <= maxLength {
 		return []string{line}
 	}
-	
+
 	// Get the indentation of the original line
 	indent := ""
 	for _, ch := range line {
@@ -648,43 +648,43 @@ func breakLine(line string, maxLength int) []string {
 			break
 		}
 	}
-	
+
 	// Common break points in order of preference
 	breakPoints := []string{
-		", ",      // After comma
-		" && ",    // Before logical operators
+		", ",   // After comma
+		" && ", // Before logical operators
 		" || ",
-		" + ",     // Before arithmetic operators
+		" + ", // Before arithmetic operators
 		" - ",
 		" * ",
 		" / ",
-		" = ",     // Before assignment
+		" = ", // Before assignment
 		" := ",
-		" == ",    // Before comparison
+		" == ", // Before comparison
 		" != ",
 		" < ",
 		" > ",
 		" <= ",
 		" >= ",
-		"(",       // After opening parenthesis
-		" ",       // Any space
+		"(", // After opening parenthesis
+		" ", // Any space
 	}
-	
+
 	var result []string
 	remaining := line
 	isFirstLine := true
-	
+
 	for len(remaining) > maxLength {
 		// Find the best break point
 		bestBreak := -1
-		
+
 		for _, breakPoint := range breakPoints {
 			// Look for break point before maxLength
 			searchIn := remaining
 			if len(searchIn) > maxLength {
 				searchIn = remaining[:maxLength]
 			}
-			
+
 			idx := strings.LastIndex(searchIn, breakPoint)
 			if idx > 0 && idx < maxLength {
 				// For some break points, we want to break after them
@@ -696,12 +696,12 @@ func breakLine(line string, maxLength int) []string {
 				}
 			}
 		}
-		
+
 		// If no good break point found, break at maxLength
 		if bestBreak == -1 {
 			bestBreak = maxLength
 		}
-		
+
 		// Add the line
 		lineToAdd := remaining[:bestBreak]
 		if !isFirstLine && !strings.HasPrefix(strings.TrimSpace(lineToAdd), "//") {
@@ -709,7 +709,7 @@ func breakLine(line string, maxLength int) []string {
 			lineToAdd = indent + "  " + strings.TrimLeft(lineToAdd, " \t")
 		}
 		result = append(result, strings.TrimRight(lineToAdd, " "))
-		
+
 		// Update remaining
 		remaining = remaining[bestBreak:]
 		if !isFirstLine && !strings.HasPrefix(strings.TrimSpace(remaining), "//") {
@@ -717,7 +717,7 @@ func breakLine(line string, maxLength int) []string {
 		}
 		isFirstLine = false
 	}
-	
+
 	// Add the last part
 	if len(remaining) > 0 {
 		if !isFirstLine && !strings.HasPrefix(strings.TrimSpace(remaining), "//") {
@@ -725,6 +725,6 @@ func breakLine(line string, maxLength int) []string {
 		}
 		result = append(result, remaining)
 	}
-	
+
 	return result
 }

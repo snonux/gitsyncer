@@ -5,9 +5,9 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"codeberg.org/snonux/gitsyncer/internal/cli"
 	"codeberg.org/snonux/gitsyncer/internal/state"
+	"github.com/spf13/cobra"
 )
 
 var force bool
@@ -43,7 +43,7 @@ var cleanCmd = &cobra.Command{
 		flags := buildFlags()
 		flags.Clean = true
 		flags.Force = force
-		
+
 		// TODO: Implement clean handler
 		fmt.Println("Clean command not yet implemented")
 		os.Exit(1)
@@ -64,7 +64,7 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 		flags := buildFlags()
 		flags.BatchRun = true
 		flags.Force = force
-		
+
 		// Check state unless forced
 		if !force {
 			stateManager := state.NewManager(workDir)
@@ -72,23 +72,23 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to load state: %v\n", err)
 			}
-			
+
 			if s.HasRunWithinWeek() {
-				fmt.Printf("Batch run was already executed within the past week (last run: %s).\n", 
+				fmt.Printf("Batch run was already executed within the past week (last run: %s).\n",
 					s.LastBatchRun.Format("2006-01-02 15:04:05"))
 				stateFile := filepath.Join(workDir, ".gitsyncer-state.json")
 				fmt.Printf("State file location: %s\n", stateFile)
 				fmt.Println("Skipping batch run. Use --force to override.")
 				os.Exit(0)
 			}
-			
+
 			// Store state manager for later
 			flags.BatchRunStateManager = stateManager
 			flags.BatchRunState = s
 		}
-		
+
 		fmt.Println("Starting weekly batch run (full sync + showcase)...")
-		
+
 		// Enable full sync and showcase
 		flags.FullSync = true
 		flags.Showcase = true
@@ -96,24 +96,24 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 		flags.SyncGitHubPublic = true
 		flags.CreateGitHubRepos = true
 		flags.CreateCodebergRepos = true
-		
+
 		// Run sync operations
 		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}
-		
+
 		exitCode = cli.HandleSyncGitHubPublic(cfg, flags)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}
-		
+
 		// Run showcase
 		showcaseCode := cli.HandleShowcase(cfg, flags)
 		if showcaseCode != 0 {
 			os.Exit(showcaseCode)
 		}
-		
+
 		// Save batch run state
 		if flags.BatchRunStateManager != nil && flags.BatchRunState != nil {
 			flags.BatchRunState.UpdateBatchRunTime()
@@ -125,7 +125,7 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 				fmt.Println("Next batch run allowed after one week.")
 			}
 		}
-		
+
 		os.Exit(0)
 	},
 }
@@ -135,7 +135,7 @@ func init() {
 	manageCmd.AddCommand(deleteRepoCmd)
 	manageCmd.AddCommand(cleanCmd)
 	manageCmd.AddCommand(batchRunCmd)
-	
+
 	// Manage-specific flags
 	cleanCmd.Flags().BoolVarP(&force, "force", "f", false, "force operation without confirmation")
 	batchRunCmd.Flags().BoolVarP(&force, "force", "f", false, "force run even if already run this week")

@@ -12,28 +12,28 @@ import (
 
 // BranchInfo holds information about a branch
 type BranchInfo struct {
-	Name         string
-	LastCommit   time.Time
-	Remote       string
-	IsAbandoned  bool
-	AbandonReason string
+	Name              string
+	LastCommit        time.Time
+	Remote            string
+	IsAbandoned       bool
+	AbandonReason     string
 	RemotesWithBranch []string // List of remotes that have this branch
 }
 
 // AbandonedBranchReport holds the analysis results
 type AbandonedBranchReport struct {
-	MainBranchUpdated   bool
-	MainBranchLastCommit time.Time
-	AbandonedBranches   []BranchInfo
+	MainBranchUpdated        bool
+	MainBranchLastCommit     time.Time
+	AbandonedBranches        []BranchInfo
 	AbandonedIgnoredBranches []BranchInfo // Abandoned branches that match exclusion patterns
-	TotalBranches       int
-	TotalIgnoredBranches int
+	TotalBranches            int
+	TotalIgnoredBranches     int
 }
 
 // analyzeAbandonedBranches analyzes branches to find abandoned ones
 func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 	report := &AbandonedBranchReport{
-		AbandonedBranches: []BranchInfo{},
+		AbandonedBranches:        []BranchInfo{},
 		AbandonedIgnoredBranches: []BranchInfo{},
 	}
 
@@ -42,11 +42,11 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to get branches: %w", err)
 	}
-	
+
 	// Filter branches based on exclusion patterns
 	branches := s.branchFilter.FilterBranches(allBranches)
 	report.TotalBranches = len(branches)
-	
+
 	// Get excluded branches for separate analysis
 	excludedBranches := s.branchFilter.GetExcludedBranches(allBranches)
 	report.TotalIgnoredBranches = len(excludedBranches)
@@ -69,7 +69,7 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 
 	// Analyze each branch
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
-	
+
 	for _, branch := range branches {
 		// Skip main/master branches
 		if branch == "main" || branch == "master" {
@@ -89,7 +89,7 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 			report.AbandonedBranches = append(report.AbandonedBranches, *branchInfo)
 		}
 	}
-	
+
 	// Also analyze ignored branches for abandonment
 	for _, branch := range excludedBranches {
 		// Skip main/master branches even if they match exclusion patterns
@@ -127,7 +127,7 @@ func (s *Syncer) findMainBranch(branches []string) string {
 // getBranchInfo gets information about a specific branch
 func (s *Syncer) getBranchInfo(branch string) (*BranchInfo, error) {
 	info := &BranchInfo{
-		Name: branch,
+		Name:              branch,
 		RemotesWithBranch: []string{},
 	}
 
@@ -137,18 +137,18 @@ func (s *Syncer) getBranchInfo(branch string) (*BranchInfo, error) {
 
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
-		
+
 		// Skip backup locations if backup is not enabled
 		if org.BackupLocation && !s.backupEnabled {
 			continue
 		}
-		
+
 		remoteName := s.getRemoteName(org)
 
 		if s.remoteBranchExists(remoteName, branch) {
 			// Add this remote to the list
 			info.RemotesWithBranch = append(info.RemotesWithBranch, remoteName)
-			
+
 			// Get last commit date for this branch on this remote
 			commitTime, err := s.getLastCommitTime(remoteName, branch)
 			if err == nil && (latestCommit.IsZero() || commitTime.After(latestCommit)) {
@@ -211,22 +211,22 @@ func formatAbandonedBranchReport(report *AbandonedBranchReport, repoName string)
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n🔍 Abandoned branches in %s:\n", repoName))
 	sb.WriteString(fmt.Sprintf("   Main branch last updated: %s\n", report.MainBranchLastCommit.Format("2006-01-02")))
-	
+
 	if len(report.AbandonedBranches) > 0 {
 		sb.WriteString(fmt.Sprintf("   Found %d abandoned branches (no commits for 6+ months):\n\n", len(report.AbandonedBranches)))
 		for _, branch := range report.AbandonedBranches {
-			sb.WriteString(fmt.Sprintf("   - %s (last commit: %s, %s)\n", 
-				branch.Name, 
+			sb.WriteString(fmt.Sprintf("   - %s (last commit: %s, %s)\n",
+				branch.Name,
 				branch.LastCommit.Format("2006-01-02"),
 				branch.AbandonReason))
 		}
 	}
-	
+
 	if len(report.AbandonedIgnoredBranches) > 0 {
 		sb.WriteString(fmt.Sprintf("\n   Found %d abandoned IGNORED branches (no commits for 6+ months):\n\n", len(report.AbandonedIgnoredBranches)))
 		for _, branch := range report.AbandonedIgnoredBranches {
-			sb.WriteString(fmt.Sprintf("   - %s (last commit: %s, %s)\n", 
-				branch.Name, 
+			sb.WriteString(fmt.Sprintf("   - %s (last commit: %s, %s)\n",
+				branch.Name,
 				branch.LastCommit.Format("2006-01-02"),
 				branch.AbandonReason))
 		}
@@ -244,7 +244,7 @@ func (s *Syncer) GenerateAbandonedBranchSummary() string {
 	totalAbandoned := 0
 	totalAbandonedIgnored := 0
 	reposWithAbandoned := 0
-	
+
 	for _, report := range s.abandonedReports {
 		if len(report.AbandonedBranches) > 0 || len(report.AbandonedIgnoredBranches) > 0 {
 			totalAbandoned += len(report.AbandonedBranches)
@@ -274,30 +274,30 @@ func (s *Syncer) GenerateAbandonedBranchSummary() string {
 		if len(report.AbandonedBranches) == 0 && len(report.AbandonedIgnoredBranches) == 0 {
 			continue
 		}
-		
+
 		totalBranches := len(report.AbandonedBranches) + len(report.AbandonedIgnoredBranches)
 		sb.WriteString(fmt.Sprintf("📁 %s (%d branches):\n", repoName, totalBranches))
-		
+
 		// Regular abandoned branches
 		if len(report.AbandonedBranches) > 0 {
 			sb.WriteString("   Regular branches:\n")
 			for _, branch := range report.AbandonedBranches {
-				sb.WriteString(fmt.Sprintf("   - %s (last commit: %s)\n", 
-					branch.Name, 
+				sb.WriteString(fmt.Sprintf("   - %s (last commit: %s)\n",
+					branch.Name,
 					branch.LastCommit.Format("2006-01-02")))
 			}
 		}
-		
+
 		// Ignored abandoned branches
 		if len(report.AbandonedIgnoredBranches) > 0 {
 			sb.WriteString("   Ignored branches:\n")
 			for _, branch := range report.AbandonedIgnoredBranches {
-				sb.WriteString(fmt.Sprintf("   - %s (last commit: %s)\n", 
-					branch.Name, 
+				sb.WriteString(fmt.Sprintf("   - %s (last commit: %s)\n",
+					branch.Name,
 					branch.LastCommit.Format("2006-01-02")))
 			}
 		}
-		
+
 		sb.WriteString("\n")
 	}
 
@@ -324,7 +324,7 @@ func (s *Syncer) GenerateDeleteCommands(report *AbandonedBranchReport, repoName 
 		sb.WriteString("# === REGULAR BRANCHES ===\n")
 		for _, branch := range report.AbandonedBranches {
 			sb.WriteString(fmt.Sprintf("# Branch: %s (last commit: %s)\n", branch.Name, branch.LastCommit.Format("2006-01-02")))
-			
+
 			// Delete from all remotes that have this branch
 			if len(branch.RemotesWithBranch) > 0 {
 				sb.WriteString("# Delete from remotes:\n")
@@ -332,19 +332,19 @@ func (s *Syncer) GenerateDeleteCommands(report *AbandonedBranchReport, repoName 
 					sb.WriteString(fmt.Sprintf("git push %s --delete %s\n", remote, branch.Name))
 				}
 			}
-			
+
 			// Delete local branch
 			sb.WriteString("# Delete local branch:\n")
 			sb.WriteString(fmt.Sprintf("git branch -D %s\n\n", branch.Name))
 		}
 	}
-	
+
 	// Process ignored abandoned branches
 	if len(report.AbandonedIgnoredBranches) > 0 {
 		sb.WriteString("# === IGNORED BRANCHES ===\n")
 		for _, branch := range report.AbandonedIgnoredBranches {
 			sb.WriteString(fmt.Sprintf("# Branch: %s (last commit: %s) [IGNORED]\n", branch.Name, branch.LastCommit.Format("2006-01-02")))
-			
+
 			// Delete from all remotes that have this branch
 			if len(branch.RemotesWithBranch) > 0 {
 				sb.WriteString("# Delete from remotes:\n")
@@ -352,7 +352,7 @@ func (s *Syncer) GenerateDeleteCommands(report *AbandonedBranchReport, repoName 
 					sb.WriteString(fmt.Sprintf("git push %s --delete %s\n", remote, branch.Name))
 				}
 			}
-			
+
 			// Delete local branch
 			sb.WriteString("# Delete local branch:\n")
 			sb.WriteString(fmt.Sprintf("git branch -D %s\n\n", branch.Name))
@@ -375,7 +375,7 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 		totalAbandoned += len(report.AbandonedBranches)
 		totalIgnored += len(report.AbandonedIgnoredBranches)
 	}
-	
+
 	if totalAbandoned == 0 && totalIgnored == 0 {
 		return "", nil
 	}
@@ -540,7 +540,7 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 				fmt.Fprintf(file, "    fi\n")
 				fmt.Fprintf(file, "else\n")
 				fmt.Fprintf(file, "    echo \"  🔸 Deleting branch: %s (last commit: %s)\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
-				
+
 				// Check if we're on the branch to be deleted, and switch to main/master if so
 				fmt.Fprintf(file, "    # Check if we're on the branch to be deleted\n")
 				fmt.Fprintf(file, "    current_branch=$(git branch --show-current)\n")
@@ -558,12 +558,12 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name)
 				fmt.Fprintf(file, "        continue\n")
 				fmt.Fprintf(file, "    fi\n")
-				
+
 				// Delete from remotes
 				for _, remote := range branch.RemotesWithBranch {
 					fmt.Fprintf(file, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name)
 				}
-				
+
 				// Delete local branch
 				fmt.Fprintf(file, "    execute_cmd git branch -D \"%s\"\n", branch.Name)
 				fmt.Fprintf(file, "fi\n\n")
@@ -580,7 +580,7 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 				fmt.Fprintf(file, "    fi\n")
 				fmt.Fprintf(file, "else\n")
 				fmt.Fprintf(file, "    echo \"  🔹 Deleting ignored branch: %s (last commit: %s)\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
-				
+
 				// Check if we're on the branch to be deleted, and switch to main/master if so
 				fmt.Fprintf(file, "    # Check if we're on the branch to be deleted\n")
 				fmt.Fprintf(file, "    current_branch=$(git branch --show-current)\n")
@@ -598,12 +598,12 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name)
 				fmt.Fprintf(file, "        continue\n")
 				fmt.Fprintf(file, "    fi\n")
-				
+
 				// Delete from remotes
 				for _, remote := range branch.RemotesWithBranch {
 					fmt.Fprintf(file, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name)
 				}
-				
+
 				// Delete local branch
 				fmt.Fprintf(file, "    execute_cmd git branch -D \"%s\"\n", branch.Name)
 				fmt.Fprintf(file, "fi\n\n")

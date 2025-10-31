@@ -20,7 +20,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 			return 1
 		}
 	}
-	
+
 	// If create-codeberg-repos is enabled, create the repo if needed
 	if flags.CreateCodebergRepos {
 		if err := createCodebergRepoIfNeeded(cfg, flags.SyncRepo); err != nil {
@@ -28,20 +28,20 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 			return 1
 		}
 	}
-	
+
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(flags.Backup)
-    if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
-        log.Fatal("Sync failed:", err)
-        return 1
-    }
-    // Also sync descriptions for this single repository
-    descCache := loadDescriptionCache(flags.WorkDir)
-    syncRepoDescriptions(cfg, flags.DryRun, flags.SyncRepo, "", "", descCache)
-    if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
-        fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
-    }
-    return 0
+	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
+		log.Fatal("Sync failed:", err)
+		return 1
+	}
+	// Also sync descriptions for this single repository
+	descCache := loadDescriptionCache(flags.WorkDir)
+	syncRepoDescriptions(cfg, flags.DryRun, flags.SyncRepo, "", "", descCache)
+	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
+		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
+	}
+	return 0
 }
 
 // HandleSyncAll handles syncing all configured repositories
@@ -71,15 +71,15 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		}
 	}
 
-    syncer := sync.New(cfg, flags.WorkDir)
-    syncer.SetBackupEnabled(flags.Backup)
-    successCount := 0
-    // Load descriptions cache
-    descCache := loadDescriptionCache(flags.WorkDir)
-	
+	syncer := sync.New(cfg, flags.WorkDir)
+	syncer.SetBackupEnabled(flags.Backup)
+	successCount := 0
+	// Load descriptions cache
+	descCache := loadDescriptionCache(flags.WorkDir)
+
 	for i, repo := range cfg.Repositories {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(cfg.Repositories), repo)
-		
+
 		// Create GitHub repo if needed
 		if hasGithubClient {
 			if err := createRepoWithClient(&githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
@@ -88,7 +88,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 				return 1
 			}
 		}
-		
+
 		// Create Codeberg repo if needed
 		if hasCodebergClient {
 			fmt.Printf("Checking/creating Codeberg repository %s...\n", repo)
@@ -96,28 +96,28 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 				fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repo, err)
 			}
 		}
-		
-        if err := syncer.SyncRepository(repo); err != nil {
-            fmt.Printf("ERROR: Failed to sync %s: %v\n", repo, err)
-            fmt.Printf("Stopping sync due to error.\n")
-            return 1
-        }
-        successCount++
-        // Sync descriptions after repo sync
-        syncRepoDescriptions(cfg, flags.DryRun, repo, "", "", descCache)
-    }
-    // Save descriptions cache
-    if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
-        fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
-    }
+
+		if err := syncer.SyncRepository(repo); err != nil {
+			fmt.Printf("ERROR: Failed to sync %s: %v\n", repo, err)
+			fmt.Printf("Stopping sync due to error.\n")
+			return 1
+		}
+		successCount++
+		// Sync descriptions after repo sync
+		syncRepoDescriptions(cfg, flags.DryRun, repo, "", "", descCache)
+	}
+	// Save descriptions cache
+	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
+		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
+	}
 
 	fmt.Printf("\nSuccessfully synced all %d repositories!\n", successCount)
-	
+
 	// Print abandoned branches summary
 	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
 	}
-	
+
 	// Generate script for abandoned branches
 	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
@@ -144,7 +144,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		fmt.Printf(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 	}
-	
+
 	return 0
 }
 
@@ -157,9 +157,9 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 	}
 
 	fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
-	
+
 	client := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
-	
+
 	// Try fetching as organization first, then as user
 	repos, err := client.ListPublicRepos()
 	if err != nil {
@@ -172,15 +172,15 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 
 	repoNames := codeberg.GetRepoNames(repos)
 	fmt.Printf("Found %d public repositories on Codeberg\n", len(repoNames))
-	
+
 	if len(repoNames) == 0 {
 		fmt.Println("No public repositories found")
 		return 0
 	}
 
-    // Show the repositories that will be synced
-    showReposToSync(repoNames)
-	
+	// Show the repositories that will be synced
+	showReposToSync(repoNames)
+
 	if flags.DryRun {
 		fmt.Printf("\n[DRY RUN] Would sync %d repositories from Codeberg to GitHub\n", len(repoNames))
 		if flags.CreateGitHubRepos {
@@ -190,11 +190,11 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 			return 0
 		}
 	}
-	
-    if !flags.DryRun {
-        return syncCodebergRepos(cfg, flags, repos, repoNames)
-    }
-	
+
+	if !flags.DryRun {
+		return syncCodebergRepos(cfg, flags, repos, repoNames)
+	}
+
 	return 0
 }
 
@@ -207,14 +207,14 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 	}
 
 	fmt.Printf("Fetching public repositories from GitHub user/org: %s...\n", githubOrg.Name)
-	
+
 	client := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
 	if !client.HasToken() {
 		fmt.Println("ERROR: GitHub token required to list repositories")
 		fmt.Println("Set GITHUB_TOKEN env var or create ~/.gitsyncer_github_token file")
 		return 1
 	}
-	
+
 	repos, err := client.ListPublicRepos()
 	if err != nil {
 		log.Fatal("Failed to fetch repositories:", err)
@@ -222,15 +222,15 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 
 	repoNames := github.GetRepoNames(repos)
 	fmt.Printf("Found %d public repositories on GitHub\n", len(repoNames))
-	
+
 	if len(repoNames) == 0 {
 		fmt.Println("No public repositories found")
 		return 0
 	}
 
-    // Show the repositories that will be synced
-    showReposToSync(repoNames)
-	
+	// Show the repositories that will be synced
+	showReposToSync(repoNames)
+
 	if flags.DryRun {
 		fmt.Printf("\n[DRY RUN] Would sync %d repositories from GitHub to Codeberg\n", len(repoNames))
 		if flags.CreateCodebergRepos {
@@ -238,11 +238,11 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 		}
 		return 0
 	}
-	
-    if !flags.DryRun {
-        return syncGitHubRepos(cfg, flags, repos, repoNames)
-    }
-	
+
+	if !flags.DryRun {
+		return syncGitHubRepos(cfg, flags, repos, repoNames)
+	}
+
 	return 0
 }
 
@@ -253,14 +253,14 @@ func createGitHubRepoIfNeeded(cfg *config.Config, repoName string) error {
 	if githubOrg == nil {
 		return nil
 	}
-	
+
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
 	githubClient := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
 	if !githubClient.HasToken() {
 		fmt.Println("Warning: No GitHub token found. Cannot create repository.")
 		return nil
 	}
-	
+
 	fmt.Println("Checking/creating GitHub repository...")
 	return githubClient.CreateRepo(repoName, fmt.Sprintf("Mirror of %s", repoName), false)
 }
@@ -270,14 +270,14 @@ func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
 	if codebergOrg == nil {
 		return nil
 	}
-	
+
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
 	codebergClient := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
 	if !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repository.")
 		return nil
 	}
-	
+
 	fmt.Println("Checking/creating Codeberg repository...")
 	return codebergClient.CreateRepo(repoName, fmt.Sprintf("Mirror of %s", repoName), false)
 }
@@ -288,14 +288,14 @@ func initGitHubClient(cfg *config.Config) *github.Client {
 		fmt.Println("Warning: --create-github-repos specified but no GitHub organization found in config")
 		return nil
 	}
-	
+
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
 	githubClient := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
 	if !githubClient.HasToken() {
 		fmt.Println("Warning: No GitHub token found. Cannot create repositories.")
 		return nil
 	}
-	
+
 	fmt.Println("GitHub client initialized successfully with token")
 	return &githubClient
 }
@@ -346,25 +346,25 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 			hasGithubClient = true
 		}
 	}
-	
-    fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 
-    // Load descriptions cache
-    descCache := loadDescriptionCache(flags.WorkDir)
-	
+	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
+
+	// Load descriptions cache
+	descCache := loadDescriptionCache(flags.WorkDir)
+
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(flags.Backup)
 	successCount := 0
-	
+
 	// Create map for descriptions
 	repoMap := make(map[string]codeberg.Repository)
 	for _, repo := range repos {
 		repoMap[repo.Name] = repo
 	}
-	
-    for i, repoName := range repoNames {
-        fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
-		
+
+	for i, repoName := range repoNames {
+		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
+
 		// Create GitHub repo if needed
 		if hasGithubClient && flags.CreateGitHubRepos {
 			codebergRepo := repoMap[repoName]
@@ -372,42 +372,42 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 			if description == "" {
 				description = fmt.Sprintf("Mirror of %s from Codeberg", repoName)
 			}
-			
+
 			fmt.Printf("Checking/creating GitHub repository %s...\n", repoName)
 			err := githubClient.CreateRepo(repoName, description, false)
 			if err != nil {
 				fmt.Printf("Warning: Failed to create GitHub repo %s: %v\n", repoName, err)
 			}
 		}
-		
-        if err := syncer.SyncRepository(repoName); err != nil {
-            fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
-            fmt.Printf("Stopping sync due to error.\n")
-            return 1
-        }
-        successCount++
 
-        // After syncing, sync descriptions according to precedence
-        if cbRepo, ok := repoMap[repoName]; ok {
-            syncRepoDescriptions(cfg, flags.DryRun, repoName, cbRepo.Description, "", descCache)
-        } else {
-            syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", descCache)
-        }
-    }
+		if err := syncer.SyncRepository(repoName); err != nil {
+			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
+			fmt.Printf("Stopping sync due to error.\n")
+			return 1
+		}
+		successCount++
 
-    // Save descriptions cache
-    if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
-        fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
-    }
+		// After syncing, sync descriptions according to precedence
+		if cbRepo, ok := repoMap[repoName]; ok {
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, cbRepo.Description, "", descCache)
+		} else {
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", descCache)
+		}
+	}
 
-    fmt.Printf("\n=== Summary ===\n")
+	// Save descriptions cache
+	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
+		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
+	}
+
+	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
-	
+
 	// Print abandoned branches summary
 	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
 	}
-	
+
 	// Generate script for abandoned branches
 	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
@@ -434,11 +434,11 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		fmt.Printf(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 	}
-	
+
 	if !flags.SyncGitHubPublic {
 		return 0
 	}
-	
+
 	// Print separator for full sync
 	printFullSyncSeparator()
 	return 0
@@ -455,10 +455,10 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		}
 	}
 
-    fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
+	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 
-    // Load descriptions cache
-    descCache := loadDescriptionCache(flags.WorkDir)
+	// Load descriptions cache
+	descCache := loadDescriptionCache(flags.WorkDir)
 
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(flags.Backup)
@@ -470,8 +470,8 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		repoMap[repo.Name] = repo
 	}
 
-    for i, repoName := range repoNames {
-        fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
+	for i, repoName := range repoNames {
+		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
 
 		// Create Codeberg repo if needed
 		if hasCodebergClient && flags.CreateCodebergRepos {
@@ -488,25 +488,25 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 			}
 		}
 
-        if err := syncer.SyncRepository(repoName); err != nil {
-            fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
-            fmt.Printf("Stopping sync due to error.\n")
-            return 1
-        }
-        successCount++
+		if err := syncer.SyncRepository(repoName); err != nil {
+			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
+			fmt.Printf("Stopping sync due to error.\n")
+			return 1
+		}
+		successCount++
 
-        // After syncing, sync descriptions according to precedence
-        if ghRepo, ok := repoMap[repoName]; ok {
-            syncRepoDescriptions(cfg, flags.DryRun, repoName, "", ghRepo.Description, descCache)
-        } else {
-            syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", descCache)
-        }
-    }
+		// After syncing, sync descriptions according to precedence
+		if ghRepo, ok := repoMap[repoName]; ok {
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", ghRepo.Description, descCache)
+		} else {
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", descCache)
+		}
+	}
 
-    // Save descriptions cache
-    if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
-        fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
-    }
+	// Save descriptions cache
+	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
+		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
+	}
 
 	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
@@ -515,7 +515,7 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
 	}
-	
+
 	// Generate script for abandoned branches
 	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)

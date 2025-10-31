@@ -54,12 +54,12 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 			continue // Skip the first org we already cloned from
 		}
 		org := &s.config.Organizations[i]
-		
+
 		// Skip backup locations if backup is not enabled
 		if org.BackupLocation && !s.backupEnabled {
 			continue
 		}
-		
+
 		if err := s.addRemote(repoPath, org); err != nil {
 			return fmt.Errorf("failed to add remote %s: %w", s.getRemoteName(org), err)
 		}
@@ -75,12 +75,12 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 	// Check and add any missing remotes
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
-		
+
 		// Skip backup locations if backup is not enabled
 		if org.BackupLocation && !s.backupEnabled {
 			continue
 		}
-		
+
 		remoteName := s.getRemoteName(org)
 
 		// Check if remote exists
@@ -115,12 +115,12 @@ func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	remotes := make(map[string]*config.Organization)
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
-		
+
 		// Skip backup locations if backup is not enabled
 		if org.BackupLocation && !s.backupEnabled {
 			continue
 		}
-		
+
 		remoteName := s.getRemoteName(org)
 		remotes[remoteName] = org
 	}

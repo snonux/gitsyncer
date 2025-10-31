@@ -12,9 +12,9 @@ import (
 
 // Syncer handles repository synchronization between organizations
 type Syncer struct {
-	config   *config.Config
-	workDir  string
-	repoName string
+	config           *config.Config
+	workDir          string
+	repoName         string
 	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
 	branchFilter     *BranchFilter                     // Filter for excluding branches
 	backupEnabled    bool                              // Whether to sync to backup locations
@@ -32,8 +32,8 @@ func New(cfg *config.Config, workDir string) *Syncer {
 	}
 
 	return &Syncer{
-		config:  cfg,
-		workDir: workDir,
+		config:           cfg,
+		workDir:          workDir,
 		abandonedReports: make(map[string]*AbandonedBranchReport),
 		branchFilter:     branchFilter,
 		backupEnabled:    false, // Default to false, will be set via SetBackupEnabled
@@ -82,7 +82,7 @@ func (s *Syncer) SyncRepository(repoName string) error {
 	// Filter branches based on exclusion patterns
 	branches := s.branchFilter.FilterBranches(allBranches)
 	excludedBranches := s.branchFilter.GetExcludedBranches(allBranches)
-	
+
 	// Report excluded branches if any
 	if exclusionReport := FormatExclusionReport(excludedBranches, s.config.ExcludeBranches); exclusionReport != "" {
 		fmt.Print(exclusionReport)
@@ -118,12 +118,12 @@ func (s *Syncer) SyncRepository(repoName string) error {
 // This is used for showcase-only mode
 func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 	s.repoName = repoName
-	
+
 	// Create work directory if it doesn't exist
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
 		return fmt.Errorf("failed to create work directory: %w", err)
 	}
-	
+
 	// Check if repository already exists
 	repoPath := filepath.Join(s.workDir, repoName)
 	if _, err := os.Stat(repoPath); err == nil {
@@ -131,10 +131,10 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 		fmt.Printf("  Repository %s already exists locally\n", repoName)
 		return nil
 	}
-	
+
 	// Repository doesn't exist, clone it
 	fmt.Printf("  Cloning %s...\n", repoName)
-	
+
 	// Find first non-backup organization to clone from
 	var sourceOrg *config.Organization
 	for i := range s.config.Organizations {
@@ -143,16 +143,16 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 			break
 		}
 	}
-	
+
 	if sourceOrg == nil {
 		return fmt.Errorf("no non-backup organizations configured to clone from")
 	}
-	
+
 	// Clone the repository
 	if err := s.cloneRepository(sourceOrg, repoPath); err != nil {
 		return fmt.Errorf("failed to clone repository: %w", err)
 	}
-	
+
 	fmt.Printf("  Successfully cloned %s\n", repoName)
 	return nil
 }
@@ -282,7 +282,7 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 	if stashed {
 		defer popStash()
 	}
-	
+
 	// Create or checkout the branch
 	if err := s.checkoutBranch(branch); err != nil {
 		return fmt.Errorf("failed to checkout branch %s: %w", branch, err)
@@ -307,7 +307,7 @@ func (s *Syncer) handleWorkingDirectoryState() (bool, error) {
 	if err != nil || statusStr == "" {
 		return false, nil
 	}
-	
+
 	if hasConflicts {
 		// Get absolute path for clarity
 		absPath, err := filepath.Abs(s.workDir)
@@ -316,7 +316,7 @@ func (s *Syncer) handleWorkingDirectoryState() (bool, error) {
 		}
 		return false, fmt.Errorf("repository has unresolved merge conflicts\nPlease resolve conflicts in: %s\nOr delete the directory to start fresh: rm -rf %s", absPath, absPath)
 	}
-	
+
 	// If we have uncommitted changes but no conflicts, try to stash them
 	if err := stashChanges(); err != nil {
 		return false, fmt.Errorf("failed to stash changes: %w", err)
@@ -380,13 +380,13 @@ func (s *Syncer) getRemoteName(org *config.Organization) string {
 func (s *Syncer) filterBackupBranches(output []byte) []byte {
 	lines := strings.Split(string(output), "\n")
 	var filtered []string
-	
+
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
 		if line == "" {
 			continue
 		}
-		
+
 		// Check if this branch is from a backup remote
 		isBackup := false
 		for i := range s.config.Organizations {
@@ -399,11 +399,11 @@ func (s *Syncer) filterBackupBranches(output []byte) []byte {
 				}
 			}
 		}
-		
+
 		if !isBackup {
 			filtered = append(filtered, line)
 		}
 	}
-	
+
 	return []byte(strings.Join(filtered, "\n"))
 }

@@ -28,7 +28,7 @@ func HandleTestGitHubToken() int {
 		fmt.Println("Please set GITHUB_TOKEN environment variable or create ~/.gitsyncer_github_token file")
 		return 1
 	}
-	
+
 	// Test the token by checking a known repo
 	exists, err := client.RepoExists("gitsyncer")
 	if err != nil {
@@ -41,7 +41,7 @@ func HandleTestGitHubToken() int {
 		}
 		return 1
 	}
-	
+
 	fmt.Printf("SUCCESS: Token is valid! Repository check returned: %v\n", exists)
 	return 0
 }
@@ -54,7 +54,7 @@ func LoadConfig(configPath string) (*config.Config, error) {
 			return nil, fmt.Errorf("no configuration file found")
 		}
 	}
-	
+
 	fmt.Printf("Loaded configuration from: %s\n", configPath)
 	return config.Load(configPath)
 }
@@ -78,14 +78,14 @@ func findDefaultConfigPath() string {
 			return loc
 		}
 	}
-	
+
 	return ""
 }
 
 // ShowConfigHelp displays help for creating a configuration file
 func ShowConfigHelp() {
 	home, _ := os.UserHomeDir()
-	
+
 	fmt.Println("No configuration file found. Please create one of:")
 	fmt.Printf("  - ./gitsyncer.json\n")
 	fmt.Printf("  - %s/.config/gitsyncer/config.json\n", home)
@@ -135,7 +135,7 @@ func HandleListRepos(cfg *config.Config) int {
 // ShowUsage displays the usage information
 func ShowUsage(cfg *config.Config) {
 	fmt.Println("\ngitsyncer - Git repository synchronization tool")
-	fmt.Printf("Configured with %d organization(s) and %d repository(ies)\n", 
+	fmt.Printf("Configured with %d organization(s) and %d repository(ies)\n",
 		len(cfg.Organizations), len(cfg.Repositories))
 	fmt.Println("\nUsage:")
 	fmt.Println("  gitsyncer --sync <repo-name>        Sync a specific repository")
@@ -166,18 +166,18 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 	}
 
 	fmt.Printf("\n⚠️  WARNING: This will permanently delete the repository '%s' from all configured organizations!\n\n", repoName)
-	
+
 	// Find organizations where the repo exists
 	var orgsWithRepo []struct {
 		org    config.Organization
 		exists bool
 		err    error
 	}
-	
+
 	for _, org := range cfg.Organizations {
 		var exists bool
 		var err error
-		
+
 		switch org.Host {
 		case "git@github.com":
 			client := github.NewClient(org.GitHubToken, org.Name)
@@ -189,14 +189,14 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 			fmt.Printf("Skipping unsupported host: %s\n", org.Host)
 			continue
 		}
-		
+
 		orgsWithRepo = append(orgsWithRepo, struct {
 			org    config.Organization
 			exists bool
 			err    error
 		}{org, exists, err})
 	}
-	
+
 	// Show summary of where the repo exists
 	fmt.Println("Repository status:")
 	foundAny := false
@@ -210,36 +210,36 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 			fmt.Printf("  ⬜ %s: Not found\n", info.org.GetGitURL())
 		}
 	}
-	
+
 	if !foundAny {
 		fmt.Printf("\nRepository '%s' not found in any configured organization.\n", repoName)
 		return 0
 	}
-	
+
 	// Confirm deletion
 	fmt.Printf("\nAre you sure you want to delete '%s' from the above organizations? This action cannot be undone!\n", repoName)
 	fmt.Print("Type 'yes' to confirm: ")
-	
+
 	reader := bufio.NewReader(os.Stdin)
 	confirmation, _ := reader.ReadString('\n')
 	confirmation = strings.TrimSpace(confirmation)
-	
+
 	if confirmation != "yes" {
 		fmt.Println("Deletion cancelled.")
 		return 0
 	}
-	
+
 	// Perform deletions
 	fmt.Println("\nDeleting repositories...")
 	hasError := false
-	
+
 	for _, info := range orgsWithRepo {
 		if !info.exists || info.err != nil {
 			continue
 		}
-		
+
 		fmt.Printf("  Deleting from %s... ", info.org.GetGitURL())
-		
+
 		var deleteErr error
 		switch info.org.Host {
 		case "git@github.com":
@@ -249,7 +249,7 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 			client := codeberg.NewClient(info.org.Name, info.org.CodebergToken)
 			deleteErr = client.DeleteRepo(repoName)
 		}
-		
+
 		if deleteErr != nil {
 			fmt.Printf("FAILED: %v\n", deleteErr)
 			hasError = true
@@ -257,12 +257,12 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 			fmt.Println("SUCCESS")
 		}
 	}
-	
+
 	if hasError {
 		fmt.Println("\n⚠️  Some deletions failed. Check the errors above.")
 		return 1
 	}
-	
+
 	fmt.Printf("\n✅ Repository '%s' has been successfully deleted from all organizations.\n", repoName)
 	return 0
 }

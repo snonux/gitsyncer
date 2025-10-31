@@ -3,18 +3,18 @@ package cmd
 import (
 	"os"
 
-	"github.com/spf13/cobra"
 	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"github.com/spf13/cobra"
 )
 
 var (
-	dryRun         bool
-	backup         bool
-	createRepos    bool
-	noReleases     bool
-	autoCreate     bool
+	dryRun           bool
+	backup           bool
+	createRepos      bool
+	noReleases       bool
+	autoCreate       bool
 	noAIReleaseNotes bool
-	syncAITool     string
+	syncAITool       string
 )
 
 var syncCmd = &cobra.Command{
@@ -42,12 +42,12 @@ var syncRepoCmd = &cobra.Command{
   # Sync without AI-generated release notes
   gitsyncer sync repo myproject --no-ai-release-notes
   
-  # Auto-create releases using aichat for AI notes
-  gitsyncer sync repo myproject --auto-create-releases --ai-tool aichat`,
+  # Auto-create releases using amp for AI notes
+gitsyncer sync repo myproject --auto-create-releases --ai-tool amp`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncRepo = args[0]
-		
+
 		exitCode := cli.HandleSync(cfg, flags)
 		if exitCode == 0 && !noReleases {
 			cli.HandleCheckReleasesForRepo(cfg, flags, args[0])
@@ -71,7 +71,7 @@ var syncAllCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncAll = true
-		
+
 		exitCode := cli.HandleSyncAll(cfg, flags)
 		if exitCode == 0 && !noReleases {
 			cli.HandleCheckReleases(cfg, flags)
@@ -95,11 +95,11 @@ var syncCodebergToGitHubCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncCodebergPublic = true
-		
+
 		if createRepos || autoCreate {
 			flags.CreateGitHubRepos = true
 		}
-		
+
 		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
 		if exitCode == 0 && !noReleases {
 			cli.HandleCheckReleases(cfg, flags)
@@ -123,11 +123,11 @@ var syncGitHubToCodebergCmd = &cobra.Command{
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncGitHubPublic = true
-		
+
 		if createRepos || autoCreate {
 			flags.CreateCodebergRepos = true
 		}
-		
+
 		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
 		if exitCode == 0 && !noReleases {
 			cli.HandleCheckReleases(cfg, flags)
@@ -156,13 +156,13 @@ repositories between GitHub and Codeberg. This is equivalent to the old --full f
 		flags.SyncGitHubPublic = true
 		flags.CreateGitHubRepos = true
 		flags.CreateCodebergRepos = true
-		
+
 		// First sync Codeberg to GitHub
 		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}
-		
+
 		// Then sync GitHub to Codeberg
 		exitCode = cli.HandleSyncGitHubPublic(cfg, flags)
 		if exitCode == 0 && !noReleases {
@@ -174,14 +174,14 @@ repositories between GitHub and Codeberg. This is equivalent to the old --full f
 
 func init() {
 	rootCmd.AddCommand(syncCmd)
-	
+
 	// Add subcommands
 	syncCmd.AddCommand(syncRepoCmd)
 	syncCmd.AddCommand(syncAllCmd)
 	syncCmd.AddCommand(syncCodebergToGitHubCmd)
 	syncCmd.AddCommand(syncGitHubToCodebergCmd)
 	syncCmd.AddCommand(syncBidirectionalCmd)
-	
+
 	// Sync flags (available for all sync subcommands)
 	syncCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "preview what would be synced")
 	syncCmd.PersistentFlags().BoolVar(&backup, "backup", false, "include backup locations")
@@ -189,20 +189,20 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&noReleases, "no-releases", false, "skip release checking after sync")
 	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
 	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
-    syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "claude", "AI tool to use for release notes when auto-creating (claude or aichat; hexai is tried first if available)")
+	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "amp", "AI tool to use for release notes when auto-creating (amp, claude, aichat, or hexai; amp is tried first if available)")
 }
 
 func buildFlags() *cli.Flags {
 	return &cli.Flags{
-		ConfigPath:   cfgFile,
-		WorkDir:      workDir,
-		DryRun:       dryRun,
-		Backup:       backup,
-		NoCheckReleases: noReleases,
-		AutoCreateReleases: autoCreate,
-		AIReleaseNotes: !noAIReleaseNotes,
-		AITool:       syncAITool,
-		CreateGitHubRepos: createRepos,
+		ConfigPath:          cfgFile,
+		WorkDir:             workDir,
+		DryRun:              dryRun,
+		Backup:              backup,
+		NoCheckReleases:     noReleases,
+		AutoCreateReleases:  autoCreate,
+		AIReleaseNotes:      !noAIReleaseNotes,
+		AITool:              syncAITool,
+		CreateGitHubRepos:   createRepos,
 		CreateCodebergRepos: createRepos,
 	}
 }

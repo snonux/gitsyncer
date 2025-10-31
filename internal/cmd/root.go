@@ -5,15 +5,15 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/spf13/cobra"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/version"
+	"github.com/spf13/cobra"
 )
 
 var (
-	cfgFile  string
-	workDir  string
-	cfg      *config.Config
+	cfgFile string
+	workDir string
+	cfg     *config.Config
 	rootCmd = &cobra.Command{
 		Use:   "gitsyncer",
 		Short: "Synchronize git repositories across multiple platforms",
@@ -25,7 +25,7 @@ keeps all branches in sync across different git hosting platforms.`,
 			if cmd.Use == "version" {
 				return
 			}
-			
+
 			// Load configuration
 			var err error
 			cfg, err = config.Load(cfgFile)
@@ -35,7 +35,7 @@ keeps all branches in sync across different git hosting platforms.`,
 				fmt.Fprintf(os.Stderr, "See 'gitsyncer help' for more information.\n")
 				os.Exit(1)
 			}
-			
+
 			// Use config WorkDir if no flag was explicitly provided
 			if !cmd.Flags().Changed("work-dir") && cfg.WorkDir != "" {
 				workDir = cfg.WorkDir
@@ -54,16 +54,16 @@ func Execute() {
 func init() {
 	// Global flags
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "configuration file (default: ~/.config/gitsyncer/config.json)")
-	
+
 	// Set default work directory
 	home, err := os.UserHomeDir()
 	defaultWorkDir := ".gitsyncer-work"
 	if err == nil {
 		defaultWorkDir = filepath.Join(home, "git", "gitsyncer-workdir")
 	}
-	
+
 	rootCmd.PersistentFlags().StringVarP(&workDir, "work-dir", "w", defaultWorkDir, "working directory for operations")
-	
+
 	// Version command
 	rootCmd.AddCommand(&cobra.Command{
 		Use:   "version",
@@ -72,6 +72,5 @@ func init() {
 			fmt.Println(version.GetVersion())
 		},
 	})
-	
-}
 
+}

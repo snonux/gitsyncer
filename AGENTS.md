@@ -7,13 +7,13 @@
 - `doc/`: architecture, API, and development docs. `dist/`: build artifacts.
 
 ## Build, Test, and Development Commands
-- Build (current platform): `task build` or `go build -o gitsyncer ./cmd/gitsyncer`.
-- Cross-compile: `task build-all` (linux/darwin/windows variants also available).
-- Run binary: `./gitsyncer --help` or `task run -- --version`.
-- Unit tests (when present): `task test` or `go test ./...`.
+- Build (current platform): `mage build` or `go build -o gitsyncer ./cmd/gitsyncer`.
+- Cross-compile: `mage buildAll` (linux/darwin/windows variants also available).
+- Run binary: `./gitsyncer --help` or `mage run`.
+- Unit tests (when present): `mage test` or `go test ./...`.
 - Integration tests: `cd test && ./run_integration_tests.sh`.
-- Format/lint: `task fmt`, `task vet`, `task lint` (golangci-lint).
-- Tidy modules: `task mod-tidy`.
+- Format/lint: `mage fmt`, `mage vet`, `mage lint` (golangci-lint).
+- Tidy modules: `mage modTidy`.
 
 ## Coding Style & Naming Conventions
 - Go formatting: enforce `gofmt`/`go fmt`; prefer `goimports` in your editor.
@@ -31,7 +31,7 @@
 - Commits: Conventional Commits format — `type(scope): summary`.
   - Examples: `feat(sync): add bidirectional mode`, `fix(config): validate organizations`.
 - PRs: clear description, linked issues, testing notes (unit + integration), and updated docs (`doc/` or `README.md`) when user-visible.
-- Keep changes focused; run `task fmt vet lint` before submitting.
+- Keep changes focused; run `mage fmt vet lint` before submitting.
 
 ## Security & Configuration Tips
 - Configuration lives at `~/.config/gitsyncer/config.json` (see `gitsyncer.example.json`). Do not commit secrets.

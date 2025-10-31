@@ -22,8 +22,8 @@ type RepoMetadata struct {
 	Languages       []LanguageStats // Programming languages with usage statistics
 	Documentation   []LanguageStats // Documentation/text files with usage statistics
 	CommitCount     int
-	LinesOfCode     int             // Lines of code (excluding documentation)
-	LinesOfDocs     int             // Lines of documentation
+	LinesOfCode     int // Lines of code (excluding documentation)
+	LinesOfDocs     int // Lines of documentation
 	FirstCommitDate string
 	LastCommitDate  string
 	License         string
@@ -58,7 +58,7 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 		loc += lang.Lines
 	}
 	metadata.LinesOfCode = loc
-	
+
 	locDocs := 0
 	for _, doc := range metadata.Documentation {
 		locDocs += doc.Lines
@@ -101,7 +101,6 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	return metadata, nil
 }
 
-
 // getCommitCount returns the total number of commits
 func getCommitCount(repoPath string) (int, error) {
 	cmd := exec.Command("git", "-C", repoPath, "rev-list", "--all", "--count")
@@ -126,7 +125,7 @@ func countLinesOfCode(repoPath string) (int, error) {
 		`cd "%s" && git ls-files | grep -E '\.(go|py|js|ts|java|c|cpp|h|hpp|cs|rb|php|swift|kt|rs|scala|r|sh|bash|zsh|pl|lua|vim|el|clj|hs|ml|ex|exs|dart|jl|nim|v|zig|html|css|scss|sass|json|xml|yaml|yml|toml|ini|conf|cfg)$' | xargs wc -l 2>/dev/null | tail -n 1 | awk '{print $1}'`,
 		repoPath,
 	))
-	
+
 	output, err := cmd.Output()
 	if err != nil {
 		// Fallback: try a simpler approach
@@ -264,12 +263,12 @@ func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 		if line == "" {
 			continue
 		}
-		
+
 		timestamp, err := strconv.ParseInt(line, 10, 64)
 		if err != nil {
 			continue
 		}
-		
+
 		age := (now - float64(timestamp)) / 86400 // Convert to days
 		totalAge += age
 		validCommits++
@@ -310,12 +309,12 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 			break
 		}
 	}
-	
+
 	if latestTag == "" {
 		// No version-like tags found
 		return "", "", false, nil
 	}
-	
+
 	// Get the date of the latest tag
 	cmd = exec.Command("git", "-C", repoPath, "log", "-1", "--format=%ai", latestTag)
 	dateOutput, err := cmd.Output()
@@ -323,7 +322,7 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 		// Tag exists but couldn't get date
 		return latestTag, "", true, nil
 	}
-	
+
 	// Extract just the date part (YYYY-MM-DD)
 	parts := strings.Fields(string(dateOutput))
 	tagDate := ""
@@ -339,24 +338,24 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 func isVersionTag(tag string) bool {
 	// Remove 'v' prefix if present
 	versionStr := strings.TrimPrefix(tag, "v")
-	
+
 	// Check if the remaining string contains at least one digit and one dot
 	hasDigit := false
 	hasDot := false
-	
+
 	for _, ch := range versionStr {
 		if ch >= '0' && ch <= '9' {
 			hasDigit = true
 		} else if ch == '.' {
 			hasDot = true
-		} else if ch != '-' && ch != '+' && ch != '_' && 
-		         (ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') {
+		} else if ch != '-' && ch != '+' && ch != '_' &&
+			(ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') {
 			// Allow alphanumeric characters and common separators
 			// but anything else makes it not a version
 			return false
 		}
 	}
-	
+
 	// Must have at least one digit, and either:
 	// - have a dot (e.g., 1.0, 0.1.2)
 	// - be just digits (e.g., 2, 2024)
@@ -367,6 +366,6 @@ func isVersionTag(tag string) bool {
 			return true
 		}
 	}
-	
+
 	return hasDigit && hasDot
 }

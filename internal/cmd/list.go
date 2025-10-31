@@ -3,8 +3,8 @@ package cmd
 import (
 	"os"
 
-	"github.com/spf13/cobra"
 	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"github.com/spf13/cobra"
 )
 
 var listCmd = &cobra.Command{

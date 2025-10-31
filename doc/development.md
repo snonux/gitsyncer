@@ -18,8 +18,7 @@ This guide is for contributors who want to help develop GitSyncer.
 
 - Go 1.21 or later
 - Git
-- Make (optional, for Makefile)
-- Task (optional, for Taskfile)
+- Mage (optional, for magefile.go)
 
 ### Clone the Repository
 
@@ -46,12 +45,8 @@ go mod verify
 ### Install Development Tools
 
 ```bash
-# Install Task runner (optional)
-# macOS
-brew install go-task
-
-# Linux
-sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b ~/.local/bin
+# Install Mage (build tool)
+go install github.com/magefile/mage@latest
 
 # Install golangci-lint for linting
 go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
@@ -91,26 +86,29 @@ gitsyncer/
 ├── go.sum               # Go module checksums
 ├── LICENSE              # BSD 2-Clause License
 ├── README.md            # Project README
-├── CLAUDE.md            # AI assistant hints
-└── Taskfile.yaml        # Task automation
+├── AGENTS.md            # AI assistant hints
+└── magefile.go          # Mage build automation
 ```
 
 ## Building
 
-### Using Task (Recommended)
+### Using Mage (Recommended)
 
 ```bash
+# List available targets
+mage -l
+
 # Build for current platform
-task build
+mage build
 
 # Build for all platforms
-task build-all
+mage buildAll
 
 # Run directly
-task run
+mage run
 
-# Run with arguments
-task run -- --version
+# Show version
+mage version
 ```
 
 ### Using Go Directly
@@ -202,7 +200,7 @@ Follow standard Go conventions:
 1. **Formatting**: Use `gofmt` or `goimports`
    ```bash
    # Format all files
-   task fmt
+   mage fmt
    # or
    gofmt -w .
    ```
@@ -364,7 +362,7 @@ test: add integration tests for branch filtering
 
 2. **Format code**:
    ```bash
-   task fmt
+   mage fmt
    ```
 
 3. **Update documentation**:
@@ -372,7 +370,7 @@ test: add integration tests for branch filtering
    - Update README if adding user-facing features
    - Add examples to `doc/examples.md`
 
-4. **Update CLAUDE.md** if adding development commands
+4. **Update AGENTS.md** if adding development commands
 
 ### Pull Request Process
 
@@ -442,6 +440,6 @@ GITSYNCER_DEBUG=1 gitsyncer --sync test-repo
    ```
 4. Build releases:
    ```bash
-   task build-all
+   mage buildAll
    ```
 5. Create GitHub/Codeberg release with binaries

@@ -14,111 +14,111 @@ import (
 func detectLanguages(repoPath string) (languages []LanguageStats, documentation []LanguageStats, err error) {
 	languageLines := make(map[string]int)
 	documentationLines := make(map[string]int)
-	
+
 	// Define common language extensions
 	langExtensions := map[string]string{
-		".go":    "Go",
-		".py":    "Python",
-		".js":    "JavaScript",
-		".ts":    "TypeScript",
-		".java":  "Java",
-		".c":     "C",
-		".cpp":   "C++",
-		".cc":    "C++",
-		".cxx":   "C++",
-		".h":     "C/C++",
-		".hpp":   "C++",
-		".hxx":   "C++",
-		".cs":    "C#",
-		".rb":    "Ruby",
-		".php":   "PHP",
-		".swift": "Swift",
-		".kt":    "Kotlin",
-		".rs":    "Rust",
-		".scala": "Scala",
-		".r":     "R",
-		".m":     "Objective-C",
-		".mm":    "Objective-C++",
-		".sh":    "Shell",
-		".bash":  "Shell",
-		".zsh":   "Shell",
-		".fish":  "Shell",
-		".pl":    "Perl",
-		".pm":    "Perl",
-		".raku":  "Raku",
-		".rakumod": "Raku",
-		".rakudoc": "Raku",
+		".go":       "Go",
+		".py":       "Python",
+		".js":       "JavaScript",
+		".ts":       "TypeScript",
+		".java":     "Java",
+		".c":        "C",
+		".cpp":      "C++",
+		".cc":       "C++",
+		".cxx":      "C++",
+		".h":        "C/C++",
+		".hpp":      "C++",
+		".hxx":      "C++",
+		".cs":       "C#",
+		".rb":       "Ruby",
+		".php":      "PHP",
+		".swift":    "Swift",
+		".kt":       "Kotlin",
+		".rs":       "Rust",
+		".scala":    "Scala",
+		".r":        "R",
+		".m":        "Objective-C",
+		".mm":       "Objective-C++",
+		".sh":       "Shell",
+		".bash":     "Shell",
+		".zsh":      "Shell",
+		".fish":     "Shell",
+		".pl":       "Perl",
+		".pm":       "Perl",
+		".raku":     "Raku",
+		".rakumod":  "Raku",
+		".rakudoc":  "Raku",
 		".rakutest": "Raku",
-		".p6":    "Raku",
-		".pm6":   "Raku",
-		".lua":   "Lua",
-		".vim":   "Vim Script",
-		".el":    "Emacs Lisp",
-		".clj":   "Clojure",
-		".hs":    "Haskell",
-		".ml":    "OCaml",
-		".ex":    "Elixir",
-		".exs":   "Elixir",
-		".dart":  "Dart",
-		".jl":    "Julia",
-		".nim":   "Nim",
-		".v":     "V",
-		".zig":   "Zig",
-		".html":  "HTML",
-		".htm":   "HTML",
-		".css":   "CSS",
-		".scss":  "SCSS",
-		".sass":  "Sass",
-		".less":  "Less",
-		".xml":   "XML",
-		".json":  "JSON",
-		".yaml":  "YAML",
-		".yml":   "YAML",
-		".toml":  "TOML",
-		".ini":   "INI",
-		".cfg":   "Config",
-		".conf":  "Config",
-		".sql":   "SQL",
-		".tf":    "HCL",
-		".tfvars": "HCL",
-		".hcl":   "HCL",
-		".awk":   "AWK",
+		".p6":       "Raku",
+		".pm6":      "Raku",
+		".lua":      "Lua",
+		".vim":      "Vim Script",
+		".el":       "Emacs Lisp",
+		".clj":      "Clojure",
+		".hs":       "Haskell",
+		".ml":       "OCaml",
+		".ex":       "Elixir",
+		".exs":      "Elixir",
+		".dart":     "Dart",
+		".jl":       "Julia",
+		".nim":      "Nim",
+		".v":        "V",
+		".zig":      "Zig",
+		".html":     "HTML",
+		".htm":      "HTML",
+		".css":      "CSS",
+		".scss":     "SCSS",
+		".sass":     "Sass",
+		".less":     "Less",
+		".xml":      "XML",
+		".json":     "JSON",
+		".yaml":     "YAML",
+		".yml":      "YAML",
+		".toml":     "TOML",
+		".ini":      "INI",
+		".cfg":      "Config",
+		".conf":     "Config",
+		".sql":      "SQL",
+		".tf":       "HCL",
+		".tfvars":   "HCL",
+		".hcl":      "HCL",
+		".awk":      "AWK",
 	}
-	
+
 	// Define documentation/text extensions
 	docExtensions := map[string]string{
-		".md":    "Markdown",
-		".rst":   "reStructuredText",
-		".tex":   "LaTeX",
-		".txt":   "Text",
-		".adoc":  "AsciiDoc",
-		".org":   "Org",
+		".md":   "Markdown",
+		".rst":  "reStructuredText",
+		".tex":  "LaTeX",
+		".txt":  "Text",
+		".adoc": "AsciiDoc",
+		".org":  "Org",
 	}
 
 	// Special files that indicate specific languages
 	specialFiles := map[string]string{
-		"makefile":            "Make",
-		"gnumakefile":         "Make",
-		"dockerfile":          "Docker",
-		"dockerfile.*":        "Docker",
-		"cmakelists.txt":      "CMake",
-		"rakefile":            "Ruby",
-		"gemfile":             "Ruby",
-		"package.json":        "JavaScript",
-		"cargo.toml":          "Rust",
-		"go.mod":              "Go",
-		"go.sum":              "Go",
-		"pom.xml":             "Java",
-		"build.gradle":        "Gradle",
-		"build.gradle.kts":    "Kotlin",
-		"requirements.txt":    "Python",
-		"setup.py":            "Python",
-		"pyproject.toml":      "Python",
-		"composer.json":       "PHP",
-		"*.dockerfile":        "Docker",
-		"containerfile":       "Docker",
-		"jenkinsfile":         "Groovy",
-		"vagrantfile":         "Ruby",
+		"makefile":         "Make",
+		"gnumakefile":      "Make",
+		"dockerfile":       "Docker",
+		"dockerfile.*":     "Docker",
+		"cmakelists.txt":   "CMake",
+		"rakefile":         "Ruby",
+		"gemfile":          "Ruby",
+		"package.json":     "JavaScript",
+		"cargo.toml":       "Rust",
+		"go.mod":           "Go",
+		"go.sum":           "Go",
+		"pom.xml":          "Java",
+		"build.gradle":     "Gradle",
+		"build.gradle.kts": "Kotlin",
+		"requirements.txt": "Python",
+		"setup.py":         "Python",
+		"pyproject.toml":   "Python",
+		"composer.json":    "PHP",
+		"*.dockerfile":     "Docker",
+		"containerfile":    "Docker",
+		"jenkinsfile":      "Groovy",
+		"vagrantfile":      "Ruby",
 	}
 
 	// Count lines for each language
@@ -131,15 +131,15 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 		if info.IsDir() {
 			name := info.Name()
 			// Skip hidden directories and common non-code directories
-			if strings.HasPrefix(name, ".") && name != "." || 
-			   name == "node_modules" || 
-			   name == "vendor" || 
-			   name == "target" || 
-			   name == "dist" || 
-			   name == "build" || 
-			   name == "out" ||
-			   name == "__pycache__" ||
-			   name == "coverage" {
+			if strings.HasPrefix(name, ".") && name != "." ||
+				name == "node_modules" ||
+				name == "vendor" ||
+				name == "target" ||
+				name == "dist" ||
+				name == "build" ||
+				name == "out" ||
+				name == "__pycache__" ||
+				name == "coverage" {
 				return filepath.SkipDir
 			}
 			return nil
@@ -157,7 +157,7 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 		// Determine the language or documentation type
 		var language string
 		var isDoc bool
-		
+
 		// Check special files first
 		if lang, ok := specialFiles[basename]; ok {
 			language = lang
@@ -204,7 +204,7 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 				file.Close()
 			}
 		}
-		
+
 		// If we identified a language, count its lines
 		if language != "" {
 			lines, err := countFileLines(path)

@@ -52,65 +52,65 @@ func (m *Manager) SetCodebergToken(token string) {
 
 // SetAITool sets the AI tool to use for release notes generation
 func (m *Manager) SetAITool(tool string) {
-    m.aiTool = tool
+	m.aiTool = tool
 }
 
 // EnsureCodebergReleasesEnabled ensures that the Codeberg repository has the
 // Releases feature enabled. If it's disabled, attempts to enable it via API.
 func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
-    if m.codebergToken == "" {
-        return fmt.Errorf("Codeberg token is required to manage repository settings")
-    }
+	if m.codebergToken == "" {
+		return fmt.Errorf("Codeberg token is required to manage repository settings")
+	}
 
-    // Fetch repository metadata
-    infoURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
-    getReq, err := http.NewRequest("GET", infoURL, nil)
-    if err != nil {
-        return err
-    }
-    getReq.Header.Set("Authorization", "token "+m.codebergToken)
-    resp, err := (&http.Client{}).Do(getReq)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
-    if resp.StatusCode != 200 {
-        body, _ := io.ReadAll(resp.Body)
-        return fmt.Errorf("failed to get repo info: %s - %s", resp.Status, string(body))
-    }
+	// Fetch repository metadata
+	infoURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
+	getReq, err := http.NewRequest("GET", infoURL, nil)
+	if err != nil {
+		return err
+	}
+	getReq.Header.Set("Authorization", "token "+m.codebergToken)
+	resp, err := (&http.Client{}).Do(getReq)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to get repo info: %s - %s", resp.Status, string(body))
+	}
 
-    var repoInfo struct{
-        HasReleases bool `json:"has_releases"`
-    }
-    if err := json.NewDecoder(resp.Body).Decode(&repoInfo); err != nil {
-        return fmt.Errorf("failed to parse repo info: %w", err)
-    }
-    if repoInfo.HasReleases {
-        return nil
-    }
+	var repoInfo struct {
+		HasReleases bool `json:"has_releases"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&repoInfo); err != nil {
+		return fmt.Errorf("failed to parse repo info: %w", err)
+	}
+	if repoInfo.HasReleases {
+		return nil
+	}
 
-    // Enable releases via PATCH
-    payload := map[string]any{"has_releases": true}
-    body, err := json.Marshal(payload)
-    if err != nil {
-        return err
-    }
-    patchReq, err := http.NewRequest("PATCH", infoURL, bytes.NewBuffer(body))
-    if err != nil {
-        return err
-    }
-    patchReq.Header.Set("Authorization", "token "+m.codebergToken)
-    patchReq.Header.Set("Content-Type", "application/json")
-    patchResp, err := (&http.Client{}).Do(patchReq)
-    if err != nil {
-        return err
-    }
-    defer patchResp.Body.Close()
-    if patchResp.StatusCode != 200 {
-        pbody, _ := io.ReadAll(patchResp.Body)
-        return fmt.Errorf("failed to enable releases: %s - %s", patchResp.Status, string(pbody))
-    }
-    return nil
+	// Enable releases via PATCH
+	payload := map[string]any{"has_releases": true}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
+	patchReq, err := http.NewRequest("PATCH", infoURL, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	patchReq.Header.Set("Authorization", "token "+m.codebergToken)
+	patchReq.Header.Set("Content-Type", "application/json")
+	patchResp, err := (&http.Client{}).Do(patchReq)
+	if err != nil {
+		return err
+	}
+	defer patchResp.Body.Close()
+	if patchResp.StatusCode != 200 {
+		pbody, _ := io.ReadAll(patchResp.Body)
+		return fmt.Errorf("failed to enable releases: %s - %s", patchResp.Status, string(pbody))
+	}
+	return nil
 }
 
 // isVersionTag checks if a tag name is a version tag
@@ -388,67 +388,88 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		return "", fmt.Errorf("failed to get diff: %w", err)
 	}
 
-    // Prepare prompt/instructions and input payload
-    var instr strings.Builder
-    instr.WriteString(fmt.Sprintf("Generate professional release notes for %s version %s.\n", repoName, tag))
-    if prevTag != "" {
-        instr.WriteString(fmt.Sprintf("Previous version: %s\n", prevTag))
-    }
-    instr.WriteString("\nBased on the provided commits and code changes, write professional release notes that:\n")
-    instr.WriteString("1. Start with a brief overview of what this release accomplishes\n")
-    instr.WriteString("2. Group changes into logical sections (Features, Improvements, Bug Fixes, etc.)\n")
-    instr.WriteString("3. Explain WHY each change is useful to users, not just what changed\n")
-    instr.WriteString("4. Use clear, non-technical language where possible\n")
-    instr.WriteString("5. Highlight any breaking changes or migration steps\n")
-    instr.WriteString("6. Keep it concise but informative\n")
-    instr.WriteString("7. Format using Markdown\n")
-    instr.WriteString("\nDo not include the version number in the title as it will be added automatically.")
+	// Prepare prompt/instructions and input payload
+	var instr strings.Builder
+	instr.WriteString(fmt.Sprintf("Generate professional release notes for %s version %s.\n", repoName, tag))
+	if prevTag != "" {
+		instr.WriteString(fmt.Sprintf("Previous version: %s\n", prevTag))
+	}
+	instr.WriteString("\nBased on the provided commits and code changes, write professional release notes that:\n")
+	instr.WriteString("1. Start with a brief overview of what this release accomplishes\n")
+	instr.WriteString("2. Group changes into logical sections (Features, Improvements, Bug Fixes, etc.)\n")
+	instr.WriteString("3. Explain WHY each change is useful to users, not just what changed\n")
+	instr.WriteString("4. Use clear, non-technical language where possible\n")
+	instr.WriteString("5. Highlight any breaking changes or migration steps\n")
+	instr.WriteString("6. Keep it concise but informative\n")
+	instr.WriteString("7. Format using Markdown\n")
+	instr.WriteString("\nDo not include the version number in the title as it will be added automatically.")
 
-    var input strings.Builder
-    input.WriteString("Commit messages:\n")
-    for _, commit := range commits {
-        input.WriteString(fmt.Sprintf("- %s\n", commit))
-    }
-    input.WriteString("\nCode changes:\n")
-    input.WriteString(diff)
+	var input strings.Builder
+	input.WriteString("Commit messages:\n")
+	for _, commit := range commits {
+		input.WriteString(fmt.Sprintf("- %s\n", commit))
+	}
+	input.WriteString("\nCode changes:\n")
+	input.WriteString(diff)
 
-    fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
-    fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
-    fmt.Printf("  Total prompt length: %d characters\n", len(instr.String())+len(input.String()))
+	fmt.Printf("  Prompt: Generate release notes for %s %s\n", repoName, tag)
+	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
+	fmt.Printf("  Total prompt length: %d characters\n", len(instr.String())+len(input.String()))
 
-    // Determine which AI tool to use (default to claude if not set)
-    aiTool := m.aiTool
-    if aiTool == "" {
-        aiTool = "claude"
-    }
+	// Determine which AI tool to use (default to amp if not set)
+	aiTool := m.aiTool
+	if aiTool == "" {
+		aiTool = "amp"
+	}
 
-    // Build a full prompt string for tools that read a single argument
-    fullPrompt := instr.String() + "\n\n" + input.String()
+	// Build a full prompt string for tools that read a single argument
+	fullPrompt := instr.String() + "\n\n" + input.String()
 
-    var releaseNotes string
+	var releaseNotes string
 
-    // 1) Try hexai first: echo input to stdin and pass instructions as argument
-    // Note: print stderr to console, but only use stdout for notes
-    if _, err := exec.LookPath("hexai"); err == nil {
-        fmt.Println("  Running hexai CLI command (stdin payload)...")
-        cmd := exec.Command("hexai", instr.String())
-        cmd.Stdin = strings.NewReader(input.String())
-        cmd.Stderr = os.Stderr
-        out, err := cmd.Output()
-        if err != nil {
-            fmt.Printf("  hexai CLI failed: %v\n", err)
-        } else {
-            notes := strings.TrimSpace(string(out))
-            if notes == "" {
-                fmt.Println("  hexai returned empty output; will try fallbacks...")
-            } else {
-                releaseNotes = notes
-            }
-        }
-    }
+	// 1) Try amp first: echo input to stdin and pass instructions as argument
+	// Note: print stderr to console, but only use stdout for notes
+	if _, err := exec.LookPath("amp"); err == nil {
+		fmt.Println("  Running amp CLI command (stdin payload)...")
+		cmd := exec.Command("amp", "--execute", instr.String())
+		cmd.Stdin = strings.NewReader(input.String())
+		cmd.Stderr = os.Stderr
+		out, err := cmd.Output()
+		if err != nil {
+			fmt.Printf("  amp CLI failed: %v\n", err)
+		} else {
+			notes := strings.TrimSpace(string(out))
+			if notes == "" {
+				fmt.Println("  amp returned empty output; will try fallbacks...")
+			} else {
+				releaseNotes = notes
+			}
+		}
+	}
 
-    if releaseNotes == "" && aiTool == "claude" {
-        fmt.Println("  Running claude CLI command...")
+	// 2) Try hexai as fallback
+	if releaseNotes == "" {
+		if _, err := exec.LookPath("hexai"); err == nil {
+			fmt.Println("  Running hexai CLI command (stdin payload)...")
+			cmd := exec.Command("hexai", instr.String())
+			cmd.Stdin = strings.NewReader(input.String())
+			cmd.Stderr = os.Stderr
+			out, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("  hexai CLI failed: %v\n", err)
+			} else {
+				notes := strings.TrimSpace(string(out))
+				if notes == "" {
+					fmt.Println("  hexai returned empty output; will try fallbacks...")
+				} else {
+					releaseNotes = notes
+				}
+			}
+		}
+	}
+
+	if releaseNotes == "" && aiTool == "claude" {
+		fmt.Println("  Running claude CLI command...")
 		if _, err := exec.LookPath("claude"); err != nil {
 			fmt.Println("  claude CLI not found, falling back to aichat...")
 			aiTool = "aichat"
@@ -467,10 +488,10 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		}
 	}
 
-    if releaseNotes == "" && aiTool == "aichat" {
+	if releaseNotes == "" && aiTool == "aichat" {
 		fmt.Println("  Running aichat CLI command...")
 		if _, err := exec.LookPath("aichat"); err != nil {
-			return "", fmt.Errorf("aichat CLI not found in PATH and claude fallback failed")
+			return "", fmt.Errorf("aichat CLI not found in PATH and fallbacks failed")
 		}
 
 		cmd := exec.Command("aichat", fullPrompt)
@@ -479,6 +500,10 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 			return "", fmt.Errorf("aichat CLI failed: %w", err)
 		}
 		releaseNotes = notes
+	}
+
+	if releaseNotes == "" && aiTool == "amp" {
+		return "", fmt.Errorf("amp CLI not found in PATH and fallbacks failed")
 	}
 
 	if releaseNotes == "" {
@@ -693,81 +718,83 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	}
 	defer resp.Body.Close()
 
-    if resp.StatusCode != 201 {
-        body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode != 201 {
+		body, _ := io.ReadAll(resp.Body)
 
-        // Provide a more actionable hint when the repository is missing or owner/repo is wrong
-        if resp.StatusCode == 404 {
-            // Probe repository details to distinguish scenarios
-            probeURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
-            probeReq, perr := http.NewRequest("GET", probeURL, nil)
-            if perr == nil {
-                // Prefer probing with the same token
-                if m.codebergToken != "" {
-                    probeReq.Header.Set("Authorization", "token "+m.codebergToken)
-                }
-                if probeResp, perr2 := (&http.Client{}).Do(probeReq); perr2 == nil {
-                    defer probeResp.Body.Close()
-                    if probeResp.StatusCode == 200 {
-                        // Try to detect if releases are disabled
-                        var repoInfo struct{ HasReleases bool `json:"has_releases"` }
-                        if data, rerr := io.ReadAll(probeResp.Body); rerr == nil {
-                            _ = json.Unmarshal(data, &repoInfo)
-                        if !repoInfo.HasReleases {
-                            // Try to enable releases automatically and retry creation
-                            if err := m.EnsureCodebergReleasesEnabled(owner, repo); err != nil {
-                                return fmt.Errorf(
-                                    "failed to create Codeberg release: releases are disabled for %s/%s and enabling via API failed: %v. Raw response: %s",
-                                    owner, repo, err, string(body),
-                                )
-                            }
-                            // Retry POST after enabling
-                            retryReq, rerr := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
-                            if rerr != nil {
-                                return rerr
-                            }
-                            retryReq.Header.Set("Authorization", "token "+m.codebergToken)
-                            retryReq.Header.Set("Content-Type", "application/json")
-                            retryReq.Header.Set("Accept", "application/json")
-                            retryResp, rerr := (&http.Client{}).Do(retryReq)
-                            if rerr != nil {
-                                return rerr
-                            }
-                            defer retryResp.Body.Close()
-                            if retryResp.StatusCode != 201 {
-                                rbody, _ := io.ReadAll(retryResp.Body)
-                                return fmt.Errorf("failed to create Codeberg release after enabling releases: %s - %s", retryResp.Status, string(rbody))
-                            }
-                            // Success after enabling
-                            return nil
-                        }
-                        }
-                        // Repo exists and has releases; likely permission/scope issue
-                        return fmt.Errorf(
-                            "failed to create Codeberg release: repo %s/%s exists but returned 404 on release creation. This usually indicates the token lacks write permissions to this repository or owner. Ensure the token belongs to '%s' (or a collaborator/maintainer) and has repository write access. Raw response: %s",
-                            owner, repo, owner, string(body),
-                        )
-                    }
-                }
-            }
-            return fmt.Errorf(
-                "failed to create Codeberg release: repository %s/%s not found (404). Verify your Codeberg owner ('organizations[].name') matches the actual owner for this repo and that the repository exists. If needed, create it first, e.g.: gitsyncer sync repo %s --create-codeberg-repos. Raw response: %s",
-                owner, repo, repo, string(body),
-            )
-        }
+		// Provide a more actionable hint when the repository is missing or owner/repo is wrong
+		if resp.StatusCode == 404 {
+			// Probe repository details to distinguish scenarios
+			probeURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
+			probeReq, perr := http.NewRequest("GET", probeURL, nil)
+			if perr == nil {
+				// Prefer probing with the same token
+				if m.codebergToken != "" {
+					probeReq.Header.Set("Authorization", "token "+m.codebergToken)
+				}
+				if probeResp, perr2 := (&http.Client{}).Do(probeReq); perr2 == nil {
+					defer probeResp.Body.Close()
+					if probeResp.StatusCode == 200 {
+						// Try to detect if releases are disabled
+						var repoInfo struct {
+							HasReleases bool `json:"has_releases"`
+						}
+						if data, rerr := io.ReadAll(probeResp.Body); rerr == nil {
+							_ = json.Unmarshal(data, &repoInfo)
+							if !repoInfo.HasReleases {
+								// Try to enable releases automatically and retry creation
+								if err := m.EnsureCodebergReleasesEnabled(owner, repo); err != nil {
+									return fmt.Errorf(
+										"failed to create Codeberg release: releases are disabled for %s/%s and enabling via API failed: %v. Raw response: %s",
+										owner, repo, err, string(body),
+									)
+								}
+								// Retry POST after enabling
+								retryReq, rerr := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+								if rerr != nil {
+									return rerr
+								}
+								retryReq.Header.Set("Authorization", "token "+m.codebergToken)
+								retryReq.Header.Set("Content-Type", "application/json")
+								retryReq.Header.Set("Accept", "application/json")
+								retryResp, rerr := (&http.Client{}).Do(retryReq)
+								if rerr != nil {
+									return rerr
+								}
+								defer retryResp.Body.Close()
+								if retryResp.StatusCode != 201 {
+									rbody, _ := io.ReadAll(retryResp.Body)
+									return fmt.Errorf("failed to create Codeberg release after enabling releases: %s - %s", retryResp.Status, string(rbody))
+								}
+								// Success after enabling
+								return nil
+							}
+						}
+						// Repo exists and has releases; likely permission/scope issue
+						return fmt.Errorf(
+							"failed to create Codeberg release: repo %s/%s exists but returned 404 on release creation. This usually indicates the token lacks write permissions to this repository or owner. Ensure the token belongs to '%s' (or a collaborator/maintainer) and has repository write access. Raw response: %s",
+							owner, repo, owner, string(body),
+						)
+					}
+				}
+			}
+			return fmt.Errorf(
+				"failed to create Codeberg release: repository %s/%s not found (404). Verify your Codeberg owner ('organizations[].name') matches the actual owner for this repo and that the repository exists. If needed, create it first, e.g.: gitsyncer sync repo %s --create-codeberg-repos. Raw response: %s",
+				owner, repo, repo, string(body),
+			)
+		}
 
-        // Special handling for known Gitea issue
-        if resp.StatusCode == 409 && strings.Contains(string(body), "Release is has no Tag") {
-            // This is a known Gitea bug - the tag exists but Gitea can't create a release for it
-            // Check if it's one of the problematic old tags
-            fmt.Printf("\nWARNING: Codeberg/Gitea returned 'Release is has no Tag' error for tag %s\n", tag)
-            fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
-            fmt.Printf("You may need to create this release manually through the Codeberg web interface.\n\n")
-            return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
-        }
+		// Special handling for known Gitea issue
+		if resp.StatusCode == 409 && strings.Contains(string(body), "Release is has no Tag") {
+			// This is a known Gitea bug - the tag exists but Gitea can't create a release for it
+			// Check if it's one of the problematic old tags
+			fmt.Printf("\nWARNING: Codeberg/Gitea returned 'Release is has no Tag' error for tag %s\n", tag)
+			fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
+			fmt.Printf("You may need to create this release manually through the Codeberg web interface.\n\n")
+			return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
+		}
 
-        return fmt.Errorf("failed to create Codeberg release: %s - %s", resp.Status, string(body))
-    }
+		return fmt.Errorf("failed to create Codeberg release: %s - %s", resp.Status, string(body))
+	}
 
 	return nil
 }

@@ -77,7 +77,7 @@ func FormatExclusionReport(excludedBranches []string, patterns []string) string 
 
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("\n🚫 Excluded %d branches based on patterns:\n", len(excludedBranches)))
-	
+
 	// Show patterns
 	sb.WriteString("   Patterns: ")
 	for i, pattern := range patterns {
@@ -87,12 +87,12 @@ func FormatExclusionReport(excludedBranches []string, patterns []string) string 
 		sb.WriteString(fmt.Sprintf("'%s'", pattern))
 	}
 	sb.WriteString("\n")
-	
+
 	// Show excluded branches
 	sb.WriteString("   Excluded branches:\n")
 	for _, branch := range excludedBranches {
 		sb.WriteString(fmt.Sprintf("   - %s\n", branch))
 	}
-	
+
 	return sb.String()
 }

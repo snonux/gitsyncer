@@ -2,7 +2,7 @@
 
 GitSyncer is a tool for synchronizing git repositories between multiple organizations (e.g., GitHub and Codeberg). It automatically keeps all branches in sync across different git hosting platforms.
 
-It has been vibe coded mainly vibe coded using Claude Code CLI.
+It has been vibe coded mainly using AI tools (Claude Code CLI and amp).
 
 ## Documentation
 
@@ -173,16 +173,16 @@ gitsyncer release create --update-existing
 # Create for specific repository without AI
 gitsyncer release create myproject --no-ai-notes
 
-# Use aichat instead of claude for AI release notes
-gitsyncer release create --ai-tool aichat
+# Use amp for AI release notes (default)
+gitsyncer release create --ai-tool amp
 ```
 
 #### AI Release Notes Engines
 
-- Default flow: tries `hexai` first by piping the generated commit/diff payload to stdin and passing an instruction prompt as the sole argument (equivalent to `cat SOMETEXT.txt | hexai PROMPT`).
-- Fallback: if `hexai` is not available or fails, falls back to `claude --model sonnet`, then to `aichat`.
-- Explicit tool: `--ai-tool claude` or `--ai-tool aichat` influences the fallback preference, but `hexai` is still attempted first when available.
-- Requirements: ensure `hexai`, `claude`, or `aichat` are installed and available in `PATH`.
+- Default flow: tries `amp` first by piping the generated commit/diff payload to stdin and passing an instruction prompt via `--execute` (equivalent to `echo SOMETEXT | amp --execute 'PROMPT'`).
+- Fallback: if `amp` is not available or fails, falls back to `hexai`, then `claude --model sonnet`, then to `aichat`.
+- Explicit tool: `--ai-tool claude` or `--ai-tool aichat` influences the fallback preference, but `amp` is still attempted first when available.
+- Requirements: ensure `amp`, `hexai`, `claude`, or `aichat` are installed and available in `PATH`.
 
 ### Project Showcase
 
@@ -369,7 +369,7 @@ The backup location path format is: `user@host:path/REPONAME.git`
 
 ## Project Showcase Generation
 
-GitSyncer can generate a comprehensive showcase of all your projects using Claude AI. This feature creates a formatted document with project summaries, statistics, and code snippets.
+GitSyncer can generate a comprehensive showcase of all your projects using AI (amp by default). This feature creates a formatted document with project summaries, statistics, and code snippets.
 
 ### How it works
 
@@ -381,7 +381,7 @@ GitSyncer can generate a comprehensive showcase of all your projects using Claud
    - Latest release version and date
    - AI-assistance detection (looks for CLAUDE.md, GEMINI.md files)
 
-2. **AI-Powered Summaries**: Uses Claude AI to generate concise project descriptions that explain:
+2. **AI-Powered Summaries**: Uses AI (amp, hexai, claude, or aichat) to generate concise project descriptions that explain:
    - What the project does
    - Why it's useful
    - How it's implemented

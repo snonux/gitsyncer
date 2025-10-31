@@ -70,74 +70,74 @@ func (c *Client) loadToken(tokenFromConfig string) {
 
 // HasToken returns true if a token is loaded
 func (c *Client) HasToken() bool {
-    return c.token != ""
+	return c.token != ""
 }
 
 // GetRepo fetches a repository by name
 func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
-    var repo Repository
-    url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
-    req, err := http.NewRequest("GET", url, nil)
-    if err != nil {
-        return repo, false, err
-    }
-    if c.HasToken() {
-        req.Header.Set("Authorization", "token "+c.token)
-    }
+	var repo Repository
+	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
+	req, err := http.NewRequest("GET", url, nil)
+	if err != nil {
+		return repo, false, err
+	}
+	if c.HasToken() {
+		req.Header.Set("Authorization", "token "+c.token)
+	}
 
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        return repo, false, err
-    }
-    defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return repo, false, err
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode == 404 {
-        return repo, false, nil
-    }
-    if resp.StatusCode != 200 {
-        body, _ := io.ReadAll(resp.Body)
-        return repo, false, fmt.Errorf("failed to get repo: status %d: %s", resp.StatusCode, string(body))
-    }
+	if resp.StatusCode == 404 {
+		return repo, false, nil
+	}
+	if resp.StatusCode != 200 {
+		body, _ := io.ReadAll(resp.Body)
+		return repo, false, fmt.Errorf("failed to get repo: status %d: %s", resp.StatusCode, string(body))
+	}
 
-    if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
-        return repo, false, fmt.Errorf("failed to parse response: %w", err)
-    }
-    return repo, true, nil
+	if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
+		return repo, false, fmt.Errorf("failed to parse response: %w", err)
+	}
+	return repo, true, nil
 }
 
 // UpdateRepoDescription updates a repository description on Codeberg
 func (c *Client) UpdateRepoDescription(repoName, description string) error {
-    if !c.HasToken() {
-        return fmt.Errorf("Codeberg token required to update repository")
-    }
+	if !c.HasToken() {
+		return fmt.Errorf("Codeberg token required to update repository")
+	}
 
-    url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
-    payload := map[string]interface{}{
-        "description": description,
-    }
-    body, err := json.Marshal(payload)
-    if err != nil {
-        return err
-    }
+	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
+	payload := map[string]interface{}{
+		"description": description,
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return err
+	}
 
-    req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(body))
-    if err != nil {
-        return err
-    }
-    req.Header.Set("Content-Type", "application/json")
-    req.Header.Set("Authorization", "token "+c.token)
+	req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "token "+c.token)
 
-    resp, err := http.DefaultClient.Do(req)
-    if err != nil {
-        return err
-    }
-    defer resp.Body.Close()
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
 
-    if resp.StatusCode != http.StatusOK {
-        b, _ := io.ReadAll(resp.Body)
-        return fmt.Errorf("failed to update Codeberg description: %s - %s", resp.Status, string(b))
-    }
-    return nil
+	if resp.StatusCode != http.StatusOK {
+		b, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("failed to update Codeberg description: %s - %s", resp.Status, string(b))
+	}
+	return nil
 }
 
 // ListPublicRepos lists all public repositories for an organization
@@ -299,7 +299,7 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		if err != nil {
 			return fmt.Errorf("failed to create repository: status code %d (could not read response)", resp.StatusCode)
 		}
-		
+
 		// Try to parse as JSON error response
 		var errorResp map[string]interface{}
 		if err := json.Unmarshal(body, &errorResp); err == nil {
@@ -308,7 +308,7 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 				return fmt.Errorf("failed to create repository: %s (status code %d)", msg, resp.StatusCode)
 			}
 		}
-		
+
 		// If we can't parse JSON, return the raw response
 		return fmt.Errorf("failed to create repository: %s (status code %d)", string(body), resp.StatusCode)
 	}

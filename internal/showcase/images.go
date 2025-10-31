@@ -15,7 +15,7 @@ func extractImagesFromRepo(repoPath, repoName, showcaseDir string) ([]string, er
 	// Look for README files
 	readmeFiles := []string{"README.md", "readme.md", "Readme.md", "README.MD"}
 	var readmePath string
-	
+
 	for _, filename := range readmeFiles {
 		path := filepath.Join(repoPath, filename)
 		if _, err := os.Stat(path); err == nil {
@@ -23,30 +23,30 @@ func extractImagesFromRepo(repoPath, repoName, showcaseDir string) ([]string, er
 			break
 		}
 	}
-	
+
 	if readmePath == "" {
 		return nil, nil // No README found, not an error
 	}
-	
+
 	// Read README content
 	content, err := os.ReadFile(readmePath)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read README: %w", err)
 	}
-	
+
 	fmt.Printf("Found README at: %s\n", readmePath)
-	
+
 	// Extract image references
 	images := extractImageReferences(string(content))
 	fmt.Printf("Found %d images in README\n", len(images))
 	for i, img := range images {
 		fmt.Printf("  Image %d: %s\n", i+1, img)
 	}
-	
+
 	if len(images) == 0 {
 		return nil, nil
 	}
-	
+
 	// Limit to first and last image (max 2)
 	var selectedImages []string
 	if len(images) == 1 {
@@ -54,19 +54,19 @@ func extractImagesFromRepo(repoPath, repoName, showcaseDir string) ([]string, er
 	} else {
 		selectedImages = []string{images[0], images[len(images)-1]}
 	}
-	
+
 	// Create showcase subdirectory for this repo
 	repoShowcaseDir := filepath.Join(showcaseDir, "showcase", repoName)
 	if err := os.MkdirAll(repoShowcaseDir, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create showcase directory: %w", err)
 	}
-	
+
 	// Copy images and collect relative paths
 	var copiedImages []string
 	for i, imgPath := range selectedImages {
 		var destFilename string
 		var err error
-		
+
 		if strings.HasPrefix(imgPath, "http://") || strings.HasPrefix(imgPath, "https://") {
 			// Handle URL - download the image
 			// Extract extension from URL, handling query parameters
@@ -78,7 +78,7 @@ func extractImagesFromRepo(repoPath, repoName, showcaseDir string) ([]string, er
 			}
 			destFilename = fmt.Sprintf("image-%d%s", i+1, ext)
 			destPath := filepath.Join(repoShowcaseDir, destFilename)
-			
+
 			if err = downloadImage(imgPath, destPath); err != nil {
 				fmt.Printf("Warning: Failed to download image %s: %v\n", imgPath, err)
 				continue
@@ -89,31 +89,31 @@ func extractImagesFromRepo(repoPath, repoName, showcaseDir string) ([]string, er
 			if !filepath.IsAbs(imgPath) {
 				srcPath = filepath.Join(repoPath, imgPath)
 			}
-			
+
 			// Check if image exists
 			if _, err := os.Stat(srcPath); err != nil {
 				fmt.Printf("Warning: Image not found: %s\n", srcPath)
 				continue
 			}
-			
+
 			// Generate destination filename
 			ext := filepath.Ext(srcPath)
 			destFilename = fmt.Sprintf("image-%d%s", i+1, ext)
 			destPath := filepath.Join(repoShowcaseDir, destFilename)
-			
+
 			// Copy image
 			if err := copyFile(srcPath, destPath); err != nil {
 				fmt.Printf("Warning: Failed to copy image %s: %v\n", srcPath, err)
 				continue
 			}
 		}
-		
+
 		// Store relative path from showcase directory
 		relativePath := filepath.Join("showcase", repoName, destFilename)
 		copiedImages = append(copiedImages, relativePath)
 		fmt.Printf("Copied/Downloaded image: %s -> %s\n", imgPath, relativePath)
 	}
-	
+
 	return copiedImages, nil
 }
 
@@ -121,24 +121,24 @@ func extractImagesFromRepo(repoPath, repoName, showcaseDir string) ([]string, er
 func extractImageReferences(content string) []string {
 	var images []string
 	seen := make(map[string]bool)
-	
+
 	// Regex patterns for markdown images
 	patterns := []string{
-		`!\[([^\]]*)\]\(([^)]+)\)`,                    // ![alt](url)
-		`<img[^>]+src=["']([^"']+)["'][^>]*>`,        // <img src="url"> with quotes
-		`<img[^>]+src=([^\s>]+)[^>]*>`,               // <img src=url> without quotes
-		`!\[([^\]]*)\]\[([^\]]+)\]`,                   // ![alt][ref]
-		`\[([^\]]+)\]:\s*(.+?)(?:\s+"[^"]+")?\s*$`,   // [ref]: url "title"
+		`!\[([^\]]*)\]\(([^)]+)\)`,                 // ![alt](url)
+		`<img[^>]+src=["']([^"']+)["'][^>]*>`,      // <img src="url"> with quotes
+		`<img[^>]+src=([^\s>]+)[^>]*>`,             // <img src=url> without quotes
+		`!\[([^\]]*)\]\[([^\]]+)\]`,                // ![alt][ref]
+		`\[([^\]]+)\]:\s*(.+?)(?:\s+"[^"]+")?\s*$`, // [ref]: url "title"
 	}
-	
+
 	fmt.Printf("DEBUG: Content length: %d bytes\n", len(content))
-	
+
 	// Extract from markdown image syntax
 	for i, pattern := range patterns[:3] { // First three patterns have URLs in different positions
 		re := regexp.MustCompile(pattern)
 		matches := re.FindAllStringSubmatch(content, -1)
 		fmt.Printf("DEBUG: Pattern %d (%s) found %d matches\n", i, pattern, len(matches))
-		
+
 		for _, match := range matches {
 			var url string
 			if pattern == patterns[0] {
@@ -146,18 +146,18 @@ func extractImageReferences(content string) []string {
 			} else {
 				url = match[1] // For <img src="url"> (both with and without quotes)
 			}
-			
+
 			// Clean and validate URL
 			url = strings.TrimSpace(url)
-			
+
 			// Handle markdown image titles - remove anything after a space or quote
 			if idx := strings.IndexAny(url, " \"'"); idx != -1 {
 				url = url[:idx]
 			}
 			url = strings.TrimSpace(url)
-			
+
 			fmt.Printf("DEBUG: Found potential image URL: %s\n", url)
-			
+
 			if isImageFile(url) {
 				fmt.Printf("DEBUG: URL is image file\n")
 				if !seen[url] {
@@ -181,7 +181,7 @@ func extractImageReferences(content string) []string {
 			}
 		}
 	}
-	
+
 	// Handle reference-style images
 	refPattern := regexp.MustCompile(patterns[4])
 	refMatches := refPattern.FindAllStringSubmatch(content, -1)
@@ -189,7 +189,7 @@ func extractImageReferences(content string) []string {
 	for _, match := range refMatches {
 		refs[match[1]] = strings.TrimSpace(match[2])
 	}
-	
+
 	// Find reference-style image uses
 	refUsePattern := regexp.MustCompile(patterns[3])
 	refUseMatches := refUsePattern.FindAllStringSubmatch(content, -1)
@@ -202,7 +202,7 @@ func extractImageReferences(content string) []string {
 			}
 		}
 	}
-	
+
 	return images
 }
 
@@ -220,7 +220,7 @@ func isImageFile(url string) bool {
 
 // isGitHostedImage checks if URL is from GitHub/Codeberg
 func isGitHostedImage(url string) bool {
-	return strings.Contains(url, "github.com") || 
+	return strings.Contains(url, "github.com") ||
 		strings.Contains(url, "githubusercontent.com") ||
 		strings.Contains(url, "codeberg.org") ||
 		strings.Contains(url, "codeberg.page")
@@ -233,18 +233,18 @@ func copyFile(src, dst string) error {
 		return err
 	}
 	defer sourceFile.Close()
-	
+
 	destFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
 	defer destFile.Close()
-	
+
 	_, err = io.Copy(destFile, sourceFile)
 	if err != nil {
 		return err
 	}
-	
+
 	return destFile.Sync()
 }
 
@@ -256,11 +256,11 @@ func downloadImage(url, dst string) error {
 	if err != nil {
 		return fmt.Errorf("curl failed: %v, output: %s", err, string(output))
 	}
-	
+
 	// Verify the file was created
 	if _, err := os.Stat(dst); err != nil {
 		return fmt.Errorf("downloaded file not found: %v", err)
 	}
-	
+
 	return nil
 }

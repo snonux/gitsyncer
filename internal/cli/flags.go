@@ -4,39 +4,39 @@ import (
 	"flag"
 	"os"
 	"path/filepath"
-	
+
 	"codeberg.org/snonux/gitsyncer/internal/state"
 )
 
 // Flags holds all command-line flag values
 type Flags struct {
-	VersionFlag        bool
-	ConfigPath         string
-	ListOrgs           bool
-	ListRepos          bool
-	SyncRepo           string
-	SyncAll            bool
-	SyncCodebergPublic bool
-	SyncGitHubPublic   bool
-	FullSync           bool
-	CreateGitHubRepos  bool
+	VersionFlag         bool
+	ConfigPath          string
+	ListOrgs            bool
+	ListRepos           bool
+	SyncRepo            string
+	SyncAll             bool
+	SyncCodebergPublic  bool
+	SyncGitHubPublic    bool
+	FullSync            bool
+	CreateGitHubRepos   bool
 	CreateCodebergRepos bool
-	DryRun             bool
-	WorkDir            string
-	TestGitHubToken    bool
-	Clean              bool
-	DeleteRepo         string
-	Backup             bool
-	Showcase           bool
-	Force              bool
-	BatchRun           bool
-	CheckReleases      bool
-	NoCheckReleases    bool
-	AutoCreateReleases bool
-	AIReleaseNotes     bool
-	UpdateReleases     bool
-	AITool             string
-	
+	DryRun              bool
+	WorkDir             string
+	TestGitHubToken     bool
+	Clean               bool
+	DeleteRepo          string
+	Backup              bool
+	Showcase            bool
+	Force               bool
+	BatchRun            bool
+	CheckReleases       bool
+	NoCheckReleases     bool
+	AutoCreateReleases  bool
+	AIReleaseNotes      bool
+	UpdateReleases      bool
+	AITool              string
+
 	// Internal fields for batch run state management (not set by flags)
 	BatchRunStateManager *state.Manager
 	BatchRunState        *state.State
@@ -45,7 +45,7 @@ type Flags struct {
 // ParseFlags parses command-line flags and returns the flags struct
 func ParseFlags() *Flags {
 	f := &Flags{}
-	
+
 	flag.BoolVar(&f.VersionFlag, "version", false, "print version information")
 	flag.BoolVar(&f.VersionFlag, "v", false, "print version information (short)")
 	flag.StringVar(&f.ConfigPath, "config", "", "path to configuration file")
@@ -65,17 +65,17 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.Clean, "clean", false, "delete all repositories in work directory (with confirmation)")
 	flag.StringVar(&f.DeleteRepo, "delete-repo", "", "delete specified repository from all configured organizations (with confirmation)")
 	flag.BoolVar(&f.Backup, "backup", false, "enable syncing to backup locations")
-	flag.BoolVar(&f.Showcase, "showcase", false, "generate project showcase using Claude after syncing")
+	flag.BoolVar(&f.Showcase, "showcase", false, "generate project showcase using AI (amp by default) after syncing")
 	flag.BoolVar(&f.Force, "force", false, "force regeneration of cached data")
 	flag.BoolVar(&f.BatchRun, "batch-run", false, "enable --full and --showcase (runs only once per week)")
 	flag.BoolVar(&f.CheckReleases, "check-releases", false, "manually check for version tags without releases and create them (with confirmation)")
 	flag.BoolVar(&f.NoCheckReleases, "no-check-releases", false, "disable automatic release checking after sync operations")
 	flag.BoolVar(&f.AutoCreateReleases, "auto-create-releases", false, "automatically create releases without confirmation prompts")
-	flag.BoolVar(&f.AIReleaseNotes, "ai-release-notes", false, "generate release notes using Claude AI based on git diff")
+	flag.BoolVar(&f.AIReleaseNotes, "ai-release-notes", false, "generate release notes using AI (amp by default) based on git diff")
 	flag.BoolVar(&f.UpdateReleases, "update-releases", false, "update existing releases with new AI-generated notes")
-	
+
 	flag.Parse()
-	
+
 	// Set default WorkDir if not provided
 	if f.WorkDir == "" {
 		home, err := os.UserHomeDir()
@@ -86,7 +86,7 @@ func ParseFlags() *Flags {
 			f.WorkDir = ".gitsyncer-work"
 		}
 	}
-	
+
 	// Handle --full flag by enabling all sync operations
 	if f.FullSync {
 		f.SyncCodebergPublic = true
@@ -94,7 +94,7 @@ func ParseFlags() *Flags {
 		f.CreateGitHubRepos = true
 		f.CreateCodebergRepos = true
 	}
-	
+
 	// Handle --batch-run flag by enabling --full and --showcase
 	if f.BatchRun {
 		f.FullSync = true
@@ -105,6 +105,6 @@ func ParseFlags() *Flags {
 		f.CreateGitHubRepos = true
 		f.CreateCodebergRepos = true
 	}
-	
+
 	return f
 }

@@ -3,8 +3,8 @@ package cmd
 import (
 	"os"
 
-	"github.com/spf13/cobra"
 	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"github.com/spf13/cobra"
 )
 
 var (
@@ -16,11 +16,11 @@ var (
 )
 
 var releaseCmd = &cobra.Command{
-    Use:   "release",
-    Short: "Manage releases across platforms",
-    Long: `Check for version tags without releases and create them across 
-GitHub and Codeberg. Supports AI-generated release notes via hexai (stdin pipeline),
-with fallback to Claude or aichat.`,
+	Use:   "release",
+	Short: "Manage releases across platforms",
+	Long: `Check for version tags without releases and create them across 
+GitHub and Codeberg. Supports AI-generated release notes via amp (stdin pipeline),
+with fallback to hexai, Claude, or aichat.`,
 }
 
 var releaseCheckCmd = &cobra.Command{
@@ -40,7 +40,7 @@ If no repository is specified, checks all configured repositories.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.CheckReleases = true
-		
+
 		if len(args) > 0 {
 			// Check specific repo
 			exitCode := cli.HandleCheckReleasesForRepo(cfg, flags, args[0])
@@ -74,8 +74,8 @@ If no repository is specified, processes all configured repositories.`,
   # Create for specific repository without AI
   gitsyncer release create myproject --no-ai-notes
   
-  # Use aichat instead of claude for AI release notes
-  gitsyncer release create --ai-tool aichat`,
+  # Use amp for AI release notes
+gitsyncer release create --ai-tool amp`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.CheckReleases = true
@@ -83,7 +83,7 @@ If no repository is specified, processes all configured repositories.`,
 		flags.AIReleaseNotes = !noAINotes
 		flags.UpdateReleases = updateExisting
 		flags.AITool = aiTool
-		
+
 		if len(args) > 0 {
 			// Create releases for specific repo
 			exitCode := cli.HandleCheckReleasesForRepo(cfg, flags, args[0])
@@ -100,14 +100,14 @@ func init() {
 	rootCmd.AddCommand(releaseCmd)
 	releaseCmd.AddCommand(releaseCheckCmd)
 	releaseCmd.AddCommand(releaseCreateCmd)
-	
+
 	// Release flags
 	releaseCmd.PersistentFlags().BoolVar(&dryRun, "dry-run", false, "preview what releases would be created")
-	
+
 	// Create-specific flags
 	releaseCreateCmd.Flags().BoolVar(&autoRelease, "auto", false, "skip confirmation prompts")
 	releaseCreateCmd.Flags().BoolVar(&noAINotes, "no-ai-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 	releaseCreateCmd.Flags().BoolVar(&updateExisting, "update-existing", false, "update existing releases with new AI-generated notes")
 	releaseCreateCmd.Flags().StringVar(&templatePath, "template", "", "custom template for release notes")
-    releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "claude", "AI tool to use for release notes (claude or aichat; hexai is tried first if available)")
+	releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "amp", "AI tool to use for release notes (amp, claude, aichat, or hexai; amp is tried first if available)")
 }
