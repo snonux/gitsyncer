@@ -917,9 +917,9 @@ func detectVibeCodedProject(repoPath string) bool {
 			continue
 		}
 
-		// Case-insensitive search for "vibe code"
+		// Case-insensitive search for "vibe code" or "vibe-coded"
 		lowerContent := strings.ToLower(string(content))
-		if strings.Contains(lowerContent, "vibe code") {
+		if strings.Contains(lowerContent, "vibe code") || strings.Contains(lowerContent, "vibe-coded") {
 			return true
 		}
 	}
