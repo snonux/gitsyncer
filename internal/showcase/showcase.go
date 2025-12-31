@@ -31,8 +31,6 @@ type ProjectSummary struct {
 	Images       []string // Relative paths to images in showcase directory
 	CodeSnippet  string   // Code snippet to show when no images
 	CodeLanguage string   // Language and file info for the snippet
-	AIAssisted   bool     // Whether AI was detected in the project
-	VibeCoded    bool     // Whether the project was vibe-coded
 }
 
 // LegacyRepoMetadata for backwards compatibility with old cache files
@@ -111,7 +109,7 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 			fmt.Printf("First Commit: %s\n", summary.Metadata.FirstCommitDate)
 			fmt.Printf("Last Commit: %s\n", summary.Metadata.LastCommitDate)
 			fmt.Printf("License: %s\n", summary.Metadata.License)
-			fmt.Printf("Avg. age of last 42 commits: %.1f days\n", summary.Metadata.AvgCommitAge)
+			fmt.Printf("Score: %.1f\n", summary.Metadata.Score)
 		}
 		fmt.Println("--- End of summary ---")
 
@@ -125,7 +123,7 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 
 	fmt.Printf("\nSuccessfully generated %d/%d summaries\n", successCount, len(repos))
 
-	// Sort summaries by average commit age (newest first)
+	// Sort summaries by score (highest first)
 	sort.Slice(summaries, func(i, j int) bool {
 		// If metadata is missing, put at the end
 		if summaries[i].Metadata == nil {
@@ -134,8 +132,8 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 		if summaries[j].Metadata == nil {
 			return true
 		}
-		// Lower average age means more recent activity
-		return summaries[i].Metadata.AvgCommitAge < summaries[j].Metadata.AvgCommitAge
+		// Higher score is better (combines LOC and recent activity)
+		return summaries[i].Metadata.Score > summaries[j].Metadata.Score
 	})
 
 	// When filtering (single repo), we need to update existing showcase
@@ -456,10 +454,6 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 	}
 
-	// Check for AI assistance and vibe coding
-	aiAssisted := detectAIUsage(repoPath)
-	vibeCoded := detectVibeCodedProject(repoPath)
-
 	projectSummary := &ProjectSummary{
 		Name:         repoName,
 		Summary:      summary,
@@ -469,8 +463,6 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		Images:       images,
 		CodeSnippet:  codeSnippet,
 		CodeLanguage: codeLanguage,
-		AIAssisted:   aiAssisted,
-		VibeCoded:    vibeCoded,
 	}
 
 	// Save to cache
@@ -494,7 +486,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
 	// Introduction paragraph
-	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ordered by recent activity, with the most actively maintained projects listed first.\n\n")
+	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ranked by score, which combines project size and recent activity.\n\n")
 
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
@@ -504,20 +496,11 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	totalCommits := 0
 	totalLOC := 0
 	totalDocs := 0
-	aiAssistedCount := 0
-	vibeCodedCount := 0
 	releasedCount := 0
 	languageTotals := make(map[string]int)
 	docTotals := make(map[string]int)
 
 	for _, summary := range summaries {
-		if summary.AIAssisted || summary.VibeCoded {
-			aiAssistedCount++
-		}
-		if summary.VibeCoded {
-			vibeCodedCount++
-		}
-
 		if summary.Metadata != nil {
 			totalCommits += summary.Metadata.CommitCount
 			totalLOC += summary.Metadata.LinesOfCode
@@ -592,16 +575,6 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	if len(docStats) > 0 {
 		builder.WriteString(fmt.Sprintf("* 📚 Documentation: %s\n", FormatLanguagesWithPercentages(docStats)))
 	}
-	if vibeCodedCount > 0 {
-		builder.WriteString(fmt.Sprintf("* 🎵 Vibe-Coded Projects: %d out of %d (%.1f%%)\n",
-			vibeCodedCount, totalProjects,
-			float64(vibeCodedCount)*100/float64(totalProjects)))
-	}
-	nonAICount := totalProjects - aiAssistedCount
-	builder.WriteString(fmt.Sprintf("* 🤖 AI-Assisted Projects (including vibe-coded): %d out of %d (%.1f%% AI-assisted, %.1f%% human-only)\n",
-		aiAssistedCount, totalProjects,
-		float64(aiAssistedCount)*100/float64(totalProjects),
-		float64(nonAICount)*100/float64(totalProjects)))
 	experimentalCount := totalProjects - releasedCount
 	builder.WriteString(fmt.Sprintf("* 🚀 Release Status: %d released, %d experimental (%.1f%% with releases, %.1f%% experimental)\n",
 		releasedCount, experimentalCount,
@@ -618,7 +591,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString("\n---\n\n")
 		}
 
-		builder.WriteString(fmt.Sprintf("### %s\n\n", summary.Name))
+		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", i+1, summary.Name))
 
 		// Add metadata if available
 		if summary.Metadata != nil {
@@ -634,7 +607,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 				builder.WriteString(fmt.Sprintf("* 📄 Lines of Documentation: %d\n", summary.Metadata.LinesOfDocs))
 			}
 			builder.WriteString(fmt.Sprintf("* 📅 Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
-			builder.WriteString(fmt.Sprintf("* 🔥 Recent Activity: %.1f days (avg. age of last 42 commits)\n", summary.Metadata.AvgCommitAge))
+			builder.WriteString(fmt.Sprintf("* 🏆 Score: %.1f (combines code size and activity)\n", summary.Metadata.Score))
 			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
 
 			// Add release information or experimental status
@@ -646,13 +619,6 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 				}
 			} else {
 				builder.WriteString("* 🧪 Status: Experimental (no releases yet)\n")
-			}
-
-			// Add AI-Assisted or Vibe-Coded notice if detected
-			if summary.VibeCoded {
-				builder.WriteString("* 🎵 Vibe-Coded: This project has been vibe coded\n")
-			} else if summary.AIAssisted {
-				builder.WriteString("* 🤖 AI-Assisted: This project was partially created with the help of generative AI\n")
 			}
 
 			// Check if project might be obsolete (avg age > 2 years AND last commit > 1 year)
@@ -769,7 +735,7 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 		allSummaries = append(allSummaries, summary)
 	}
 
-	// Sort by average commit age (newest first)
+	// Sort by score (highest first)
 	sort.Slice(allSummaries, func(i, j int) bool {
 		// If metadata is missing, put at the end
 		if allSummaries[i].Metadata == nil {
@@ -778,8 +744,8 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 		if allSummaries[j].Metadata == nil {
 			return true
 		}
-		// Lower average age means more recent activity
-		return allSummaries[i].Metadata.AvgCommitAge < allSummaries[j].Metadata.AvgCommitAge
+		// Higher score is better (combines LOC and recent activity)
+		return allSummaries[i].Metadata.Score > allSummaries[j].Metadata.Score
 	})
 
 	// Format and write
@@ -899,57 +865,4 @@ func formatNumber(n int) string {
 	}
 
 	return string(result)
-}
-
-// detectVibeCodedProject checks if the repository mentions "vibe code" in README
-func detectVibeCodedProject(repoPath string) bool {
-	// Check for "vibe code" in README files
-	readmeFiles := []string{
-		"README.md", "readme.md", "Readme.md",
-		"README.MD", "README.txt", "readme.txt",
-		"README", "readme",
-	}
-
-	for _, readmeFile := range readmeFiles {
-		filePath := filepath.Join(repoPath, readmeFile)
-		content, err := os.ReadFile(filePath)
-		if err != nil {
-			continue
-		}
-
-		// Case-insensitive search for "vibe code" or "vibe-coded"
-		lowerContent := strings.ToLower(string(content))
-		if strings.Contains(lowerContent, "vibe code") || strings.Contains(lowerContent, "vibe-coded") {
-			return true
-		}
-	}
-
-	return false
-}
-
-// detectAIUsage checks if the repository was generated with AI assistance
-// It looks for CLAUDE.md, GEMINI.md, AGENTS.md, or AGENT.md in the repo root.
-func detectAIUsage(repoPath string) bool {
-	// Check for AI-related files
-	aiFiles := []string{"CLAUDE.md", "GEMINI.md", "AGENTS.md", "AGENT.md"}
-	for _, aiFile := range aiFiles {
-		filePath := filepath.Join(repoPath, aiFile)
-		if _, err := os.Stat(filePath); err == nil {
-			return true
-		}
-	}
-
-	// Search for "agentic coding" string in the repository
-	cmd := exec.Command("rg", "-i", "--max-count", "1", "agentic coding", repoPath)
-	if output, err := cmd.Output(); err == nil && len(output) > 0 {
-		return true
-	}
-
-	// Fallback to grep if rg is not available
-	cmd = exec.Command("grep", "-r", "-i", "-m", "1", "agentic coding", repoPath)
-	if output, err := cmd.Output(); err == nil && len(output) > 0 {
-		return true
-	}
-
-	return false
 }

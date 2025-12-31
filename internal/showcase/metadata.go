@@ -2,6 +2,7 @@ package showcase
 
 import (
 	"fmt"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -28,6 +29,7 @@ type RepoMetadata struct {
 	LastCommitDate  string
 	License         string
 	AvgCommitAge    float64 // Average age of last 42 commits in days
+	Score           float64 // Project score combining LOC and recent activity: log10(LOC) * 1000 / (avgCommitAge + 1)
 	LatestTag       string  // Latest version tag (empty if no tags)
 	LatestTagDate   string  // Date of the latest tag (empty if no tags)
 	HasReleases     bool    // Whether the project has any releases/tags
@@ -88,6 +90,14 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 		fmt.Printf("Warning: Failed to get average commit age: %v\n", err)
 	}
 	metadata.AvgCommitAge = avgAge
+
+	// Calculate score: log10(LOC) * 1000 / (avgCommitAge + 1)
+	// This balances project size with recent activity
+	score := 0.0
+	if metadata.LinesOfCode > 0 {
+		score = math.Log10(float64(metadata.LinesOfCode)) * 1000.0 / (metadata.AvgCommitAge + 1.0)
+	}
+	metadata.Score = score
 
 	// Get latest tag and check for releases
 	latestTag, latestTagDate, hasReleases, err := getLatestTag(repoPath)
