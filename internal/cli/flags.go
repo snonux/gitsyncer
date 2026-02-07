@@ -36,6 +36,7 @@ type Flags struct {
 	AIReleaseNotes      bool
 	UpdateReleases      bool
 	AITool              string
+	Throttle            bool
 
 	// Internal fields for batch run state management (not set by flags)
 	BatchRunStateManager *state.Manager
@@ -73,6 +74,7 @@ func ParseFlags() *Flags {
 	flag.BoolVar(&f.AutoCreateReleases, "auto-create-releases", false, "automatically create releases without confirmation prompts")
 	flag.BoolVar(&f.AIReleaseNotes, "ai-release-notes", false, "generate release notes using AI (amp by default) based on git diff")
 	flag.BoolVar(&f.UpdateReleases, "update-releases", false, "update existing releases with new AI-generated notes")
+	flag.BoolVar(&f.Throttle, "throttle", false, "enable throttled syncing based on local activity")
 
 	flag.Parse()
 

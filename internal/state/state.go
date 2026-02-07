@@ -11,6 +11,9 @@ import (
 // State represents the persistent state of gitsyncer
 type State struct {
 	LastBatchRun time.Time `json:"lastBatchRun"`
+	// Per-repo sync tracking for throttling
+	LastRepoSync        map[string]time.Time `json:"lastRepoSync,omitempty"`
+	NextRepoSyncAllowed map[string]time.Time `json:"nextRepoSyncAllowed,omitempty"`
 }
 
 // Manager handles state persistence
@@ -76,4 +79,49 @@ func (s *State) HasRunWithinWeek() bool {
 // UpdateBatchRunTime updates the last batch run timestamp to now
 func (s *State) UpdateBatchRunTime() {
 	s.LastBatchRun = time.Now()
+}
+
+// EnsureRepoMaps initializes per-repo maps if needed
+func (s *State) EnsureRepoMaps() {
+	if s.LastRepoSync == nil {
+		s.LastRepoSync = make(map[string]time.Time)
+	}
+	if s.NextRepoSyncAllowed == nil {
+		s.NextRepoSyncAllowed = make(map[string]time.Time)
+	}
+}
+
+// GetLastRepoSync returns the last sync time for a repo
+func (s *State) GetLastRepoSync(repoName string) time.Time {
+	if s == nil || s.LastRepoSync == nil {
+		return time.Time{}
+	}
+	return s.LastRepoSync[repoName]
+}
+
+// GetNextRepoSyncAllowed returns the next allowed sync time for a repo
+func (s *State) GetNextRepoSyncAllowed(repoName string) time.Time {
+	if s == nil || s.NextRepoSyncAllowed == nil {
+		return time.Time{}
+	}
+	return s.NextRepoSyncAllowed[repoName]
+}
+
+// SetRepoSync updates the last sync time and next allowed sync time for a repo
+func (s *State) SetRepoSync(repoName string, lastSync time.Time, nextAllowed time.Time) {
+	if s == nil {
+		return
+	}
+	s.EnsureRepoMaps()
+	s.LastRepoSync[repoName] = lastSync
+	s.NextRepoSyncAllowed[repoName] = nextAllowed
+}
+
+// SetNextRepoSyncAllowed updates only the next allowed sync time for a repo
+func (s *State) SetNextRepoSyncAllowed(repoName string, nextAllowed time.Time) {
+	if s == nil {
+		return
+	}
+	s.EnsureRepoMaps()
+	s.NextRepoSyncAllowed[repoName] = nextAllowed
 }
