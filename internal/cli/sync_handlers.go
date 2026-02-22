@@ -190,9 +190,9 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
 	} else if scriptPath != "" {
 		fmt.Printf("\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 		fmt.Printf("Generated script: %s\n", scriptPath)
 		fmt.Printf("\n")
@@ -208,7 +208,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
 		fmt.Printf("\n")
 		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 	}
 
@@ -551,9 +551,9 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
 	} else if scriptPath != "" {
 		fmt.Printf("\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 		fmt.Printf("Generated script: %s\n", scriptPath)
 		fmt.Printf("\n")
@@ -569,7 +569,7 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
 		fmt.Printf("\n")
 		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 	}
 
@@ -692,9 +692,9 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
 	} else if scriptPath != "" {
 		fmt.Printf("\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 		fmt.Printf("Generated script: %s\n", scriptPath)
 		fmt.Printf("\n")
@@ -710,7 +710,7 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
 		fmt.Printf("\n")
 		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
-		fmt.Printf(strings.Repeat("=", 70))
+		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 	}
 
