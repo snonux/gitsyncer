@@ -815,23 +815,13 @@ func (g *Generator) verifyImages(summary *ProjectSummary) error {
 
 // filterExcludedRepos filters out repositories that are in the exclusion list
 func (g *Generator) filterExcludedRepos(repos []string) []string {
-	if len(g.config.ExcludeFromShowcase) == 0 {
-		return repos
-	}
-
-	// Create a map for quick lookup
-	excludeMap := make(map[string]bool)
-	for _, excluded := range g.config.ExcludeFromShowcase {
-		excludeMap[excluded] = true
-	}
-
 	// Filter repositories
 	var filtered []string
 	for _, repo := range repos {
-		if !excludeMap[repo] {
+		if !g.isExcluded(repo) {
 			filtered = append(filtered, repo)
 		} else {
-			fmt.Printf("Excluding repository from showcase: %s\n", repo)
+			fmt.Printf("Excluding repository from showcase (%s): %s\n", g.exclusionReason(repo), repo)
 		}
 	}
 
@@ -840,12 +830,44 @@ func (g *Generator) filterExcludedRepos(repos []string) []string {
 
 // isExcluded checks if a repository is in the exclusion list
 func (g *Generator) isExcluded(repo string) bool {
+	if isBackupRepo(repo) {
+		return true
+	}
+
 	for _, excluded := range g.config.ExcludeFromShowcase {
 		if excluded == repo {
 			return true
 		}
 	}
 	return false
+}
+
+// exclusionReason returns why a repository is excluded from showcase generation.
+func (g *Generator) exclusionReason(repo string) string {
+	var reasons []string
+
+	if isBackupRepo(repo) {
+		reasons = append(reasons, "backup suffix")
+	}
+
+	for _, excluded := range g.config.ExcludeFromShowcase {
+		if excluded == repo {
+			reasons = append(reasons, "config")
+			break
+		}
+	}
+
+	if len(reasons) == 0 {
+		return "unknown reason"
+	}
+
+	return strings.Join(reasons, ", ")
+}
+
+// isBackupRepo checks whether a repository name has a backup suffix.
+// Excluded patterns: *.bak and *.bak.*
+func isBackupRepo(repo string) bool {
+	return strings.HasSuffix(repo, ".bak") || strings.Contains(repo, ".bak.")
 }
 
 // formatNumber formats a number with thousands separators
