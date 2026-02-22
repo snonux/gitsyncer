@@ -28,9 +28,10 @@ type ProjectSummary struct {
 	CodebergURL  string
 	GitHubURL    string
 	Metadata     *RepoMetadata
-	Images       []string // Relative paths to images in showcase directory
-	CodeSnippet  string   // Code snippet to show when no images
-	CodeLanguage string   // Language and file info for the snippet
+	RankHistory  []RepoRankHistory // Latest 5 weekly rank points, newest first
+	Images       []string          // Relative paths to images in showcase directory
+	CodeSnippet  string            // Code snippet to show when no images
+	CodeLanguage string            // Language and file info for the snippet
 }
 
 // LegacyRepoMetadata for backwards compatibility with old cache files
@@ -135,6 +136,23 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 		// Higher score is better (combines LOC and recent activity)
 		return summaries[i].Metadata.Score > summaries[j].Metadata.Score
 	})
+
+	anchorDate := time.Now()
+	rankHistoryFile := filepath.Join(g.workDir, rankHistoryFilename)
+	rankHistoryStore, err := loadRankHistory(rankHistoryFile)
+	if err != nil {
+		return fmt.Errorf("failed to load rank history: %w", err)
+	}
+
+	// Only full showcase runs should update ranking snapshots.
+	if len(repoFilter) == 0 {
+		upsertSnapshotForDate(rankHistoryStore, anchorDate, buildCurrentRanks(summaries))
+		if err := saveRankHistory(rankHistoryFile, rankHistoryStore); err != nil {
+			return fmt.Errorf("failed to save rank history: %w", err)
+		}
+	}
+
+	applyRankHistoryToSummaries(summaries, rankHistoryStore, anchorDate, rankHistoryPoints)
 
 	// When filtering (single repo), we need to update existing showcase
 	if len(repoFilter) > 0 {
@@ -591,7 +609,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			builder.WriteString("\n---\n\n")
 		}
 
-		builder.WriteString(fmt.Sprintf("### %d. %s\n\n", i+1, summary.Name))
+		builder.WriteString(fmt.Sprintf("### %d. %s%s\n\n", i+1, summary.Name, formatRankHistoryForHeader(summary.RankHistory)))
 
 		// Add metadata if available
 		if summary.Metadata != nil {
@@ -747,6 +765,13 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 		// Higher score is better (combines LOC and recent activity)
 		return allSummaries[i].Metadata.Score > allSummaries[j].Metadata.Score
 	})
+
+	rankHistoryFile := filepath.Join(g.workDir, rankHistoryFilename)
+	rankHistoryStore, err := loadRankHistory(rankHistoryFile)
+	if err != nil {
+		return fmt.Errorf("failed to load rank history: %w", err)
+	}
+	applyRankHistoryToSummaries(allSummaries, rankHistoryStore, time.Now(), rankHistoryPoints)
 
 	// Format and write
 	content := g.formatGemtext(allSummaries)

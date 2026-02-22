@@ -2,6 +2,7 @@ package showcase
 
 import (
 	"reflect"
+	"strings"
 	"testing"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
@@ -96,5 +97,28 @@ func TestFilterExcludedRepos_EmptyConfigStillRemovesBackupRepos(t *testing.T) {
 	got := g.filterExcludedRepos(repos)
 	if !reflect.DeepEqual(got, want) {
 		t.Fatalf("filterExcludedRepos() = %#v, want %#v", got, want)
+	}
+}
+
+func TestFormatGemtext_IncludesRankHistoryInHeader(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{config: &config.Config{}}
+	content := g.formatGemtext([]ProjectSummary{
+		{
+			Name:    "alpha",
+			Summary: "alpha summary",
+			RankHistory: []RepoRankHistory{
+				{Spot: 1, Anchor: "now"},
+				{Spot: 2, Anchor: "1w", Arrow: "↑"},
+				{Spot: 2, Anchor: "2w", Arrow: "→"},
+				{Spot: 0, Anchor: "3w", Arrow: "·"},
+				{Spot: 4, Anchor: "4w", Arrow: "↓"},
+			},
+		},
+	})
+
+	if !strings.Contains(content, "### 1. alpha [#1(now) ↑#2(1w) →#2(2w) ·n/a(3w) ↓#4(4w)]") {
+		t.Fatalf("rank history was not rendered in header: %s", content)
 	}
 }

@@ -404,6 +404,7 @@ GitSyncer can generate a comprehensive showcase of all your projects using AI (a
    - Extracts README images (including SVG support)
    - Selects representative code snippets
    - Orders projects by recent activity
+   - Tracks weekly rank history snapshots
    - Generates overall portfolio statistics
    - Caches summaries to avoid redundant AI calls
 
@@ -427,12 +428,16 @@ The showcase is generated in Gemini Gemtext format and includes:
 - Release status breakdown (released vs experimental projects)
 - AI-assistance statistics
 - Individual project sections with:
+  - Rank history in the title for `now`, `1w`, `2w`, `3w`, and `4w`
+  - UTF-8 arrows (`↑`, `→`, `↓`) to show movement from older to newer positions
   - Language breakdown
   - Development metrics
   - Latest release information or experimental status
   - Project description
   - Code snippet example
   - Links to repositories
+
+Weekly rank snapshots are written on full showcase runs (all repositories), including `manage batch-run`. Single-repository showcase updates (`--repo`) read existing history but do not write snapshots.
 
 ### Configuration
 
