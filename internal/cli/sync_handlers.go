@@ -3,6 +3,7 @@ package cli
 import (
 	"fmt"
 	"log"
+	"math/rand"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/codeberg"
@@ -85,6 +86,8 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		return 1
 	}
 
+	repoNames := shuffledRepoNames(cfg.Repositories)
+
 	var throttleManager *state.Manager
 	var throttleState *state.State
 	if flags.Throttle {
@@ -122,8 +125,8 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	// Load descriptions cache
 	descCache := loadDescriptionCache(flags.WorkDir)
 
-	for i, repo := range cfg.Repositories {
-		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(cfg.Repositories), repo)
+	for i, repo := range repoNames {
+		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repo)
 
 		if flags.Throttle {
 			decision := evaluateThrottle(repo, throttleState, flags.DryRun)
@@ -264,6 +267,8 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 		repoNames = filtered
 	}
 
+	repoNames = shuffledRepoNames(repoNames)
+
 	// Show the repositories that will be synced
 	showReposToSync(repoNames)
 
@@ -332,6 +337,8 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 		}
 		repoNames = filtered
 	}
+
+	repoNames = shuffledRepoNames(repoNames)
 
 	// Show the repositories that will be synced
 	showReposToSync(repoNames)
@@ -433,6 +440,14 @@ func showReposToSync(repoNames []string) {
 	for _, name := range repoNames {
 		fmt.Printf("  - %s\n", name)
 	}
+}
+
+func shuffledRepoNames(repoNames []string) []string {
+	shuffled := append([]string(nil), repoNames...)
+	rand.Shuffle(len(shuffled), func(i, j int) {
+		shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
+	})
+	return shuffled
 }
 
 func printFullSyncSeparator() {
