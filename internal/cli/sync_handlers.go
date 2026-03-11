@@ -2,7 +2,6 @@ package cli
 
 import (
 	"fmt"
-	"log"
 	"math/rand"
 	"strings"
 
@@ -59,7 +58,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(flags.Backup)
 	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
-		log.Fatal("Sync failed:", err)
+		fmt.Printf("ERROR: Sync failed: %v\n", err)
 		return 1
 	}
 
@@ -236,7 +235,8 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 		fmt.Println("Trying as user account...")
 		repos, err = client.ListUserPublicRepos()
 		if err != nil {
-			log.Fatal("Failed to fetch repositories:", err)
+			fmt.Printf("ERROR: Failed to fetch repositories: %v\n", err)
+			return 1
 		}
 	}
 
@@ -308,7 +308,8 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 
 	repos, err := client.ListPublicRepos()
 	if err != nil {
-		log.Fatal("Failed to fetch repositories:", err)
+		fmt.Printf("ERROR: Failed to fetch repositories: %v\n", err)
+		return 1
 	}
 
 	repoNames := github.GetRepoNames(repos)
