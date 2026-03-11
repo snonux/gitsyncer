@@ -147,7 +147,7 @@ func TestFormatRankHistoryForHeader(t *testing.T) {
 	if !strings.Contains(header, "↓#2(1w)") {
 		t.Fatalf("header missing down movement: %s", header)
 	}
-	if !strings.Contains(header, "·n/a(3w)") {
-		t.Fatalf("header missing n/a placeholder: %s", header)
+	if strings.Contains(header, "n/a") {
+		t.Fatalf("header should omit missing history points: %s", header)
 	}
 }

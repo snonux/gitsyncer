@@ -178,16 +178,20 @@ func formatRankHistoryForHeader(history []RepoRankHistory) string {
 
 	tokens := make([]string, 0, len(history))
 	for i, point := range history {
-		spot := fmt.Sprintf("#%d", point.Spot)
 		if point.Spot <= 0 {
-			spot = "n/a"
+			continue
 		}
 
+		spot := fmt.Sprintf("#%d", point.Spot)
 		if i == 0 {
 			tokens = append(tokens, fmt.Sprintf("%s(%s)", spot, point.Anchor))
 			continue
 		}
 		tokens = append(tokens, fmt.Sprintf("%s%s(%s)", point.Arrow, spot, point.Anchor))
+	}
+
+	if len(tokens) == 0 {
+		return ""
 	}
 
 	return " [" + strings.Join(tokens, " ") + "]"

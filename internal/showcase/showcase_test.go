@@ -120,8 +120,30 @@ func TestFormatGemtext_IncludesRankHistoryInHeader(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(content, "### 1. alpha [#1(now) ↑#2(1w) →#2(2w) ·n/a(3w) ↓#4(4w)]") {
+	if !strings.Contains(content, "### 1. alpha [#1(now) ↑#2(1w) →#2(2w) ↓#4(4w)]") {
 		t.Fatalf("rank history was not rendered in header: %s", content)
+	}
+}
+
+func TestFormatGemtext_SanitizesMarkdownHeadingsInSummary(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{config: &config.Config{}}
+	content := g.formatGemtext([]ProjectSummary{
+		{
+			Name:    "alpha",
+			Summary: "# Alpha Project\n\nconf\n====\n\nParagraph body",
+		},
+	})
+
+	if strings.Contains(content, "\n# Alpha Project\n") {
+		t.Fatalf("markdown heading leaked into gemtext summary: %s", content)
+	}
+	if strings.Contains(content, "\n====\n") {
+		t.Fatalf("setext underline leaked into gemtext summary: %s", content)
+	}
+	if !strings.Contains(content, "\nAlpha Project\n\nconf\n\nParagraph body\n\n") {
+		t.Fatalf("sanitized summary not rendered as expected: %s", content)
 	}
 }
 
@@ -158,5 +180,52 @@ func TestFallbackSummary_UsesFirstReadmeParagraph(t *testing.T) {
 
 	if summary != "first paragraph" {
 		t.Fatalf("expected first paragraph summary, got %q", summary)
+	}
+}
+
+func TestFallbackSummary_SkipsHeadingOnlyParagraphs(t *testing.T) {
+	t.Parallel()
+
+	readme := []byte("# repo title\n\n<img src=\"shot.png\" />\n\nactual summary paragraph")
+	summary := fallbackSummary("repo", readme, true)
+
+	if summary != "actual summary paragraph" {
+		t.Fatalf("expected summary paragraph after heading and image, got %q", summary)
+	}
+}
+
+func TestExtractUsefulSummary_SkipsNonProseParagraphs(t *testing.T) {
+	t.Parallel()
+
+	input := "<p align=\"center\">\n<img src=\"shot.png\" />\n</p>\n\n* first bullet\n* second bullet\n\nTOC:\n01. Intro\n02. Usage\n\nActual summary paragraph.\n\nSecond useful paragraph."
+	got := extractUsefulSummary(input, 2)
+	want := "Actual summary paragraph.\n\nSecond useful paragraph."
+
+	if got != want {
+		t.Fatalf("extractUsefulSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestExtractUsefulSummary_NormalizesManpageNameSection(t *testing.T) {
+	t.Parallel()
+
+	input := "NAME\n    cpuinfo - A small and humble tool to print out CPU data"
+	got := extractUsefulSummary(input, 1)
+	want := "cpuinfo - A small and humble tool to print out CPU data"
+
+	if got != want {
+		t.Fatalf("extractUsefulSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestExtractUsefulSummary_SkipsFencedCodeBlocks(t *testing.T) {
+	t.Parallel()
+
+	input := "```sh\nsudo dnf install wireguard-tools\nbundler install\n```\n\nActual summary paragraph."
+	got := extractUsefulSummary(input, 1)
+	want := "Actual summary paragraph."
+
+	if got != want {
+		t.Fatalf("extractUsefulSummary() = %q, want %q", got, want)
 	}
 }
