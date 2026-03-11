@@ -149,3 +149,14 @@ func TestFindReadmeContent_UsesRepoPathWithoutChangingCWD(t *testing.T) {
 		t.Fatalf("unexpected README content: %q", string(content))
 	}
 }
+
+func TestFallbackSummary_UsesFirstReadmeParagraph(t *testing.T) {
+	t.Parallel()
+
+	readme := []byte("first paragraph\n\nsecond paragraph")
+	summary := fallbackSummary("repo", readme, true)
+
+	if summary != "first paragraph" {
+		t.Fatalf("expected first paragraph summary, got %q", summary)
+	}
+}

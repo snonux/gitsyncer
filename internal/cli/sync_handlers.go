@@ -187,32 +187,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		fmt.Print(summary)
 	}
 
-	// Generate script for abandoned branches
-	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
-		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
-	} else if scriptPath != "" {
-		fmt.Printf("\n")
-		fmt.Print(strings.Repeat("=", 70))
-		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
-		fmt.Print(strings.Repeat("=", 70))
-		fmt.Printf("\n")
-		fmt.Printf("Generated script: %s\n", scriptPath)
-		fmt.Printf("\n")
-		fmt.Printf("Usage:\n")
-		fmt.Printf("  bash %s --review       # Review diffs before deletion\n", scriptPath)
-		fmt.Printf("  bash %s --review-full  # Review full diffs\n", scriptPath)
-		fmt.Printf("  bash %s --dry-run      # Preview what will be deleted\n", scriptPath)
-		fmt.Printf("  bash %s                # Delete branches (with confirmation)\n", scriptPath)
-		fmt.Printf("\n")
-		fmt.Printf("💡 Recommended workflow:\n")
-		fmt.Printf("  1. Review branches:  bash %s --review\n", scriptPath)
-		fmt.Printf("  2. Dry-run delete:   bash %s --dry-run\n", scriptPath)
-		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
-		fmt.Printf("\n")
-		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
-		fmt.Print(strings.Repeat("=", 70))
-		fmt.Printf("\n")
-	}
+	printDeleteScript(syncer)
 
 	return 0
 }
@@ -457,112 +432,78 @@ func printFullSyncSeparator() {
 	fmt.Println(strings.Repeat("=", 70) + "\n")
 }
 
-func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string) int {
-	// Initialize GitHub client if needed
-	var githubClient github.Client
-	var hasGithubClient bool
-	if flags.CreateGitHubRepos {
-		if client := initGitHubClient(cfg); client != nil {
-			githubClient = *client
-			hasGithubClient = true
-		}
+type syncExecution struct {
+	syncer          *sync.Syncer
+	descCache       map[string]string
+	throttleManager *state.Manager
+	throttleState   *state.State
+}
+
+func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
+	execution := &syncExecution{
+		descCache: loadDescriptionCache(flags.WorkDir),
+		syncer:    sync.New(cfg, flags.WorkDir),
 	}
+	execution.syncer.SetBackupEnabled(flags.Backup)
 
-	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
-
-	// Load descriptions cache
-	descCache := loadDescriptionCache(flags.WorkDir)
-
-	syncer := sync.New(cfg, flags.WorkDir)
-	syncer.SetBackupEnabled(flags.Backup)
-	successCount := 0
-
-	var throttleManager *state.Manager
-	var throttleState *state.State
 	if flags.Throttle {
 		manager, st, err := loadThrottleState(flags.WorkDir)
 		if err != nil {
 			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
 		}
-		throttleManager = manager
-		throttleState = st
+		execution.throttleManager = manager
+		execution.throttleState = st
 	}
 
-	// Create map for descriptions
-	repoMap := make(map[string]codeberg.Repository)
-	for _, repo := range repos {
-		repoMap[repo.Name] = repo
+	return execution
+}
+
+func (e *syncExecution) maybeThrottle(repoName string, flags *Flags) bool {
+	if !flags.Throttle {
+		return false
 	}
 
-	for i, repoName := range repoNames {
-		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
-
-		if flags.Throttle {
-			decision := evaluateThrottle(repoName, throttleState, flags.DryRun)
-			if decision.Message != "" {
-				fmt.Println(decision.Message)
-			}
-			if decision.SetNextAllowed && throttleManager != nil && !flags.DryRun {
-				throttleState.SetNextRepoSyncAllowed(repoName, decision.NextAllowed)
-				if err := throttleManager.Save(throttleState); err != nil {
-					fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
-				}
-			}
-			if decision.Skip {
-				continue
-			}
-		}
-
-		// Create GitHub repo if needed
-		if hasGithubClient && flags.CreateGitHubRepos {
-			codebergRepo := repoMap[repoName]
-			description := codebergRepo.Description
-			if description == "" {
-				description = fmt.Sprintf("Mirror of %s from Codeberg", repoName)
-			}
-
-			fmt.Printf("Checking/creating GitHub repository %s...\n", repoName)
-			err := githubClient.CreateRepo(repoName, description, false)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create GitHub repo %s: %v\n", repoName, err)
-			}
-		}
-
-		if err := syncer.SyncRepository(repoName); err != nil {
-			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
-			fmt.Printf("Stopping sync due to error.\n")
-			return 1
-		}
-		if flags.Throttle && throttleManager != nil {
-			updateRepoSyncState(repoName, throttleState)
-			if err := throttleManager.Save(throttleState); err != nil {
-				fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
-			}
-		}
-		successCount++
-
-		// After syncing, sync descriptions according to precedence
-		if cbRepo, ok := repoMap[repoName]; ok {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, cbRepo.Description, "", descCache)
-		} else {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", descCache)
+	decision := evaluateThrottle(repoName, e.throttleState, flags.DryRun)
+	if decision.Message != "" {
+		fmt.Println(decision.Message)
+	}
+	if decision.SetNextAllowed && e.throttleManager != nil && !flags.DryRun {
+		e.throttleState.SetNextRepoSyncAllowed(repoName, decision.NextAllowed)
+		if err := e.throttleManager.Save(e.throttleState); err != nil {
+			fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
 		}
 	}
 
-	// Save descriptions cache
-	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
+	return decision.Skip
+}
+
+func (e *syncExecution) markSynced(repoName string, flags *Flags) {
+	if !flags.Throttle || e.throttleManager == nil {
+		return
+	}
+
+	updateRepoSyncState(repoName, e.throttleState)
+	if err := e.throttleManager.Save(e.throttleState); err != nil {
+		fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
+	}
+}
+
+func (e *syncExecution) finishDiscoveredSync(successCount int, flags *Flags) {
+	if err := saveDescriptionCache(flags.WorkDir, e.descCache); err != nil {
 		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
 	}
 
 	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
 
-	// Print abandoned branches summary
-	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
+	if summary := e.syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
 	}
 
-	// Generate script for abandoned branches
+	printDeleteScript(e.syncer)
+}
+
+func printDeleteScript(syncer *sync.Syncer) {
 	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
 		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
 	} else if scriptPath != "" {
@@ -588,6 +529,69 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		fmt.Print(strings.Repeat("=", 70))
 		fmt.Printf("\n")
 	}
+}
+
+func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string) int {
+	// Initialize GitHub client if needed
+	var githubClient github.Client
+	var hasGithubClient bool
+	if flags.CreateGitHubRepos {
+		if client := initGitHubClient(cfg); client != nil {
+			githubClient = *client
+			hasGithubClient = true
+		}
+	}
+
+	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
+
+	execution := newSyncExecution(cfg, flags)
+	successCount := 0
+
+	// Create map for descriptions
+	repoMap := make(map[string]codeberg.Repository)
+	for _, repo := range repos {
+		repoMap[repo.Name] = repo
+	}
+
+	for i, repoName := range repoNames {
+		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
+
+		if execution.maybeThrottle(repoName, flags) {
+			continue
+		}
+
+		// Create GitHub repo if needed
+		if hasGithubClient && flags.CreateGitHubRepos {
+			codebergRepo := repoMap[repoName]
+			description := codebergRepo.Description
+			if description == "" {
+				description = fmt.Sprintf("Mirror of %s from Codeberg", repoName)
+			}
+
+			fmt.Printf("Checking/creating GitHub repository %s...\n", repoName)
+			err := githubClient.CreateRepo(repoName, description, false)
+			if err != nil {
+				fmt.Printf("Warning: Failed to create GitHub repo %s: %v\n", repoName, err)
+			}
+		}
+
+		if err := execution.syncer.SyncRepository(repoName); err != nil {
+			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
+			fmt.Printf("Stopping sync due to error.\n")
+			return 1
+		}
+		execution.markSynced(repoName, flags)
+		successCount++
+
+		// After syncing, sync descriptions according to precedence
+		if cbRepo, ok := repoMap[repoName]; ok {
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, cbRepo.Description, "", execution.descCache)
+		} else {
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", execution.descCache)
+		}
+	}
+
+	execution.finishDiscoveredSync(successCount, flags)
 
 	if !flags.SyncGitHubPublic {
 		return 0
@@ -611,23 +615,8 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
 
-	// Load descriptions cache
-	descCache := loadDescriptionCache(flags.WorkDir)
-
-	syncer := sync.New(cfg, flags.WorkDir)
-	syncer.SetBackupEnabled(flags.Backup)
+	execution := newSyncExecution(cfg, flags)
 	successCount := 0
-
-	var throttleManager *state.Manager
-	var throttleState *state.State
-	if flags.Throttle {
-		manager, st, err := loadThrottleState(flags.WorkDir)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
-		}
-		throttleManager = manager
-		throttleState = st
-	}
 
 	// Create map for descriptions
 	repoMap := make(map[string]github.Repository)
@@ -638,20 +627,8 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 	for i, repoName := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
 
-		if flags.Throttle {
-			decision := evaluateThrottle(repoName, throttleState, flags.DryRun)
-			if decision.Message != "" {
-				fmt.Println(decision.Message)
-			}
-			if decision.SetNextAllowed && throttleManager != nil && !flags.DryRun {
-				throttleState.SetNextRepoSyncAllowed(repoName, decision.NextAllowed)
-				if err := throttleManager.Save(throttleState); err != nil {
-					fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
-				}
-			}
-			if decision.Skip {
-				continue
-			}
+		if execution.maybeThrottle(repoName, flags) {
+			continue
 		}
 
 		// Create Codeberg repo if needed
@@ -669,66 +646,23 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 			}
 		}
 
-		if err := syncer.SyncRepository(repoName); err != nil {
+		if err := execution.syncer.SyncRepository(repoName); err != nil {
 			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
 			fmt.Printf("Stopping sync due to error.\n")
 			return 1
 		}
-		if flags.Throttle && throttleManager != nil {
-			updateRepoSyncState(repoName, throttleState)
-			if err := throttleManager.Save(throttleState); err != nil {
-				fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
-			}
-		}
+		execution.markSynced(repoName, flags)
 		successCount++
 
 		// After syncing, sync descriptions according to precedence
 		if ghRepo, ok := repoMap[repoName]; ok {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", ghRepo.Description, descCache)
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", ghRepo.Description, execution.descCache)
 		} else {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", descCache)
+			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", execution.descCache)
 		}
 	}
 
-	// Save descriptions cache
-	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
-		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
-	}
-
-	fmt.Printf("\n=== Summary ===\n")
-	fmt.Printf("Successfully synced: %d repositories\n", successCount)
-
-	// Print abandoned branches summary
-	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
-		fmt.Print(summary)
-	}
-
-	// Generate script for abandoned branches
-	if scriptPath, err := syncer.GenerateDeleteScript(); err != nil {
-		fmt.Printf("\n⚠️  Failed to generate script: %v\n", err)
-	} else if scriptPath != "" {
-		fmt.Printf("\n")
-		fmt.Print(strings.Repeat("=", 70))
-		fmt.Printf("\n📋 ABANDONED BRANCH MANAGEMENT SCRIPT\n")
-		fmt.Print(strings.Repeat("=", 70))
-		fmt.Printf("\n")
-		fmt.Printf("Generated script: %s\n", scriptPath)
-		fmt.Printf("\n")
-		fmt.Printf("Usage:\n")
-		fmt.Printf("  bash %s --review       # Review diffs before deletion\n", scriptPath)
-		fmt.Printf("  bash %s --review-full  # Review full diffs\n", scriptPath)
-		fmt.Printf("  bash %s --dry-run      # Preview what will be deleted\n", scriptPath)
-		fmt.Printf("  bash %s                # Delete branches (with confirmation)\n", scriptPath)
-		fmt.Printf("\n")
-		fmt.Printf("💡 Recommended workflow:\n")
-		fmt.Printf("  1. Review branches:  bash %s --review\n", scriptPath)
-		fmt.Printf("  2. Dry-run delete:   bash %s --dry-run\n", scriptPath)
-		fmt.Printf("  3. Delete branches:  bash %s\n", scriptPath)
-		fmt.Printf("\n")
-		fmt.Printf("⚠️  WARNING: Review carefully before deleting branches!\n")
-		fmt.Print(strings.Repeat("=", 70))
-		fmt.Printf("\n")
-	}
+	execution.finishDiscoveredSync(successCount, flags)
 
 	return 0
 }

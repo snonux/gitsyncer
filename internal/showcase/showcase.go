@@ -212,6 +212,101 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 	return nil, "", false
 }
 
+func selectSummaryTool(aiTool string) string {
+	switch aiTool {
+	case "amp", "":
+		if _, err := exec.LookPath("amp"); err == nil {
+			return "amp"
+		}
+		if _, err := exec.LookPath("hexai"); err == nil {
+			return "hexai"
+		}
+		if _, err := exec.LookPath("claude"); err == nil {
+			return "claude"
+		}
+		if _, err := exec.LookPath("aichat"); err == nil {
+			return "aichat"
+		}
+	case "claude", "claude-code":
+		if _, err := exec.LookPath("claude"); err == nil {
+			return "claude"
+		}
+		if _, err := exec.LookPath("hexai"); err == nil {
+			return "hexai"
+		}
+		if _, err := exec.LookPath("aichat"); err == nil {
+			return "aichat"
+		}
+	case "hexai", "aichat":
+		if _, err := exec.LookPath(aiTool); err == nil {
+			return aiTool
+		}
+	}
+
+	return ""
+}
+
+func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeContent []byte, readmeFound bool) string {
+	var cmd *exec.Cmd
+
+	switch selectedTool {
+	case "amp":
+		fmt.Printf("Running amp command (stdin payload)\n")
+		if readmeFound {
+			fmt.Printf("  echo <README content> | amp --execute \"%s\"\n", prompt)
+			fmt.Printf("  Using %s as input\n", readmeFile)
+			cmd = exec.Command("amp", "--execute", prompt)
+			cmd.Stdin = strings.NewReader(string(readmeContent))
+		}
+	case "claude":
+		fmt.Printf("Running Claude command:\n")
+		fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
+		cmd = exec.Command("claude", "--model", "sonnet", prompt)
+	case "hexai":
+		fmt.Printf("Running hexai command (stdin payload)\n")
+		if readmeFound {
+			fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
+			fmt.Printf("  Using %s as input\n", readmeFile)
+			cmd = exec.Command("hexai", prompt)
+			cmd.Stdin = strings.NewReader(string(readmeContent))
+		}
+	case "aichat":
+		fmt.Printf("Running aichat command:\n")
+		if readmeFound {
+			fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
+			fmt.Printf("  Using %s as input\n", readmeFile)
+			cmd = exec.Command("aichat", prompt)
+			cmd.Stdin = strings.NewReader(string(readmeContent))
+		}
+	}
+
+	if cmd == nil {
+		return ""
+	}
+
+	cmd.Dir = repoPath
+	output, err := cmd.Output()
+	if err != nil {
+		return ""
+	}
+
+	return strings.TrimSpace(string(output))
+}
+
+func fallbackSummary(repoName string, readmeContent []byte, readmeFound bool) string {
+	if readmeFound {
+		parts := strings.Split(strings.TrimSpace(string(readmeContent)), "\n\n")
+		if len(parts) > 0 {
+			summary := strings.TrimSpace(parts[0])
+			if summary != "" {
+				return summary
+			}
+		}
+	}
+
+	return fmt.Sprintf("%s: source code repository.", repoName)
+}
+
 // getRepositories returns a list of repository directories in the work directory
 func (g *Generator) getRepositories() ([]string, error) {
 	entries, err := os.ReadDir(g.workDir)
@@ -237,6 +332,21 @@ func (g *Generator) getRepositories() ([]string, error) {
 	return repos, nil
 }
 
+func (g *Generator) buildProjectLinks(repoName string) (string, string) {
+	codebergURL := ""
+	githubURL := ""
+
+	if codebergOrg := g.config.FindCodebergOrg(); codebergOrg != nil {
+		codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
+	}
+
+	if githubOrg := g.config.FindGitHubOrg(); githubOrg != nil {
+		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
+	}
+
+	return codebergURL, githubURL
+}
+
 // generateProjectSummary generates a summary for a single project
 func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool) (*ProjectSummary, error) {
 	repoPath := filepath.Join(g.workDir, repoName)
@@ -260,43 +370,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	// Prefer amp if available when default tool is "" (aligns with release flow)
 	selectedTool := g.aiTool
 	if !haveCachedSummary {
-		switch g.aiTool {
-		case "amp", "":
-			// Try amp -> hexai -> claude -> aichat
-			if _, err := exec.LookPath("amp"); err == nil {
-				selectedTool = "amp"
-			} else if _, err := exec.LookPath("hexai"); err == nil {
-				selectedTool = "hexai"
-			} else if _, err := exec.LookPath("claude"); err == nil {
-				selectedTool = "claude"
-			} else if _, err := exec.LookPath("aichat"); err == nil {
-				selectedTool = "aichat"
-			} else {
-				// No AI tool available; fall back to README-based summary later
-				selectedTool = ""
-			}
-		case "claude", "claude-code":
-			// Try claude -> hexai -> aichat
-			if _, err := exec.LookPath("claude"); err == nil {
-				selectedTool = "claude"
-			} else if _, err := exec.LookPath("hexai"); err == nil {
-				selectedTool = "hexai"
-			} else if _, err := exec.LookPath("aichat"); err == nil {
-				selectedTool = "aichat"
-			} else {
-				selectedTool = ""
-			}
-		case "hexai", "aichat":
-			if _, err := exec.LookPath(g.aiTool); err != nil {
-				// Requested tool missing; fall back to README-based summary later
-				selectedTool = ""
-			} else {
-				selectedTool = g.aiTool
-			}
-		default:
-			// Unsupported tool configured; fall back to README-based summary later
-			selectedTool = ""
-		}
+		selectedTool = selectSummaryTool(g.aiTool)
 	}
 
 	readmeContent, readmeFile, readmeFound := findReadmeContent(repoPath)
@@ -316,88 +390,16 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		fmt.Printf("Using cached AI summary\n")
 	} else {
 		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
-
-		var cmd *exec.Cmd
-
-		switch selectedTool {
-		case "amp":
-			// Use README content as stdin and pass the prompt as --execute argument
-			fmt.Printf("Running amp command (stdin payload)\n")
-			if readmeFound {
-				fmt.Printf("  echo <README content> | amp --execute \"%s\"\n", prompt)
-				fmt.Printf("  Using %s as input\n", readmeFile)
-				cmd = exec.Command("amp", "--execute", prompt)
-				cmd.Stdin = strings.NewReader(string(readmeContent))
-			} else {
-				// Will fall back below
-				cmd = nil
-			}
-		case "claude":
-			fmt.Printf("Running Claude command:\n")
-			fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
-			cmd = exec.Command("claude", "--model", "sonnet", prompt)
-		case "hexai":
-			// Use README content as stdin and pass the prompt as argument
-			fmt.Printf("Running hexai command (stdin payload)\n")
-			if readmeFound {
-				fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
-				fmt.Printf("  Using %s as input\n", readmeFile)
-				cmd = exec.Command("hexai", prompt)
-				cmd.Stdin = strings.NewReader(string(readmeContent))
-			} else {
-				// Will fall back below
-				cmd = nil
-			}
-		case "aichat":
-			// For aichat, we need to read README.md and pipe it to aichat
-			fmt.Printf("Running aichat command:\n")
-
-			if readmeFound {
-				fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
-				fmt.Printf("  Using %s as input\n", readmeFile)
-				cmd = exec.Command("aichat", prompt)
-				cmd.Stdin = strings.NewReader(string(readmeContent))
-			} else {
-				// Will fall back below
-				cmd = nil
-			}
-		default:
-			// No/unsupported tool; will fall back below
-			cmd = nil
-		}
-
-		if cmd != nil {
-			cmd.Dir = repoPath
-			if output, err := cmd.Output(); err == nil {
-				summary = strings.TrimSpace(string(output))
-			}
-		}
+		summary = runSummaryTool(selectedTool, prompt, repoPath, readmeFile, readmeContent, readmeFound)
 
 		// Fallback: create a minimal summary from README if AI unavailable/failed
 		if summary == "" {
-			if readmeFound {
-				parts := strings.Split(strings.TrimSpace(string(readmeContent)), "\n\n")
-				if len(parts) > 0 {
-					summary = strings.TrimSpace(parts[0])
-				}
-			}
-			if summary == "" {
-				summary = fmt.Sprintf("%s: source code repository.", repoName)
-			}
+			summary = fallbackSummary(repoName, readmeContent, readmeFound)
 		}
 	}
 
 	// Build URLs
-	codebergURL := ""
-	githubURL := ""
-
-	if codebergOrg := g.config.FindCodebergOrg(); codebergOrg != nil {
-		codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
-	}
-
-	if githubOrg := g.config.FindGitHubOrg(); githubOrg != nil {
-		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
-	}
+	codebergURL, githubURL := g.buildProjectLinks(repoName)
 
 	// Always extract images from README (not cached)
 	fmt.Printf("Extracting images from README...\n")
