@@ -10,8 +10,8 @@ import (
 func TestCalculateRepoScore_IncreasesWithTagCount(t *testing.T) {
 	t.Parallel()
 
-	withoutTags := calculateRepoScore(5000, 14, 0)
-	withTags := calculateRepoScore(5000, 14, 10)
+	withoutTags := calculateRepoScore(5000, 14, 0, true)
+	withTags := calculateRepoScore(5000, 14, 10, true)
 
 	if withTags <= withoutTags {
 		t.Fatalf("expected tags to increase score, got without=%f with=%f", withoutTags, withTags)
@@ -21,11 +21,22 @@ func TestCalculateRepoScore_IncreasesWithTagCount(t *testing.T) {
 func TestCalculateRepoScore_DecreasesWithAge(t *testing.T) {
 	t.Parallel()
 
-	recent := calculateRepoScore(5000, 7, 3)
-	old := calculateRepoScore(5000, 70, 3)
+	recent := calculateRepoScore(5000, 7, 3, true)
+	old := calculateRepoScore(5000, 70, 3, true)
 
 	if recent <= old {
 		t.Fatalf("expected newer activity to score higher, got recent=%f old=%f", recent, old)
+	}
+}
+
+func TestCalculateRepoScore_DecreasesWithoutRelease(t *testing.T) {
+	t.Parallel()
+
+	released := calculateRepoScore(5000, 14, 3, true)
+	unreleased := calculateRepoScore(5000, 14, 3, false)
+
+	if unreleased >= released {
+		t.Fatalf("expected unreleased repo to score lower, got released=%f unreleased=%f", released, unreleased)
 	}
 }
 

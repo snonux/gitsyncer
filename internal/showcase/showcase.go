@@ -787,7 +787,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
 	// Introduction paragraph
-	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, releases, and licensing. The projects are ranked by score, which combines recent activity, project size, and tag history.\n\n")
+	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, releases, and licensing. The projects are ranked by score, which combines recent activity, project size, tag history, and whether the project has shipped a release.\n\n")
 
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
@@ -909,7 +909,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			}
 			builder.WriteString(fmt.Sprintf("* 🏷️ Tags: %d\n", summary.Metadata.TagCount))
 			builder.WriteString(fmt.Sprintf("* 📅 Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
-			builder.WriteString(fmt.Sprintf("* 🏆 Score: %.1f (combines recent activity, code size, and tags)\n", summary.Metadata.Score))
+			builder.WriteString(fmt.Sprintf("* 🏆 Score: %.1f (combines recent activity, code size, tags, and release status)\n", summary.Metadata.Score))
 			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
 
 			// Add release information or experimental status

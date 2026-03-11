@@ -11,6 +11,8 @@ import (
 	"time"
 )
 
+const unreleasedScorePenalty = 0.75
+
 // LanguageStats holds statistics for a programming language
 type LanguageStats struct {
 	Name       string
@@ -30,7 +32,7 @@ type RepoMetadata struct {
 	License         string
 	AvgCommitAge    float64 // Average age of last 42 commits in days
 	TagCount        int     // Total number of git tags in the repository
-	Score           float64 // Project score combining recent activity, reduced LOC weight, and tag count
+	Score           float64 // Project score combining recent activity, reduced LOC weight, tag count, and release status
 	LatestTag       string  // Latest version tag (empty if no tags)
 	LatestTagDate   string  // Date of the latest tag (empty if no tags)
 	HasReleases     bool    // Whether the project has any releases/tags
@@ -103,13 +105,14 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	metadata.TagCount = tagCount
 
 	// Calculate score with recent activity as the strongest signal,
-	// a smaller LOC contribution than before, and a modest tag bonus.
-	metadata.Score = calculateRepoScore(metadata.LinesOfCode, metadata.AvgCommitAge, metadata.TagCount)
+	// a smaller LOC contribution than before, a modest tag bonus,
+	// and a penalty for projects without a release yet.
+	metadata.Score = calculateRepoScore(metadata.LinesOfCode, metadata.AvgCommitAge, metadata.TagCount, metadata.HasReleases)
 
 	return metadata, nil
 }
 
-func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int) float64 {
+func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int, hasReleases bool) float64 {
 	sizeComponent := 0.0
 	if linesOfCode > 0 {
 		sizeComponent = math.Sqrt(math.Log10(float64(linesOfCode)+1.0)) * 250.0
@@ -120,7 +123,12 @@ func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int) flo
 		tagComponent = math.Log1p(float64(tagCount)) * 40.0
 	}
 
-	return (sizeComponent + tagComponent) / (avgCommitAge + 1.0)
+	score := (sizeComponent + tagComponent) / (avgCommitAge + 1.0)
+	if !hasReleases {
+		score *= unreleasedScorePenalty
+	}
+
+	return score
 }
 
 // getCommitCount returns the total number of commits
