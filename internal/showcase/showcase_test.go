@@ -113,14 +113,14 @@ func TestFormatGemtext_IncludesRankHistoryInHeader(t *testing.T) {
 			RankHistory: []RepoRankHistory{
 				{Spot: 1, Anchor: "now"},
 				{Spot: 2, Anchor: "1w", Arrow: "↑"},
-				{Spot: 2, Anchor: "2w", Arrow: "→"},
+				{Spot: 2, Anchor: "2w", Arrow: "="},
 				{Spot: 0, Anchor: "3w", Arrow: "·"},
 				{Spot: 4, Anchor: "4w", Arrow: "↓"},
 			},
 		},
 	})
 
-	if !strings.Contains(content, "### 1. alpha [#1(now) ↑#2(1w) →#2(2w) ↓#4(4w)]") {
+	if !strings.Contains(content, "### 1. alpha · #1↑#2=#2↓#4") {
 		t.Fatalf("rank history was not rendered in header: %s", content)
 	}
 }
