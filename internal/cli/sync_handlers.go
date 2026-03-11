@@ -14,29 +14,23 @@ import (
 
 // HandleSync handles syncing a single repository
 func HandleSync(cfg *config.Config, flags *Flags) int {
-	var throttleManager *state.Manager
-	var throttleState *state.State
-	if flags.Throttle {
-		manager, st, err := loadThrottleState(flags.WorkDir)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
-		}
-		throttleManager = manager
-		throttleState = st
+	stateManager, syncState, err := loadSyncState(flags.WorkDir)
+	if err != nil {
+		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
+	}
 
-		decision := evaluateThrottle(flags.SyncRepo, throttleState, flags.DryRun)
-		if decision.Message != "" {
-			fmt.Println(decision.Message)
+	decision := evaluateSyncPolicy(flags.SyncRepo, syncState, flags.DryRun, flags.Force, flags.Throttle)
+	if decision.Message != "" {
+		fmt.Println(decision.Message)
+	}
+	if decision.SetNextAllowed && stateManager != nil && !flags.DryRun {
+		syncState.SetNextRepoSyncAllowed(flags.SyncRepo, decision.NextAllowed)
+		if err := stateManager.Save(syncState); err != nil {
+			fmt.Printf("Warning: Failed to save sync state: %v\n", err)
 		}
-		if decision.SetNextAllowed && throttleManager != nil && !flags.DryRun {
-			throttleState.SetNextRepoSyncAllowed(flags.SyncRepo, decision.NextAllowed)
-			if err := throttleManager.Save(throttleState); err != nil {
-				fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
-			}
-		}
-		if decision.Skip {
-			return 0
-		}
+	}
+	if decision.Skip {
+		return 0
 	}
 
 	// If create-github-repos is enabled, create the repo if needed
@@ -62,10 +56,10 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 		return 1
 	}
 
-	if flags.Throttle && throttleManager != nil {
-		updateRepoSyncState(flags.SyncRepo, throttleState)
-		if err := throttleManager.Save(throttleState); err != nil {
-			fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
+	if stateManager != nil {
+		recordRepoSync(flags.SyncRepo, syncState, flags.Throttle)
+		if err := stateManager.Save(syncState); err != nil {
+			fmt.Printf("Warning: Failed to save sync state: %v\n", err)
 		}
 	}
 
@@ -87,15 +81,9 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 
 	repoNames := shuffledRepoNames(cfg.Repositories)
 
-	var throttleManager *state.Manager
-	var throttleState *state.State
-	if flags.Throttle {
-		manager, st, err := loadThrottleState(flags.WorkDir)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
-		}
-		throttleManager = manager
-		throttleState = st
+	stateManager, syncState, err := loadSyncState(flags.WorkDir)
+	if err != nil {
+		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
 	}
 
 	// Initialize GitHub client if needed
@@ -127,20 +115,18 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	for i, repo := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repo)
 
-		if flags.Throttle {
-			decision := evaluateThrottle(repo, throttleState, flags.DryRun)
-			if decision.Message != "" {
-				fmt.Println(decision.Message)
+		decision := evaluateSyncPolicy(repo, syncState, flags.DryRun, flags.Force, flags.Throttle)
+		if decision.Message != "" {
+			fmt.Println(decision.Message)
+		}
+		if decision.SetNextAllowed && stateManager != nil && !flags.DryRun {
+			syncState.SetNextRepoSyncAllowed(repo, decision.NextAllowed)
+			if err := stateManager.Save(syncState); err != nil {
+				fmt.Printf("Warning: Failed to save sync state: %v\n", err)
 			}
-			if decision.SetNextAllowed && throttleManager != nil && !flags.DryRun {
-				throttleState.SetNextRepoSyncAllowed(repo, decision.NextAllowed)
-				if err := throttleManager.Save(throttleState); err != nil {
-					fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
-				}
-			}
-			if decision.Skip {
-				continue
-			}
+		}
+		if decision.Skip {
+			continue
 		}
 
 		// Create GitHub repo if needed
@@ -165,10 +151,10 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 			fmt.Printf("Stopping sync due to error.\n")
 			return 1
 		}
-		if flags.Throttle && throttleManager != nil {
-			updateRepoSyncState(repo, throttleState)
-			if err := throttleManager.Save(throttleState); err != nil {
-				fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
+		if stateManager != nil {
+			recordRepoSync(repo, syncState, flags.Throttle)
+			if err := stateManager.Save(syncState); err != nil {
+				fmt.Printf("Warning: Failed to save sync state: %v\n", err)
 			}
 		}
 		successCount++
@@ -223,23 +209,8 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 		return 0
 	}
 
-	if flags.Throttle && flags.DryRun {
-		_, throttleState, err := loadThrottleState(flags.WorkDir)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
-		}
-		filtered := make([]string, 0, len(repoNames))
-		for _, name := range repoNames {
-			decision := evaluateThrottle(name, throttleState, true)
-			if decision.Message != "" {
-				fmt.Println(decision.Message)
-			}
-			if decision.Skip {
-				continue
-			}
-			filtered = append(filtered, name)
-		}
-		repoNames = filtered
+	if flags.DryRun {
+		repoNames = filterDryRunRepoNames(repoNames, flags)
 	}
 
 	repoNames = shuffledRepoNames(repoNames)
@@ -295,23 +266,8 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 		return 0
 	}
 
-	if flags.Throttle && flags.DryRun {
-		_, throttleState, err := loadThrottleState(flags.WorkDir)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
-		}
-		filtered := make([]string, 0, len(repoNames))
-		for _, name := range repoNames {
-			decision := evaluateThrottle(name, throttleState, true)
-			if decision.Message != "" {
-				fmt.Println(decision.Message)
-			}
-			if decision.Skip {
-				continue
-			}
-			filtered = append(filtered, name)
-		}
-		repoNames = filtered
+	if flags.DryRun {
+		repoNames = filterDryRunRepoNames(repoNames, flags)
 	}
 
 	repoNames = shuffledRepoNames(repoNames)
@@ -418,6 +374,27 @@ func showReposToSync(repoNames []string) {
 	}
 }
 
+func filterDryRunRepoNames(repoNames []string, flags *Flags) []string {
+	_, syncState, err := loadSyncState(flags.WorkDir)
+	if err != nil {
+		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
+	}
+
+	filtered := make([]string, 0, len(repoNames))
+	for _, repoName := range repoNames {
+		decision := evaluateSyncPolicy(repoName, syncState, true, flags.Force, flags.Throttle)
+		if decision.Message != "" {
+			fmt.Println(decision.Message)
+		}
+		if decision.Skip {
+			continue
+		}
+		filtered = append(filtered, repoName)
+	}
+
+	return filtered
+}
+
 func shuffledRepoNames(repoNames []string) []string {
 	shuffled := append([]string(nil), repoNames...)
 	rand.Shuffle(len(shuffled), func(i, j int) {
@@ -433,10 +410,10 @@ func printFullSyncSeparator() {
 }
 
 type syncExecution struct {
-	syncer          *sync.Syncer
-	descCache       map[string]string
-	throttleManager *state.Manager
-	throttleState   *state.State
+	syncer       *sync.Syncer
+	descCache    map[string]string
+	stateManager *state.Manager
+	syncState    *state.State
 }
 
 func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
@@ -446,45 +423,39 @@ func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
 	}
 	execution.syncer.SetBackupEnabled(flags.Backup)
 
-	if flags.Throttle {
-		manager, st, err := loadThrottleState(flags.WorkDir)
-		if err != nil {
-			fmt.Printf("Warning: Failed to load throttle state: %v\n", err)
-		}
-		execution.throttleManager = manager
-		execution.throttleState = st
+	manager, st, err := loadSyncState(flags.WorkDir)
+	if err != nil {
+		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
 	}
+	execution.stateManager = manager
+	execution.syncState = st
 
 	return execution
 }
 
-func (e *syncExecution) maybeThrottle(repoName string, flags *Flags) bool {
-	if !flags.Throttle {
-		return false
-	}
-
-	decision := evaluateThrottle(repoName, e.throttleState, flags.DryRun)
+func (e *syncExecution) maybeSkipRepo(repoName string, flags *Flags) bool {
+	decision := evaluateSyncPolicy(repoName, e.syncState, flags.DryRun, flags.Force, flags.Throttle)
 	if decision.Message != "" {
 		fmt.Println(decision.Message)
 	}
-	if decision.SetNextAllowed && e.throttleManager != nil && !flags.DryRun {
-		e.throttleState.SetNextRepoSyncAllowed(repoName, decision.NextAllowed)
-		if err := e.throttleManager.Save(e.throttleState); err != nil {
-			fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
+	if decision.SetNextAllowed && e.stateManager != nil && !flags.DryRun {
+		e.syncState.SetNextRepoSyncAllowed(repoName, decision.NextAllowed)
+		if err := e.stateManager.Save(e.syncState); err != nil {
+			fmt.Printf("Warning: Failed to save sync state: %v\n", err)
 		}
 	}
 
 	return decision.Skip
 }
 
-func (e *syncExecution) markSynced(repoName string, flags *Flags) {
-	if !flags.Throttle || e.throttleManager == nil {
+func (e *syncExecution) markRepoSynced(repoName string, flags *Flags) {
+	if e.stateManager == nil || flags.DryRun {
 		return
 	}
 
-	updateRepoSyncState(repoName, e.throttleState)
-	if err := e.throttleManager.Save(e.throttleState); err != nil {
-		fmt.Printf("Warning: Failed to save throttle state: %v\n", err)
+	recordRepoSync(repoName, e.syncState, flags.Throttle)
+	if err := e.stateManager.Save(e.syncState); err != nil {
+		fmt.Printf("Warning: Failed to save sync state: %v\n", err)
 	}
 }
 
@@ -556,7 +527,7 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 	for i, repoName := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
 
-		if execution.maybeThrottle(repoName, flags) {
+		if execution.maybeSkipRepo(repoName, flags) {
 			continue
 		}
 
@@ -580,7 +551,7 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 			fmt.Printf("Stopping sync due to error.\n")
 			return 1
 		}
-		execution.markSynced(repoName, flags)
+		execution.markRepoSynced(repoName, flags)
 		successCount++
 
 		// After syncing, sync descriptions according to precedence
@@ -627,7 +598,7 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 	for i, repoName := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
 
-		if execution.maybeThrottle(repoName, flags) {
+		if execution.maybeSkipRepo(repoName, flags) {
 			continue
 		}
 
@@ -651,7 +622,7 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 			fmt.Printf("Stopping sync due to error.\n")
 			return 1
 		}
-		execution.markSynced(repoName, flags)
+		execution.markRepoSynced(repoName, flags)
 		successCount++
 
 		// After syncing, sync descriptions according to precedence

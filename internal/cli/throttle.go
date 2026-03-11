@@ -13,12 +13,13 @@ import (
 )
 
 const (
-	throttleMinDays = 60
-	throttleMaxDays = 120
-	recentDays      = 7
+	defaultSyncInterval = 24 * time.Hour
+	throttleMinDays     = 60
+	throttleMaxDays     = 120
+	recentDays          = 7
 )
 
-func loadThrottleState(workDir string) (*state.Manager, *state.State, error) {
+func loadSyncState(workDir string) (*state.Manager, *state.State, error) {
 	manager := state.NewManager(workDir)
 	st, err := manager.Load()
 	if err != nil {
@@ -30,14 +31,57 @@ func loadThrottleState(workDir string) (*state.Manager, *state.State, error) {
 	return manager, st, nil
 }
 
-type throttleDecision struct {
+type syncDecision struct {
 	Skip           bool
 	Message        string
 	NextAllowed    time.Time
 	SetNextAllowed bool
 }
 
-func evaluateThrottle(repoName string, st *state.State, dryRun bool) throttleDecision {
+func evaluateSyncPolicy(repoName string, st *state.State, dryRun bool, force bool, throttle bool) syncDecision {
+	if force {
+		return syncDecision{}
+	}
+
+	decision := evaluateDailySync(repoName, st, dryRun)
+	if decision.Skip || !throttle {
+		return decision
+	}
+
+	return evaluateThrottle(repoName, st, dryRun)
+}
+
+func evaluateDailySync(repoName string, st *state.State, dryRun bool) syncDecision {
+	if st == nil {
+		return syncDecision{}
+	}
+
+	lastSync := st.GetLastRepoSync(repoName)
+	if lastSync.IsZero() {
+		return syncDecision{}
+	}
+
+	nextAllowed := lastSync.Add(defaultSyncInterval)
+	if time.Now().Before(nextAllowed) {
+		skipAction := "Skipping"
+		if dryRun {
+			skipAction = "[DRY RUN] Would skip"
+		}
+
+		return syncDecision{
+			Skip: true,
+			Message: fmt.Sprintf("%s %s: last synced at %s; next sync after %s. Use --force to override.",
+				skipAction,
+				repoName,
+				lastSync.Format("2006-01-02 15:04"),
+				nextAllowed.Format("2006-01-02 15:04")),
+		}
+	}
+
+	return syncDecision{}
+}
+
+func evaluateThrottle(repoName string, st *state.State, dryRun bool) syncDecision {
 	syncAction := "Syncing"
 	if dryRun {
 		syncAction = "[DRY RUN] Would sync"
@@ -49,14 +93,14 @@ func evaluateThrottle(repoName string, st *state.State, dryRun bool) throttleDec
 		if dryRun {
 			actionMsg = "Sync would proceed"
 		}
-		return throttleDecision{
+		return syncDecision{
 			Skip:    false,
 			Message: fmt.Sprintf("Warning: failed to check local activity for %s: %v. %s.", repoName, err, actionMsg),
 		}
 	}
 
 	if recent {
-		return throttleDecision{
+		return syncDecision{
 			Skip:    false,
 			Message: fmt.Sprintf("%s %s: recent local commits within last %d days.", syncAction, repoName, recentDays),
 		}
@@ -64,7 +108,7 @@ func evaluateThrottle(repoName string, st *state.State, dryRun bool) throttleDec
 
 	now := time.Now()
 	if st == nil {
-		return throttleDecision{
+		return syncDecision{
 			Skip:    false,
 			Message: fmt.Sprintf("%s %s: no recent local commits; throttle state unavailable.", syncAction, repoName),
 		}
@@ -82,7 +126,7 @@ func evaluateThrottle(repoName string, st *state.State, dryRun bool) throttleDec
 		} else {
 			nextAllowed = now.Add(randomThrottleDuration())
 		}
-		return throttleDecision{
+		return syncDecision{
 			Skip:           true,
 			NextAllowed:    nextAllowed,
 			SetNextAllowed: true,
@@ -92,25 +136,29 @@ func evaluateThrottle(repoName string, st *state.State, dryRun bool) throttleDec
 	}
 
 	if now.Before(nextAllowed) {
-		return throttleDecision{
+		return syncDecision{
 			Skip:    true,
 			Message: fmt.Sprintf("%s %s: no recent local commits; next allowed sync at %s.", skipAction, repoName, nextAllowed.Format("2006-01-02")),
 		}
 	}
 
-	return throttleDecision{
+	return syncDecision{
 		Skip:    false,
 		Message: fmt.Sprintf("%s %s: throttle window elapsed (next allowed was %s).", syncAction, repoName, nextAllowed.Format("2006-01-02")),
 	}
 }
 
-func updateRepoSyncState(repoName string, st *state.State) {
+func recordRepoSync(repoName string, st *state.State, throttle bool) {
 	if st == nil {
 		return
 	}
 	now := time.Now()
-	nextAllowed := now.Add(randomThrottleDuration())
-	st.SetRepoSync(repoName, now, nextAllowed)
+	st.SetLastRepoSync(repoName, now)
+	if throttle {
+		st.SetNextRepoSyncAllowed(repoName, now.Add(randomThrottleDuration()))
+		return
+	}
+	st.ClearNextRepoSyncAllowed(repoName)
 }
 
 func randomThrottleDuration() time.Duration {

@@ -28,6 +28,7 @@ It has been vibe coded mainly using AI tools (Claude Code CLI and amp).
 - Never deletes branches (only adds/updates)
 - GitHub token validation tool
 - Opt-in backup mode with --backup flag for resilient offline backups
+- Default once-daily sync limit with --force override
 - Opt-in sync throttling with --throttle based on local activity
 - AI-powered project showcase generation for documentation
 - Weekly batch run mode with --batch-run for automated synchronization
@@ -98,12 +99,17 @@ gitsyncer sync repo myproject --backup
 # Preview what would be synced
 gitsyncer sync repo myproject --dry-run
 
+# Override sync interval checks
+gitsyncer sync repo myproject --force
+
 # Sync without AI-generated release notes
 gitsyncer sync repo myproject --no-ai-release-notes
 
 # Auto-create releases without prompts (AI notes enabled by default)
 gitsyncer sync repo myproject --auto-create-releases
 ```
+
+Each repository is synced at most once every 24 hours by default. Successful sync times are stored in `.gitsyncer-state.json` inside the work directory. Use `--force` to bypass sync interval checks.
 
 #### Throttled sync
 ```bash
@@ -115,7 +121,7 @@ gitsyncer sync bidirectional --throttle
 gitsyncer sync codeberg-to-github --throttle
 gitsyncer sync github-to-codeberg --throttle
 ```
-When `--throttle` is enabled, GitSyncer checks `~/git/<repo>` for commits in the last 7 days. If no recent commits are found (or the repo is missing locally), the repo sync is allowed only once per random interval between 60 and 120 days and the next allowed date is stored. Throttle state is stored in `.gitsyncer-state.json` in the work directory.
+When `--throttle` is enabled, GitSyncer still applies the default once-daily limit first, then checks `~/git/<repo>` for commits in the last 7 days. If no recent commits are found (or the repo is missing locally), the repo sync is allowed only once per random interval between 60 and 120 days and the next allowed date is stored. Sync state is stored in `.gitsyncer-state.json` in the work directory. Use `--force` to bypass both interval checks.
 
 #### Sync all configured repositories
 ```bash

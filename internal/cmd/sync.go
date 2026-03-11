@@ -16,6 +16,7 @@ var (
 	noAIReleaseNotes bool
 	syncAITool       string
 	throttle         bool
+	syncForce        bool
 )
 
 var syncCmd = &cobra.Command{
@@ -39,6 +40,9 @@ var syncRepoCmd = &cobra.Command{
   
   # Preview what would be synced
   gitsyncer sync repo myproject --dry-run
+
+  # Override sync interval checks
+  gitsyncer sync repo myproject --force
   
   # Sync without AI-generated release notes
   gitsyncer sync repo myproject --no-ai-release-notes
@@ -191,6 +195,7 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
 	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "amp", "AI tool to use for release notes when auto-creating (amp, claude, aichat, or hexai; amp is tried first if available)")
+	syncCmd.PersistentFlags().BoolVarP(&syncForce, "force", "f", false, "force sync even if normal sync interval checks would skip a repository")
 	syncCmd.PersistentFlags().BoolVar(&throttle, "throttle", false, "throttle syncing based on local repo activity")
 }
 
@@ -204,6 +209,7 @@ func buildFlags() *cli.Flags {
 		AutoCreateReleases:  autoCreate,
 		AIReleaseNotes:      !noAIReleaseNotes,
 		AITool:              syncAITool,
+		Force:               syncForce,
 		Throttle:            throttle,
 		CreateGitHubRepos:   createRepos,
 		CreateCodebergRepos: createRepos,

@@ -67,7 +67,7 @@ func ParseFlags() *Flags {
 	flag.StringVar(&f.DeleteRepo, "delete-repo", "", "delete specified repository from all configured organizations (with confirmation)")
 	flag.BoolVar(&f.Backup, "backup", false, "enable syncing to backup locations")
 	flag.BoolVar(&f.Showcase, "showcase", false, "generate project showcase using AI (amp by default) after syncing")
-	flag.BoolVar(&f.Force, "force", false, "force regeneration of cached data")
+	flag.BoolVar(&f.Force, "force", false, "force operations even when cache or sync interval checks would skip work")
 	flag.BoolVar(&f.BatchRun, "batch-run", false, "enable --full and --showcase (runs only once per week)")
 	flag.BoolVar(&f.CheckReleases, "check-releases", false, "manually check for version tags without releases and create them (with confirmation)")
 	flag.BoolVar(&f.NoCheckReleases, "no-check-releases", false, "disable automatic release checking after sync operations")

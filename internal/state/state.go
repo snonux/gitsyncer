@@ -11,7 +11,7 @@ import (
 // State represents the persistent state of gitsyncer
 type State struct {
 	LastBatchRun time.Time `json:"lastBatchRun"`
-	// Per-repo sync tracking for throttling
+	// Per-repo sync tracking for default daily sync limits and optional throttling
 	LastRepoSync        map[string]time.Time `json:"lastRepoSync,omitempty"`
 	NextRepoSyncAllowed map[string]time.Time `json:"nextRepoSyncAllowed,omitempty"`
 }
@@ -117,6 +117,15 @@ func (s *State) SetRepoSync(repoName string, lastSync time.Time, nextAllowed tim
 	s.NextRepoSyncAllowed[repoName] = nextAllowed
 }
 
+// SetLastRepoSync updates only the last sync time for a repo.
+func (s *State) SetLastRepoSync(repoName string, lastSync time.Time) {
+	if s == nil {
+		return
+	}
+	s.EnsureRepoMaps()
+	s.LastRepoSync[repoName] = lastSync
+}
+
 // SetNextRepoSyncAllowed updates only the next allowed sync time for a repo
 func (s *State) SetNextRepoSyncAllowed(repoName string, nextAllowed time.Time) {
 	if s == nil {
@@ -124,4 +133,12 @@ func (s *State) SetNextRepoSyncAllowed(repoName string, nextAllowed time.Time) {
 	}
 	s.EnsureRepoMaps()
 	s.NextRepoSyncAllowed[repoName] = nextAllowed
+}
+
+// ClearNextRepoSyncAllowed removes the next allowed sync time for a repo.
+func (s *State) ClearNextRepoSyncAllowed(repoName string) {
+	if s == nil || s.NextRepoSyncAllowed == nil {
+		return
+	}
+	delete(s.NextRepoSyncAllowed, repoName)
 }
