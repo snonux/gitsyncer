@@ -29,7 +29,8 @@ type RepoMetadata struct {
 	LastCommitDate  string
 	License         string
 	AvgCommitAge    float64 // Average age of last 42 commits in days
-	Score           float64 // Project score combining LOC and recent activity: log10(LOC) * 1000 / (avgCommitAge + 1)
+	TagCount        int     // Total number of git tags in the repository
+	Score           float64 // Project score combining recent activity, reduced LOC weight, and tag count
 	LatestTag       string  // Latest version tag (empty if no tags)
 	LatestTagDate   string  // Date of the latest tag (empty if no tags)
 	HasReleases     bool    // Whether the project has any releases/tags
@@ -91,24 +92,35 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	}
 	metadata.AvgCommitAge = avgAge
 
-	// Calculate score: log10(LOC) * 1000 / (avgCommitAge + 1)
-	// This balances project size with recent activity
-	score := 0.0
-	if metadata.LinesOfCode > 0 {
-		score = math.Log10(float64(metadata.LinesOfCode)) * 1000.0 / (metadata.AvgCommitAge + 1.0)
-	}
-	metadata.Score = score
-
-	// Get latest tag and check for releases
-	latestTag, latestTagDate, hasReleases, err := getLatestTag(repoPath)
+	// Get tag metadata before calculating score so tags can influence ranking.
+	latestTag, latestTagDate, hasReleases, tagCount, err := getLatestTag(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get latest tag: %v\n", err)
 	}
 	metadata.LatestTag = latestTag
 	metadata.LatestTagDate = latestTagDate
 	metadata.HasReleases = hasReleases
+	metadata.TagCount = tagCount
+
+	// Calculate score with recent activity as the strongest signal,
+	// a smaller LOC contribution than before, and a modest tag bonus.
+	metadata.Score = calculateRepoScore(metadata.LinesOfCode, metadata.AvgCommitAge, metadata.TagCount)
 
 	return metadata, nil
+}
+
+func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int) float64 {
+	sizeComponent := 0.0
+	if linesOfCode > 0 {
+		sizeComponent = math.Sqrt(math.Log10(float64(linesOfCode)+1.0)) * 250.0
+	}
+
+	tagComponent := 0.0
+	if tagCount > 0 {
+		tagComponent = math.Log1p(float64(tagCount)) * 40.0
+	}
+
+	return (sizeComponent + tagComponent) / (avgCommitAge + 1.0)
 }
 
 // getCommitCount returns the total number of commits
@@ -291,8 +303,8 @@ func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 	return totalAge / float64(validCommits), nil
 }
 
-// getLatestTag returns the latest git tag, its date, and whether the repo has any releases
-func getLatestTag(repoPath string) (string, string, bool, error) {
+// getLatestTag returns the latest version-like tag, its date, whether the repo has releases, and total tag count.
+func getLatestTag(repoPath string) (string, string, bool, int, error) {
 	// First try to get tags sorted by version
 	cmd := exec.Command("git", "-C", repoPath, "tag", "-l", "--sort=-version:refname")
 	output, err := cmd.Output()
@@ -302,13 +314,20 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 		output, err = cmd.Output()
 		if err != nil {
 			// No tags at all
-			return "", "", false, nil
+			return "", "", false, 0, nil
 		}
 	}
 
 	tags := strings.Split(strings.TrimSpace(string(output)), "\n")
 	if len(tags) == 0 || tags[0] == "" {
-		return "", "", false, nil
+		return "", "", false, 0, nil
+	}
+
+	tagCount := 0
+	for _, tag := range tags {
+		if strings.TrimSpace(tag) != "" {
+			tagCount++
+		}
 	}
 
 	// Find the first tag that looks like a version number
@@ -322,7 +341,7 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 
 	if latestTag == "" {
 		// No version-like tags found
-		return "", "", false, nil
+		return "", "", false, tagCount, nil
 	}
 
 	// Get the date of the latest tag
@@ -330,7 +349,7 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 	dateOutput, err := cmd.Output()
 	if err != nil {
 		// Tag exists but couldn't get date
-		return latestTag, "", true, nil
+		return latestTag, "", true, tagCount, nil
 	}
 
 	// Extract just the date part (YYYY-MM-DD)
@@ -341,7 +360,7 @@ func getLatestTag(repoPath string) (string, string, bool, error) {
 	}
 
 	// Return the latest tag and its date
-	return latestTag, tagDate, true, nil
+	return latestTag, tagDate, true, tagCount, nil
 }
 
 // isVersionTag checks if a tag looks like a version number

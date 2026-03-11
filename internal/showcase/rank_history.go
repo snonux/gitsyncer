@@ -163,12 +163,12 @@ func movementArrow(currentSpot, olderSpot int) string {
 		return "·"
 	}
 	if currentSpot == olderSpot {
-		return "="
+		return "←"
 	}
 	if currentSpot < olderSpot {
-		return "↑"
+		return "↖"
 	}
-	return "↓"
+	return "↙"
 }
 
 func formatRankHistoryForHeader(history []RepoRankHistory) string {
@@ -177,24 +177,28 @@ func formatRankHistoryForHeader(history []RepoRankHistory) string {
 	}
 
 	tokens := make([]string, 0, len(history))
-	for i, point := range history {
+	lastSpot := 0
+	for _, point := range history {
 		if point.Spot <= 0 {
 			continue
 		}
 
-		spot := fmt.Sprintf("#%d", point.Spot)
-		if i == 0 {
+		spot := fmt.Sprintf("%d", point.Spot)
+		if lastSpot == 0 {
 			tokens = append(tokens, spot)
+			lastSpot = point.Spot
 			continue
 		}
-		tokens = append(tokens, point.Arrow+spot)
+
+		tokens = append(tokens, movementArrow(lastSpot, point.Spot)+spot)
+		lastSpot = point.Spot
 	}
 
 	if len(tokens) == 0 {
 		return ""
 	}
 
-	return " · " + strings.Join(tokens, "")
+	return " " + strings.Join(tokens, "")
 }
 
 func anchorLabel(i int) string {

@@ -110,6 +110,7 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 			fmt.Printf("First Commit: %s\n", summary.Metadata.FirstCommitDate)
 			fmt.Printf("Last Commit: %s\n", summary.Metadata.LastCommitDate)
 			fmt.Printf("License: %s\n", summary.Metadata.License)
+			fmt.Printf("Tags: %d\n", summary.Metadata.TagCount)
 			fmt.Printf("Score: %.1f\n", summary.Metadata.Score)
 		}
 		fmt.Println("--- End of summary ---")
@@ -786,7 +787,7 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
 	// Introduction paragraph
-	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, and licensing. The projects are ranked by score, which combines project size and recent activity.\n\n")
+	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, releases, and licensing. The projects are ranked by score, which combines recent activity, project size, and tag history.\n\n")
 
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
@@ -906,8 +907,9 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 			if summary.Metadata.LinesOfDocs > 0 {
 				builder.WriteString(fmt.Sprintf("* 📄 Lines of Documentation: %d\n", summary.Metadata.LinesOfDocs))
 			}
+			builder.WriteString(fmt.Sprintf("* 🏷️ Tags: %d\n", summary.Metadata.TagCount))
 			builder.WriteString(fmt.Sprintf("* 📅 Development Period: %s to %s\n", summary.Metadata.FirstCommitDate, summary.Metadata.LastCommitDate))
-			builder.WriteString(fmt.Sprintf("* 🏆 Score: %.1f (combines code size and activity)\n", summary.Metadata.Score))
+			builder.WriteString(fmt.Sprintf("* 🏆 Score: %.1f (combines recent activity, code size, and tags)\n", summary.Metadata.Score))
 			builder.WriteString(fmt.Sprintf("* ⚖️ License: %s\n", summary.Metadata.License))
 
 			// Add release information or experimental status

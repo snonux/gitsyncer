@@ -16,9 +16,9 @@ func TestMovementArrow(t *testing.T) {
 		older   int
 		want    string
 	}{
-		{name: "same spot", current: 3, older: 3, want: "="},
-		{name: "improved", current: 2, older: 5, want: "↑"},
-		{name: "worse", current: 6, older: 4, want: "↓"},
+		{name: "same spot", current: 3, older: 3, want: "←"},
+		{name: "improved", current: 2, older: 5, want: "↖"},
+		{name: "worse", current: 6, older: 4, want: "↙"},
 		{name: "missing older", current: 2, older: 0, want: "·"},
 		{name: "missing current", current: 0, older: 2, want: "·"},
 	}
@@ -135,20 +135,27 @@ func TestFormatRankHistoryForHeader(t *testing.T) {
 	t.Parallel()
 
 	header := formatRankHistoryForHeader([]RepoRankHistory{
-		{Spot: 3, Anchor: "now"},
-		{Spot: 2, Anchor: "1w", Arrow: "↓"},
-		{Spot: 2, Anchor: "2w", Arrow: "="},
+		{Spot: 2, Anchor: "now"},
+		{Spot: 3, Anchor: "1w", Arrow: "↖"},
+		{Spot: 3, Anchor: "2w", Arrow: "←"},
 		{Spot: 0, Anchor: "3w", Arrow: "·"},
+		{Spot: 2, Anchor: "4w", Arrow: "↙"},
 	})
 
-	if !strings.Contains(header, "· #3") {
+	if !strings.Contains(header, " 2") {
 		t.Fatalf("header missing current spot: %s", header)
 	}
-	if !strings.Contains(header, "↓#2") {
+	if !strings.Contains(header, "↖3") {
+		t.Fatalf("header missing up movement: %s", header)
+	}
+	if !strings.Contains(header, "←3") {
+		t.Fatalf("header missing unchanged movement marker: %s", header)
+	}
+	if !strings.Contains(header, "↙2") {
 		t.Fatalf("header missing down movement: %s", header)
 	}
-	if !strings.Contains(header, "=#2") {
-		t.Fatalf("header missing unchanged movement marker: %s", header)
+	if strings.Contains(header, "#") {
+		t.Fatalf("header should not include hash prefixes: %s", header)
 	}
 	if strings.Contains(header, "n/a") {
 		t.Fatalf("header should omit missing history points: %s", header)
