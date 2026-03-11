@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"codeberg.org/snonux/gitsyncer/internal/httpclient"
 )
 
 // Client handles GitHub API operations
@@ -85,15 +87,16 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
 	fmt.Printf("  Checking URL: %s\n", url)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return false, err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return false, err
 	}
@@ -145,16 +148,17 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonBody))
+	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -196,14 +200,15 @@ func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return repo, false, err
 	}
+	defer cancel()
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return repo, false, err
 	}
@@ -238,15 +243,16 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(body))
+	req, cancel, err := httpclient.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
+	defer cancel()
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -284,28 +290,9 @@ func (c *Client) ListPublicRepos() ([]Repository, error) {
 		url := fmt.Sprintf("https://api.github.com/users/%s/repos?page=%d&per_page=%d&type=owner", c.org, page, perPage)
 		fmt.Printf("  Fetching page %d...\n", page)
 
-		req, err := http.NewRequest("GET", url, nil)
+		repos, err := c.listPublicReposPage(url)
 		if err != nil {
 			return nil, err
-		}
-
-		req.Header.Set("Authorization", "Bearer "+c.token)
-		req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-		resp, err := http.DefaultClient.Do(req)
-		if err != nil {
-			return nil, err
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			body, _ := io.ReadAll(resp.Body)
-			return nil, fmt.Errorf("failed to list repos: status %d: %s", resp.StatusCode, string(body))
-		}
-
-		var repos []Repository
-		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
-			return nil, fmt.Errorf("failed to decode response: %w", err)
 		}
 
 		// Filter for public, non-fork, non-archived
@@ -323,6 +310,35 @@ func (c *Client) ListPublicRepos() ([]Repository, error) {
 	}
 
 	return allRepos, nil
+}
+
+func (c *Client) listPublicReposPage(url string) ([]Repository, error) {
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+
+	resp, err := httpclient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		body, _ := io.ReadAll(resp.Body)
+		return nil, fmt.Errorf("failed to list repos: status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var repos []Repository
+	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+		return nil, fmt.Errorf("failed to decode response: %w", err)
+	}
+
+	return repos, nil
 }
 
 // GetRepoNames extracts repository names from a list of repos
@@ -352,15 +368,16 @@ func (c *Client) DeleteRepo(repoName string) error {
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
 
-	req, err := http.NewRequest("DELETE", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}

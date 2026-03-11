@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"sort"
 	"strings"
+
+	"codeberg.org/snonux/gitsyncer/internal/httpclient"
 )
 
 // Tag represents a git tag
@@ -64,12 +66,13 @@ func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
 
 	// Fetch repository metadata
 	infoURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
-	getReq, err := http.NewRequest("GET", infoURL, nil)
+	getReq, cancel, err := httpclient.NewRequest(http.MethodGet, infoURL, nil)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 	getReq.Header.Set("Authorization", "token "+m.codebergToken)
-	resp, err := (&http.Client{}).Do(getReq)
+	resp, err := httpclient.Do(getReq)
 	if err != nil {
 		return err
 	}
@@ -95,13 +98,14 @@ func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
 	if err != nil {
 		return err
 	}
-	patchReq, err := http.NewRequest("PATCH", infoURL, bytes.NewBuffer(body))
+	patchReq, patchCancel, err := httpclient.NewRequest(http.MethodPatch, infoURL, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
+	defer patchCancel()
 	patchReq.Header.Set("Authorization", "token "+m.codebergToken)
 	patchReq.Header.Set("Content-Type", "application/json")
-	patchResp, err := (&http.Client{}).Do(patchReq)
+	patchResp, err := httpclient.Do(patchReq)
 	if err != nil {
 		return err
 	}
@@ -522,10 +526,11 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+	defer cancel()
 
 	// Add GitHub token if available
 	if m.githubToken != "" {
@@ -533,8 +538,7 @@ func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 	}
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -567,18 +571,18 @@ func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 func (m *Manager) GetCodebergReleases(owner, repo string) ([]string, error) {
 	url := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases", owner, repo)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return nil, err
 	}
+	defer cancel()
 
 	// Add Codeberg token if available
 	if m.codebergToken != "" {
 		req.Header.Set("Authorization", "token "+m.codebergToken)
 	}
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return nil, err
 	}
@@ -649,17 +653,17 @@ func (m *Manager) CreateGitHubRelease(owner, repo, tag, releaseNotes string) err
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "Bearer "+m.githubToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -702,17 +706,17 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "token "+m.codebergToken)
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -725,13 +729,14 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 		if resp.StatusCode == 404 {
 			// Probe repository details to distinguish scenarios
 			probeURL := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s", owner, repo)
-			probeReq, perr := http.NewRequest("GET", probeURL, nil)
+			probeReq, probeCancel, perr := httpclient.NewRequest(http.MethodGet, probeURL, nil)
 			if perr == nil {
+				defer probeCancel()
 				// Prefer probing with the same token
 				if m.codebergToken != "" {
 					probeReq.Header.Set("Authorization", "token "+m.codebergToken)
 				}
-				if probeResp, perr2 := (&http.Client{}).Do(probeReq); perr2 == nil {
+				if probeResp, perr2 := httpclient.Do(probeReq); perr2 == nil {
 					defer probeResp.Body.Close()
 					if probeResp.StatusCode == 200 {
 						// Try to detect if releases are disabled
@@ -749,14 +754,15 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 									)
 								}
 								// Retry POST after enabling
-								retryReq, rerr := http.NewRequest("POST", url, bytes.NewBuffer(jsonData))
+								retryReq, retryCancel, rerr := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
 								if rerr != nil {
 									return rerr
 								}
+								defer retryCancel()
 								retryReq.Header.Set("Authorization", "token "+m.codebergToken)
 								retryReq.Header.Set("Content-Type", "application/json")
 								retryReq.Header.Set("Accept", "application/json")
-								retryResp, rerr := (&http.Client{}).Do(retryReq)
+								retryResp, rerr := httpclient.Do(retryReq)
 								if rerr != nil {
 									return rerr
 								}
@@ -835,16 +841,16 @@ func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) err
 	// First, get the release ID
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "Bearer "+m.githubToken)
 	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -876,16 +882,17 @@ func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) err
 		return err
 	}
 
-	updateReq, err := http.NewRequest("PATCH", updateURL, bytes.NewBuffer(jsonData))
+	updateReq, updateCancel, err := httpclient.NewRequest(http.MethodPatch, updateURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
+	defer updateCancel()
 
 	updateReq.Header.Set("Authorization", "Bearer "+m.githubToken)
 	updateReq.Header.Set("Content-Type", "application/json")
 	updateReq.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	updateResp, err := client.Do(updateReq)
+	updateResp, err := httpclient.Do(updateReq)
 	if err != nil {
 		return err
 	}
@@ -908,15 +915,15 @@ func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	// First, get the release ID
 	url := fmt.Sprintf("https://codeberg.org/api/v1/repos/%s/%s/releases/tags/%s", owner, repo, tag)
 
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "token "+m.codebergToken)
 
-	client := &http.Client{}
-	resp, err := client.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -948,15 +955,16 @@ func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) e
 		return err
 	}
 
-	updateReq, err := http.NewRequest("PATCH", updateURL, bytes.NewBuffer(jsonData))
+	updateReq, updateCancel, err := httpclient.NewRequest(http.MethodPatch, updateURL, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
+	defer updateCancel()
 
 	updateReq.Header.Set("Authorization", "token "+m.codebergToken)
 	updateReq.Header.Set("Content-Type", "application/json")
 
-	updateResp, err := client.Do(updateReq)
+	updateResp, err := httpclient.Do(updateReq)
 	if err != nil {
 		return err
 	}

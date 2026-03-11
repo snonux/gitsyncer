@@ -9,6 +9,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"codeberg.org/snonux/gitsyncer/internal/httpclient"
 )
 
 // Repository represents a Codeberg/Gitea repository
@@ -77,15 +79,16 @@ func (c *Client) HasToken() bool {
 func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 	var repo Repository
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return repo, false, err
 	}
+	defer cancel()
 	if c.HasToken() {
 		req.Header.Set("Authorization", "token "+c.token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return repo, false, err
 	}
@@ -120,14 +123,15 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 		return err
 	}
 
-	req, err := http.NewRequest("PATCH", url, bytes.NewBuffer(body))
+	req, cancel, err := httpclient.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
+	defer cancel()
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "token "+c.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -149,19 +153,9 @@ func (c *Client) ListPublicRepos() ([]Repository, error) {
 	for {
 		url := fmt.Sprintf("%s/orgs/%s/repos?page=%d&limit=%d", c.baseURL, c.org, page, perPage)
 
-		resp, err := http.Get(url)
+		repos, err := c.listReposPage(url)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch repositories: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-		}
-
-		var repos []Repository
-		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, err
 		}
 
 		// Filter only public, non-fork, non-archived, non-empty repos
@@ -191,19 +185,9 @@ func (c *Client) ListUserPublicRepos() ([]Repository, error) {
 	for {
 		url := fmt.Sprintf("%s/users/%s/repos?page=%d&limit=%d", c.baseURL, c.org, page, perPage)
 
-		resp, err := http.Get(url)
+		repos, err := c.listReposPage(url)
 		if err != nil {
-			return nil, fmt.Errorf("failed to fetch repositories: %w", err)
-		}
-		defer resp.Body.Close()
-
-		if resp.StatusCode != 200 {
-			return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
-		}
-
-		var repos []Repository
-		if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
-			return nil, fmt.Errorf("failed to parse response: %w", err)
+			return nil, err
 		}
 
 		// Filter only public, non-fork, non-archived, non-empty repos
@@ -233,19 +217,45 @@ func GetRepoNames(repos []Repository) []string {
 	return names
 }
 
+func (c *Client) listReposPage(url string) ([]Repository, error) {
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer cancel()
+
+	resp, err := httpclient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("failed to fetch repositories: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	}
+
+	var repos []Repository
+	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+		return nil, fmt.Errorf("failed to parse response: %w", err)
+	}
+
+	return repos, nil
+}
+
 // RepoExists checks if a repository exists on Codeberg
 func (c *Client) RepoExists(repoName string) (bool, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
-	req, err := http.NewRequest("GET", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
 	if err != nil {
 		return false, err
 	}
+	defer cancel()
 
 	if c.HasToken() {
 		req.Header.Set("Authorization", "token "+c.token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return false, err
 	}
@@ -277,17 +287,18 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return err
 	}
 
-	req, err := http.NewRequest("POST", url, bytes.NewBuffer(body))
+	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Content-Type", "application/json")
 	if c.HasToken() {
 		req.Header.Set("Authorization", "token "+c.token)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
@@ -334,14 +345,15 @@ func (c *Client) DeleteRepo(repoName string) error {
 
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
 
-	req, err := http.NewRequest("DELETE", url, nil)
+	req, cancel, err := httpclient.NewRequest(http.MethodDelete, url, nil)
 	if err != nil {
 		return err
 	}
+	defer cancel()
 
 	req.Header.Set("Authorization", "token "+c.token)
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := httpclient.Do(req)
 	if err != nil {
 		return err
 	}
