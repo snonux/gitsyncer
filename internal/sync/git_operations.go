@@ -11,9 +11,17 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
+func gitCommand(repoPath string, args ...string) *exec.Cmd {
+	cmd := exec.Command("git", args...)
+	if repoPath != "" {
+		cmd.Dir = repoPath
+	}
+	return cmd
+}
+
 // checkForMergeConflicts checks if the repository has merge conflicts
-func checkForMergeConflicts() (bool, string, error) {
-	cmd := exec.Command("git", "status", "--porcelain")
+func checkForMergeConflicts(repoPath string) (bool, string, error) {
+	cmd := gitCommand(repoPath, "status", "--porcelain")
 	output, err := cmd.Output()
 	if err != nil {
 		return false, "", err
@@ -28,21 +36,21 @@ func checkForMergeConflicts() (bool, string, error) {
 }
 
 // stashChanges stashes uncommitted changes
-func stashChanges() error {
+func stashChanges(repoPath string) error {
 	fmt.Println("  Stashing uncommitted changes...")
-	return exec.Command("git", "stash", "push", "-m", "gitsyncer-auto-stash").Run()
+	return gitCommand(repoPath, "stash", "push", "-m", "gitsyncer-auto-stash").Run()
 }
 
 // popStash attempts to pop the stash (used in defer)
-func popStash() {
-	exec.Command("git", "stash", "pop").Run()
+func popStash(repoPath string) {
+	gitCommand(repoPath, "stash", "pop").Run()
 }
 
 // mergeBranch merges a branch from a remote
-func mergeBranch(remoteName, branch string) error {
+func mergeBranch(repoPath, remoteName, branch string) error {
 	fmt.Printf("  Merging from %s/%s...\n", remoteName, branch)
 
-	cmd := exec.Command("git", "merge", fmt.Sprintf("%s/%s", remoteName, branch), "--no-edit")
+	cmd := gitCommand(repoPath, "merge", fmt.Sprintf("%s/%s", remoteName, branch), "--no-edit")
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -57,8 +65,8 @@ func mergeBranch(remoteName, branch string) error {
 }
 
 // pushBranch pushes a branch to a remote
-func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
-	cmd := exec.Command("git", "push", remoteName, branch, "--tags")
+func pushBranch(repoPath, remoteName, branch string, remoteHasBranch bool) error {
+	cmd := gitCommand(repoPath, "push", remoteName, branch, "--tags")
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -74,7 +82,7 @@ func pushBranch(remoteName, branch string, remoteHasBranch bool) error {
 		if isBranchMissing(outputStr) {
 			fmt.Printf("    Creating new branch on %s\n", remoteName)
 			// Try again with -u flag to set upstream
-			cmd = exec.Command("git", "push", "-u", remoteName, branch, "--tags")
+			cmd = gitCommand(repoPath, "push", "-u", remoteName, branch, "--tags")
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
 			}
@@ -103,8 +111,8 @@ func isBranchMissing(output string) bool {
 }
 
 // getRemotesList extracts unique remote names from git remote -v output
-func getRemotesList() (map[string]bool, error) {
-	cmd := exec.Command("git", "remote", "-v")
+func getRemotesList(repoPath string) (map[string]bool, error) {
+	cmd := gitCommand(repoPath, "remote", "-v")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list remotes: %w", err)
@@ -126,14 +134,14 @@ func getRemotesList() (map[string]bool, error) {
 }
 
 // fetchRemote fetches from a single remote with error handling
-func fetchRemote(remote string) error {
-	cmd := exec.Command("git", "fetch", remote, "--prune", "--tags")
+func fetchRemote(repoPath, remote string) error {
+	cmd := gitCommand(repoPath, "fetch", remote, "--prune", "--tags")
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
 		// Check if it's a tag conflict error
 		if bytes.Contains(output, []byte("would clobber existing tag")) {
-			return handleTagConflict(remote, output)
+			return handleTagConflict(repoPath, remote, output)
 		}
 
 		// Check if it's because the repository doesn't exist
@@ -147,7 +155,7 @@ func fetchRemote(remote string) error {
 }
 
 // handleTagConflict provides a detailed error message for tag conflicts.
-func handleTagConflict(remote string, output []byte) error {
+func handleTagConflict(repoPath, remote string, output []byte) error {
 	var conflictDetails strings.Builder
 	conflictDetails.WriteString("tag conflict detected while fetching from remote: ")
 	conflictDetails.WriteString(remote)
@@ -159,8 +167,8 @@ func handleTagConflict(remote string, output []byte) error {
 	for _, match := range matches {
 		if len(match) > 1 {
 			tag := string(match[1])
-			localHash, _ := getTagCommitHash(tag, "local")
-			remoteHash, _ := getTagCommitHash(tag, remote)
+			localHash, _ := getTagCommitHash(repoPath, tag, "local")
+			remoteHash, _ := getTagCommitHash(repoPath, tag, remote)
 			conflictDetails.WriteString(fmt.Sprintf("\n  - Tag: %s\n    Local:  %s\n    Remote: %s", tag, localHash, remoteHash))
 		}
 	}
@@ -169,12 +177,12 @@ func handleTagConflict(remote string, output []byte) error {
 }
 
 // getTagCommitHash retrieves the commit hash for a given tag, either locally or from a remote.
-func getTagCommitHash(tag, source string) (string, error) {
+func getTagCommitHash(repoPath, tag, source string) (string, error) {
 	var cmd *exec.Cmd
 	if source == "local" {
-		cmd = exec.Command("git", "rev-parse", tag+"^{\\}")
+		cmd = gitCommand(repoPath, "rev-parse", tag+"^{\\}")
 	} else {
-		cmd = exec.Command("git", "ls-remote", "--tags", source, tag)
+		cmd = gitCommand(repoPath, "ls-remote", "--tags", source, tag)
 	}
 
 	output, err := cmd.Output()
@@ -187,8 +195,8 @@ func getTagCommitHash(tag, source string) (string, error) {
 }
 
 // checkoutExistingBranch tries to checkout an existing branch
-func checkoutExistingBranch(branch string) error {
-	cmd := exec.Command("git", "checkout", branch)
+func checkoutExistingBranch(repoPath, branch string) error {
+	cmd := gitCommand(repoPath, "checkout", branch)
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		fmt.Printf("  Initial checkout failed: %s\n", strings.TrimSpace(string(output)))
@@ -198,8 +206,8 @@ func checkoutExistingBranch(branch string) error {
 }
 
 // createTrackingBranch creates a new branch tracking a remote branch
-func createTrackingBranch(branch, remoteName string) error {
-	cmd := exec.Command("git", "checkout", "-b", branch, fmt.Sprintf("%s/%s", remoteName, branch))
+func createTrackingBranch(repoPath, branch, remoteName string) error {
+	cmd := gitCommand(repoPath, "checkout", "-b", branch, fmt.Sprintf("%s/%s", remoteName, branch))
 	output, err := cmd.CombinedOutput()
 	if err != nil {
 		return fmt.Errorf("failed to create tracking branch: %s", string(output))
@@ -265,8 +273,8 @@ func createSSHBareRepository(sshHost, repoPath string) error {
 }
 
 // pushBranchWithBackupSupport pushes a branch to a remote, creating SSH repos if needed
-func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool, org *config.Organization) error {
-	cmd := exec.Command("git", "push", remoteName, branch, "--tags")
+func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasBranch bool, org *config.Organization) error {
+	cmd := gitCommand(repoPath, "push", remoteName, branch, "--tags")
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -276,7 +284,7 @@ func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool
 			// If it's an SSH backup location, try to create the repository
 			if org.BackupLocation && org.IsSSH() {
 				// Get the repository name from the remote URL
-				remoteURL, err := getRemoteURL(remoteName)
+				remoteURL, err := getRemoteURL(repoPath, remoteName)
 				if err != nil {
 					return fmt.Errorf("failed to get remote URL: %w", err)
 				}
@@ -293,7 +301,7 @@ func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool
 				}
 
 				// Try pushing again
-				cmd = exec.Command("git", "push", remoteName, branch, "--tags")
+				cmd = gitCommand(repoPath, "push", remoteName, branch, "--tags")
 				if err := cmd.Run(); err != nil {
 					return fmt.Errorf("failed to push after creating repository: %w", err)
 				}
@@ -310,7 +318,7 @@ func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool
 		if isBranchMissing(outputStr) {
 			fmt.Printf("    Creating new branch on %s\n", remoteName)
 			// Try again with -u flag to set upstream
-			cmd = exec.Command("git", "push", "-u", remoteName, branch, "--tags")
+			cmd = gitCommand(repoPath, "push", "-u", remoteName, branch, "--tags")
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
 			}
@@ -328,8 +336,8 @@ func pushBranchWithBackupSupport(remoteName, branch string, remoteHasBranch bool
 }
 
 // getRemoteURL gets the URL for a given remote
-func getRemoteURL(remoteName string) (string, error) {
-	cmd := exec.Command("git", "remote", "get-url", remoteName)
+func getRemoteURL(repoPath, remoteName string) (string, error) {
+	cmd := gitCommand(repoPath, "remote", "get-url", remoteName)
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err

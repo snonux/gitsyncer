@@ -1,6 +1,8 @@
 package showcase
 
 import (
+	"os"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"testing"
@@ -120,5 +122,30 @@ func TestFormatGemtext_IncludesRankHistoryInHeader(t *testing.T) {
 
 	if !strings.Contains(content, "### 1. alpha [#1(now) ↑#2(1w) →#2(2w) ·n/a(3w) ↓#4(4w)]") {
 		t.Fatalf("rank history was not rendered in header: %s", content)
+	}
+}
+
+func TestFindReadmeContent_UsesRepoPathWithoutChangingCWD(t *testing.T) {
+	t.Parallel()
+
+	repoPath := filepath.Join(t.TempDir(), "repo")
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+
+	readmePath := filepath.Join(repoPath, "README.md")
+	if err := os.WriteFile(readmePath, []byte("repo summary"), 0644); err != nil {
+		t.Fatalf("failed to write readme: %v", err)
+	}
+
+	content, readmeFile, found := findReadmeContent(repoPath)
+	if !found {
+		t.Fatal("expected README to be found")
+	}
+	if readmeFile != "README.md" {
+		t.Fatalf("expected README.md, got %q", readmeFile)
+	}
+	if string(content) != "repo summary" {
+		t.Fatalf("unexpected README content: %q", string(content))
 	}
 }

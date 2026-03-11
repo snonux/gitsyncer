@@ -96,20 +96,6 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 	return nil
 }
 
-// changeToRepoDirectory changes to the repository directory and returns a function to restore the original directory
-func changeToRepoDirectory(repoPath string) (func(), error) {
-	originalDir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
-	}
-
-	if err := os.Chdir(repoPath); err != nil {
-		return nil, fmt.Errorf("failed to change to repository directory: %w", err)
-	}
-
-	return func() { os.Chdir(originalDir) }, nil
-}
-
 // getRemotesMap creates a map of remote names to organizations
 func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	remotes := make(map[string]*config.Organization)

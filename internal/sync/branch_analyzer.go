@@ -3,7 +3,6 @@ package sync
 import (
 	"fmt"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -183,7 +182,7 @@ func (s *Syncer) getLastCommitTime(remoteName, branch string) (time.Time, error)
 	}
 
 	// Get Unix timestamp of last commit
-	cmd := exec.Command("git", "log", "-1", "--format=%ct", ref)
+	cmd := gitCommand(s.repoPath(), "log", "-1", "--format=%ct", ref)
 	output, err := cmd.Output()
 	if err != nil {
 		return time.Time{}, err

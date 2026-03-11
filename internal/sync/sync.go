@@ -60,13 +60,6 @@ func (s *Syncer) SyncRepository(repoName string) error {
 		return err
 	}
 
-	// Change to repository directory
-	restoreDir, err := changeToRepoDirectory(repoPath)
-	if err != nil {
-		return err
-	}
-	defer restoreDir()
-
 	// Fetch all remotes
 	fmt.Printf("Fetching updates from all remotes...\n")
 	if err := s.fetchAll(); err != nil {
@@ -112,6 +105,10 @@ func (s *Syncer) SyncRepository(repoName string) error {
 
 	fmt.Printf("\nRepository %s synchronized successfully!\n", repoName)
 	return nil
+}
+
+func (s *Syncer) repoPath() string {
+	return filepath.Join(s.workDir, s.repoName)
 }
 
 // EnsureRepositoryCloned ensures a repository is cloned locally without syncing
@@ -219,7 +216,7 @@ func (s *Syncer) addRemote(repoPath string, org *config.Organization) error {
 // Note: We use individual fetches instead of --all to handle missing repositories gracefully
 func (s *Syncer) fetchAll() error {
 	// Get list of remotes
-	remotes, err := getRemotesList()
+	remotes, err := getRemotesList(s.repoPath())
 	if err != nil {
 		return err
 	}
@@ -247,7 +244,7 @@ func (s *Syncer) fetchAll() error {
 		}
 
 		fmt.Printf("Fetching %s\n", remote)
-		if err := fetchRemote(remote); err != nil {
+		if err := fetchRemote(s.repoPath(), remote); err != nil {
 			return err
 		}
 	}
@@ -257,7 +254,7 @@ func (s *Syncer) fetchAll() error {
 
 // getAllBranches gets all unique branches from all remotes
 func (s *Syncer) getAllBranches() ([]string, error) {
-	cmd := exec.Command("git", "branch", "-r")
+	cmd := gitCommand(s.repoPath(), "branch", "-r")
 	output, err := cmd.Output()
 	if err != nil {
 		return nil, err
@@ -274,13 +271,15 @@ func (s *Syncer) getAllBranches() ([]string, error) {
 
 // syncBranch synchronizes a specific branch across all remotes
 func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organization) error {
+	repoPath := s.repoPath()
+
 	// Handle merge conflicts and uncommitted changes
 	stashed, err := s.handleWorkingDirectoryState()
 	if err != nil {
 		return err
 	}
 	if stashed {
-		defer popStash()
+		defer popStash(repoPath)
 	}
 
 	// Create or checkout the branch
@@ -292,33 +291,34 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 	remotesWithBranch := s.trackRemotesWithBranch(branch, remotes)
 
 	// Merge changes from remotes
-	if err := mergeFromRemotes(branch, remotesWithBranch); err != nil {
+	if err := mergeFromRemotes(repoPath, branch, remotesWithBranch); err != nil {
 		return err
 	}
 
 	// Push to all remotes
-	return pushToAllRemotes(branch, remotes, remotesWithBranch)
+	return pushToAllRemotes(repoPath, branch, remotes, remotesWithBranch)
 }
 
 // handleWorkingDirectoryState checks for conflicts and stashes changes if needed
 // Returns true if changes were stashed
 func (s *Syncer) handleWorkingDirectoryState() (bool, error) {
-	hasConflicts, statusStr, err := checkForMergeConflicts()
+	repoPath := s.repoPath()
+	hasConflicts, statusStr, err := checkForMergeConflicts(repoPath)
 	if err != nil || statusStr == "" {
 		return false, nil
 	}
 
 	if hasConflicts {
 		// Get absolute path for clarity
-		absPath, err := filepath.Abs(s.workDir)
+		absPath, err := filepath.Abs(repoPath)
 		if err != nil {
-			absPath = s.workDir
+			absPath = repoPath
 		}
 		return false, fmt.Errorf("repository has unresolved merge conflicts\nPlease resolve conflicts in: %s\nOr delete the directory to start fresh: rm -rf %s", absPath, absPath)
 	}
 
 	// If we have uncommitted changes but no conflicts, try to stash them
-	if err := stashChanges(); err != nil {
+	if err := stashChanges(repoPath); err != nil {
 		return false, fmt.Errorf("failed to stash changes: %w", err)
 	}
 	return true, nil
@@ -327,7 +327,7 @@ func (s *Syncer) handleWorkingDirectoryState() (bool, error) {
 // checkoutBranch checks out a branch, creating it if necessary
 func (s *Syncer) checkoutBranch(branch string) error {
 	// First try to checkout existing branch
-	if err := checkoutExistingBranch(branch); err == nil {
+	if err := checkoutExistingBranch(s.repoPath(), branch); err == nil {
 		return nil
 	}
 
@@ -337,7 +337,7 @@ func (s *Syncer) checkoutBranch(branch string) error {
 		remoteName := s.getRemoteName(org)
 
 		if s.remoteBranchExists(remoteName, branch) {
-			return createTrackingBranch(branch, remoteName)
+			return createTrackingBranch(s.repoPath(), branch, remoteName)
 		}
 	}
 
@@ -346,7 +346,7 @@ func (s *Syncer) checkoutBranch(branch string) error {
 
 // remoteBranchExists checks if a branch exists on a remote
 func (s *Syncer) remoteBranchExists(remoteName, branch string) bool {
-	cmd := exec.Command("git", "branch", "-r", "--list", fmt.Sprintf("%s/%s", remoteName, branch))
+	cmd := gitCommand(s.repoPath(), "branch", "-r", "--list", fmt.Sprintf("%s/%s", remoteName, branch))
 	output, err := cmd.Output()
 	if err != nil {
 		return false

@@ -24,7 +24,7 @@ func (s *Syncer) trackRemotesWithBranch(branch string, remotes map[string]*confi
 }
 
 // mergeFromRemotes merges changes from all remotes that have the branch
-func mergeFromRemotes(branch string, remotesWithBranch map[string]bool) error {
+func mergeFromRemotes(repoPath, branch string, remotesWithBranch map[string]bool) error {
 	if len(remotesWithBranch) == 0 {
 		fmt.Printf("  Branch %s is local only, will push to all remotes\n", branch)
 		return nil
@@ -32,7 +32,7 @@ func mergeFromRemotes(branch string, remotesWithBranch map[string]bool) error {
 
 	// Merge changes from all remotes that have this branch
 	for remoteName := range remotesWithBranch {
-		if err := mergeBranch(remoteName, branch); err != nil {
+		if err := mergeBranch(repoPath, remoteName, branch); err != nil {
 			return err
 		}
 	}
@@ -41,7 +41,7 @@ func mergeFromRemotes(branch string, remotesWithBranch map[string]bool) error {
 }
 
 // pushToAllRemotes pushes the branch to all configured remotes
-func pushToAllRemotes(branch string, remotes map[string]*config.Organization, remotesWithBranch map[string]bool) error {
+func pushToAllRemotes(repoPath, branch string, remotes map[string]*config.Organization, remotesWithBranch map[string]bool) error {
 	for remoteName, org := range remotes {
 		// Check if this remote has the branch
 		remoteHasBranch := remotesWithBranch[remoteName]
@@ -52,7 +52,7 @@ func pushToAllRemotes(branch string, remotes map[string]*config.Organization, re
 			fmt.Printf("  Pushing to %s (%s)...\n", remoteName, org.Host)
 		}
 
-		if err := pushBranchWithBackupSupport(remoteName, branch, remoteHasBranch, org); err != nil {
+		if err := pushBranchWithBackupSupport(repoPath, remoteName, branch, remoteHasBranch, org); err != nil {
 			return err
 		}
 	}

@@ -194,6 +194,24 @@ func runCommandWithTimeout(name string, args ...string) (string, error) {
 	return string(out), nil
 }
 
+func findReadmeContent(repoPath string) ([]byte, string, bool) {
+	readmeFiles := []string{
+		"README.md", "readme.md", "Readme.md",
+		"README.MD", "README.txt", "readme.txt",
+		"README", "readme",
+	}
+
+	for _, readmeFile := range readmeFiles {
+		path := filepath.Join(repoPath, readmeFile)
+		content, err := os.ReadFile(path)
+		if err == nil {
+			return content, readmeFile, true
+		}
+	}
+
+	return nil, "", false
+}
+
 // getRepositories returns a list of repository directories in the work directory
 func (g *Generator) getRepositories() ([]string, error) {
 	entries, err := os.ReadDir(g.workDir)
@@ -281,16 +299,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 	}
 
-	// Change to repository directory
-	originalDir, err := os.Getwd()
-	if err != nil {
-		return nil, fmt.Errorf("failed to get current directory: %w", err)
-	}
-	defer os.Chdir(originalDir)
-
-	if err := os.Chdir(repoPath); err != nil {
-		return nil, fmt.Errorf("failed to change to repository directory: %w", err)
-	}
+	readmeContent, readmeFile, readmeFound := findReadmeContent(repoPath)
 
 	// Always extract metadata (not cached)
 	fmt.Printf("Extracting repository metadata...\n")
@@ -314,25 +323,9 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		case "amp":
 			// Use README content as stdin and pass the prompt as --execute argument
 			fmt.Printf("Running amp command (stdin payload)\n")
-			// Find README file
-			readmeFiles := []string{
-				"README.md", "readme.md", "Readme.md",
-				"README.MD", "README.txt", "readme.txt",
-				"README", "readme",
-			}
-			var readmeContent []byte
-			var readmeFound bool
-			for _, readmeFile := range readmeFiles {
-				content, err := os.ReadFile(readmeFile)
-				if err == nil {
-					readmeContent = content
-					readmeFound = true
-					fmt.Printf("  Using %s as input\n", readmeFile)
-					break
-				}
-			}
 			if readmeFound {
 				fmt.Printf("  echo <README content> | amp --execute \"%s\"\n", prompt)
+				fmt.Printf("  Using %s as input\n", readmeFile)
 				cmd = exec.Command("amp", "--execute", prompt)
 				cmd.Stdin = strings.NewReader(string(readmeContent))
 			} else {
@@ -346,25 +339,9 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		case "hexai":
 			// Use README content as stdin and pass the prompt as argument
 			fmt.Printf("Running hexai command (stdin payload)\n")
-			// Find README file
-			readmeFiles := []string{
-				"README.md", "readme.md", "Readme.md",
-				"README.MD", "README.txt", "readme.txt",
-				"README", "readme",
-			}
-			var readmeContent []byte
-			var readmeFound bool
-			for _, readmeFile := range readmeFiles {
-				content, err := os.ReadFile(readmeFile)
-				if err == nil {
-					readmeContent = content
-					readmeFound = true
-					fmt.Printf("  Using %s as input\n", readmeFile)
-					break
-				}
-			}
 			if readmeFound {
 				fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
+				fmt.Printf("  Using %s as input\n", readmeFile)
 				cmd = exec.Command("hexai", prompt)
 				cmd.Stdin = strings.NewReader(string(readmeContent))
 			} else {
@@ -375,27 +352,9 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 			// For aichat, we need to read README.md and pipe it to aichat
 			fmt.Printf("Running aichat command:\n")
 
-			// Find README file
-			readmeFiles := []string{
-				"README.md", "readme.md", "Readme.md",
-				"README.MD", "README.txt", "readme.txt",
-				"README", "readme",
-			}
-
-			var readmeContent []byte
-			var readmeFound bool
-			for _, readmeFile := range readmeFiles {
-				content, err := os.ReadFile(readmeFile)
-				if err == nil {
-					readmeContent = content
-					readmeFound = true
-					fmt.Printf("  Using %s as input\n", readmeFile)
-					break
-				}
-			}
-
 			if readmeFound {
 				fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
+				fmt.Printf("  Using %s as input\n", readmeFile)
 				cmd = exec.Command("aichat", prompt)
 				cmd.Stdin = strings.NewReader(string(readmeContent))
 			} else {
@@ -408,6 +367,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 
 		if cmd != nil {
+			cmd.Dir = repoPath
 			if output, err := cmd.Output(); err == nil {
 				summary = strings.TrimSpace(string(output))
 			}
@@ -415,18 +375,10 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 
 		// Fallback: create a minimal summary from README if AI unavailable/failed
 		if summary == "" {
-			readmeFiles := []string{
-				"README.md", "readme.md", "Readme.md",
-				"README.MD", "README.txt", "readme.txt",
-				"README", "readme",
-			}
-			for _, readmeFile := range readmeFiles {
-				if content, err := os.ReadFile(readmeFile); err == nil {
-					parts := strings.Split(strings.TrimSpace(string(content)), "\n\n")
-					if len(parts) > 0 {
-						summary = strings.TrimSpace(parts[0])
-						break
-					}
+			if readmeFound {
+				parts := strings.Split(strings.TrimSpace(string(readmeContent)), "\n\n")
+				if len(parts) > 0 {
+					summary = strings.TrimSpace(parts[0])
 				}
 			}
 			if summary == "" {
