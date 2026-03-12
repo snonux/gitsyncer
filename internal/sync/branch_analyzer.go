@@ -29,6 +29,50 @@ type AbandonedBranchReport struct {
 	TotalIgnoredBranches     int
 }
 
+var defaultAutoDeleteProtectedBranches = map[string]map[string]struct{}{
+	"xerl": {
+		"hosts": {},
+	},
+}
+
+func isProtectedFromAutoDelete(repoName, branchName string) bool {
+	branches, ok := defaultAutoDeleteProtectedBranches[repoName]
+	if !ok {
+		return false
+	}
+
+	_, ok = branches[branchName]
+	return ok
+}
+
+func filterProtectedBranchInfos(repoName string, branches []BranchInfo) []BranchInfo {
+	if len(branches) == 0 {
+		return branches
+	}
+
+	filtered := make([]BranchInfo, 0, len(branches))
+	for _, branch := range branches {
+		if isProtectedFromAutoDelete(repoName, branch.Name) {
+			continue
+		}
+		filtered = append(filtered, branch)
+	}
+
+	return filtered
+}
+
+func filterProtectedAbandonedBranchReport(repoName string, report *AbandonedBranchReport) *AbandonedBranchReport {
+	if report == nil {
+		return nil
+	}
+
+	filtered := *report
+	filtered.AbandonedBranches = filterProtectedBranchInfos(repoName, report.AbandonedBranches)
+	filtered.AbandonedIgnoredBranches = filterProtectedBranchInfos(repoName, report.AbandonedIgnoredBranches)
+
+	return &filtered
+}
+
 // analyzeAbandonedBranches analyzes branches to find abandoned ones
 func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 	report := &AbandonedBranchReport{
@@ -110,7 +154,7 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 		}
 	}
 
-	return report, nil
+	return filterProtectedAbandonedBranchReport(s.repoName, report), nil
 }
 
 // findMainBranch finds the main or master branch
@@ -199,6 +243,7 @@ func (s *Syncer) getLastCommitTime(remoteName, branch string) (time.Time, error)
 
 // formatAbandonedBranchReport formats the report for display
 func formatAbandonedBranchReport(report *AbandonedBranchReport, repoName string) string {
+	report = filterProtectedAbandonedBranchReport(repoName, report)
 	if !report.MainBranchUpdated {
 		return "" // Don't report on inactive repos
 	}
@@ -244,7 +289,8 @@ func (s *Syncer) GenerateAbandonedBranchSummary() string {
 	totalAbandonedIgnored := 0
 	reposWithAbandoned := 0
 
-	for _, report := range s.abandonedReports {
+	for repoName, report := range s.abandonedReports {
+		report = filterProtectedAbandonedBranchReport(repoName, report)
 		if len(report.AbandonedBranches) > 0 || len(report.AbandonedIgnoredBranches) > 0 {
 			totalAbandoned += len(report.AbandonedBranches)
 			totalAbandonedIgnored += len(report.AbandonedIgnoredBranches)
@@ -270,6 +316,7 @@ func (s *Syncer) GenerateAbandonedBranchSummary() string {
 
 	// Group by repository
 	for repoName, report := range s.abandonedReports {
+		report = filterProtectedAbandonedBranchReport(repoName, report)
 		if len(report.AbandonedBranches) == 0 && len(report.AbandonedIgnoredBranches) == 0 {
 			continue
 		}
@@ -310,6 +357,7 @@ func (s *Syncer) GenerateAbandonedBranchSummary() string {
 
 // GenerateDeleteCommands generates shell commands to delete abandoned branches
 func (s *Syncer) GenerateDeleteCommands(report *AbandonedBranchReport, repoName string) string {
+	report = filterProtectedAbandonedBranchReport(repoName, report)
 	if len(report.AbandonedBranches) == 0 && len(report.AbandonedIgnoredBranches) == 0 {
 		return ""
 	}
@@ -370,7 +418,8 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 	// Count total abandoned branches
 	totalAbandoned := 0
 	totalIgnored := 0
-	for _, report := range s.abandonedReports {
+	for repoName, report := range s.abandonedReports {
+		report = filterProtectedAbandonedBranchReport(repoName, report)
 		totalAbandoned += len(report.AbandonedBranches)
 		totalIgnored += len(report.AbandonedIgnoredBranches)
 	}
@@ -510,6 +559,7 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 
 	// Process each repository
 	for repoName, report := range s.abandonedReports {
+		report = filterProtectedAbandonedBranchReport(repoName, report)
 		if len(report.AbandonedBranches) == 0 && len(report.AbandonedIgnoredBranches) == 0 {
 			continue
 		}
