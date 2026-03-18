@@ -47,8 +47,8 @@ var syncRepoCmd = &cobra.Command{
   # Sync without AI-generated release notes
   gitsyncer sync repo myproject --no-ai-release-notes
   
-  # Auto-create releases using amp for AI notes
-gitsyncer sync repo myproject --auto-create-releases --ai-tool amp`,
+  # Auto-create releases using opencode for AI notes (default)
+gitsyncer sync repo myproject --auto-create-releases --ai-tool opencode`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncRepo = args[0]
@@ -194,7 +194,7 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&noReleases, "no-releases", false, "skip release checking after sync")
 	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
 	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
-	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "amp", "AI tool to use for release notes when auto-creating (amp, claude, aichat, or hexai; amp is tried first if available)")
+	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "opencode", "AI tool to use for release notes when auto-creating (opencode, amp, claude, aichat, or hexai; opencode is tried first if available)")
 	syncCmd.PersistentFlags().BoolVarP(&syncForce, "force", "f", false, "force sync even if normal sync interval checks would skip a repository")
 	syncCmd.PersistentFlags().BoolVar(&throttle, "throttle", false, "throttle syncing based on local repo activity")
 }

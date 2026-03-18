@@ -50,7 +50,7 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
-		aiTool:  "amp", // default to amp
+		aiTool:  "opencode", // default to opencode (local Ollama with gpt-oss:120b)
 	}
 }
 
@@ -215,7 +215,25 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 
 func selectSummaryTool(aiTool string) string {
 	switch aiTool {
-	case "amp", "":
+	case "opencode", "":
+		// Default chain: opencode → amp → hexai → claude → aichat
+		if _, err := exec.LookPath("opencode"); err == nil {
+			return "opencode"
+		}
+		if _, err := exec.LookPath("amp"); err == nil {
+			return "amp"
+		}
+		if _, err := exec.LookPath("hexai"); err == nil {
+			return "hexai"
+		}
+		if _, err := exec.LookPath("claude"); err == nil {
+			return "claude"
+		}
+		if _, err := exec.LookPath("aichat"); err == nil {
+			return "aichat"
+		}
+	case "amp":
+		// Explicit amp: amp → hexai → claude → aichat
 		if _, err := exec.LookPath("amp"); err == nil {
 			return "amp"
 		}
@@ -251,6 +269,14 @@ func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeCon
 	var cmd *exec.Cmd
 
 	switch selectedTool {
+	case "opencode":
+		fmt.Printf("Running opencode command (stdin payload)\n")
+		if readmeFound {
+			fmt.Printf("  echo <README content> | opencode run --model ollama/gpt-oss:120b \"%s\"\n", prompt)
+			fmt.Printf("  Using %s as input\n", readmeFile)
+			cmd = exec.Command("opencode", "run", "--model", "ollama/gpt-oss:120b", prompt)
+			cmd.Stdin = strings.NewReader(string(readmeContent))
+		}
 	case "amp":
 		fmt.Printf("Running amp command (stdin payload)\n")
 		if readmeFound {

@@ -420,10 +420,10 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
 	fmt.Printf("  Total prompt length: %d characters\n", len(instr.String())+len(input.String()))
 
-	// Determine which AI tool to use (default to amp if not set)
+	// Determine which AI tool to use (default to opencode if not set)
 	aiTool := m.aiTool
 	if aiTool == "" {
-		aiTool = "amp"
+		aiTool = "opencode"
 	}
 
 	// Build a full prompt string for tools that read a single argument
@@ -431,22 +431,43 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 
 	var releaseNotes string
 
-	// 1) Try amp first: echo input to stdin and pass instructions as argument
-	// Note: print stderr to console, but only use stdout for notes
-	if _, err := exec.LookPath("amp"); err == nil {
-		fmt.Println("  Running amp CLI command (stdin payload)...")
-		cmd := exec.Command("amp", "--execute", instr.String())
+	// 0) Try opencode first (local Ollama with gpt-oss:120b)
+	if _, err := exec.LookPath("opencode"); err == nil {
+		fmt.Println("  Running opencode CLI command (stdin payload)...")
+		cmd := exec.Command("opencode", "run", "--model", "ollama/gpt-oss:120b", instr.String())
 		cmd.Stdin = strings.NewReader(input.String())
 		cmd.Stderr = os.Stderr
 		out, err := cmd.Output()
 		if err != nil {
-			fmt.Printf("  amp CLI failed: %v\n", err)
+			fmt.Printf("  opencode CLI failed: %v\n", err)
 		} else {
 			notes := strings.TrimSpace(string(out))
 			if notes == "" {
-				fmt.Println("  amp returned empty output; will try fallbacks...")
+				fmt.Println("  opencode returned empty output; will try fallbacks...")
 			} else {
 				releaseNotes = notes
+			}
+		}
+	}
+
+	// 1) Try amp as fallback: echo input to stdin and pass instructions as argument
+	// Note: print stderr to console, but only use stdout for notes
+	if releaseNotes == "" {
+		if _, err := exec.LookPath("amp"); err == nil {
+			fmt.Println("  Running amp CLI command (stdin payload)...")
+			cmd := exec.Command("amp", "--execute", instr.String())
+			cmd.Stdin = strings.NewReader(input.String())
+			cmd.Stderr = os.Stderr
+			out, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("  amp CLI failed: %v\n", err)
+			} else {
+				notes := strings.TrimSpace(string(out))
+				if notes == "" {
+					fmt.Println("  amp returned empty output; will try fallbacks...")
+				} else {
+					releaseNotes = notes
+				}
 			}
 		}
 	}
@@ -506,8 +527,8 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		releaseNotes = notes
 	}
 
-	if releaseNotes == "" && aiTool == "amp" {
-		return "", fmt.Errorf("amp CLI not found in PATH and fallbacks failed")
+	if releaseNotes == "" && (aiTool == "opencode" || aiTool == "amp") {
+		return "", fmt.Errorf("opencode/amp CLI not found in PATH and fallbacks failed")
 	}
 
 	if releaseNotes == "" {
