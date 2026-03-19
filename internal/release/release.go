@@ -496,8 +496,7 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	if releaseNotes == "" && aiTool == "claude" {
 		fmt.Println("  Running claude CLI command...")
 		if _, err := exec.LookPath("claude"); err != nil {
-			fmt.Println("  claude CLI not found, falling back to aichat...")
-			aiTool = "aichat"
+			fmt.Println("  claude CLI not found, all fallbacks exhausted")
 		} else {
 			cmd := exec.Command("claude", "--model", "sonnet", fullPrompt)
 			cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
@@ -505,26 +504,10 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 			notes, err := m.executeAICommand(cmd, "claude")
 			if err != nil {
 				fmt.Printf("  Claude CLI failed: %v\n", err)
-				fmt.Println("  Falling back to aichat...")
-				aiTool = "aichat"
 			} else {
 				releaseNotes = notes
 			}
 		}
-	}
-
-	if releaseNotes == "" && aiTool == "aichat" {
-		fmt.Println("  Running aichat CLI command...")
-		if _, err := exec.LookPath("aichat"); err != nil {
-			return "", fmt.Errorf("aichat CLI not found in PATH and fallbacks failed")
-		}
-
-		cmd := exec.Command("aichat", fullPrompt)
-		notes, err := m.executeAICommand(cmd, "aichat")
-		if err != nil {
-			return "", fmt.Errorf("aichat CLI failed: %w", err)
-		}
-		releaseNotes = notes
 	}
 
 	if releaseNotes == "" && (aiTool == "opencode" || aiTool == "amp") {

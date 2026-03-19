@@ -216,7 +216,7 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 func selectSummaryTool(aiTool string) string {
 	switch aiTool {
 	case "opencode", "":
-		// Default chain: opencode → amp → hexai → claude → aichat
+		// Default chain: opencode → amp → hexai → claude
 		if _, err := exec.LookPath("opencode"); err == nil {
 			return "opencode"
 		}
@@ -229,11 +229,8 @@ func selectSummaryTool(aiTool string) string {
 		if _, err := exec.LookPath("claude"); err == nil {
 			return "claude"
 		}
-		if _, err := exec.LookPath("aichat"); err == nil {
-			return "aichat"
-		}
 	case "amp":
-		// Explicit amp: amp → hexai → claude → aichat
+		// Explicit amp: amp → hexai → claude
 		if _, err := exec.LookPath("amp"); err == nil {
 			return "amp"
 		}
@@ -243,9 +240,6 @@ func selectSummaryTool(aiTool string) string {
 		if _, err := exec.LookPath("claude"); err == nil {
 			return "claude"
 		}
-		if _, err := exec.LookPath("aichat"); err == nil {
-			return "aichat"
-		}
 	case "claude", "claude-code":
 		if _, err := exec.LookPath("claude"); err == nil {
 			return "claude"
@@ -253,10 +247,7 @@ func selectSummaryTool(aiTool string) string {
 		if _, err := exec.LookPath("hexai"); err == nil {
 			return "hexai"
 		}
-		if _, err := exec.LookPath("aichat"); err == nil {
-			return "aichat"
-		}
-	case "hexai", "aichat":
+	case "hexai":
 		if _, err := exec.LookPath(aiTool); err == nil {
 			return aiTool
 		}
@@ -295,14 +286,6 @@ func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeCon
 			fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
 			fmt.Printf("  Using %s as input\n", readmeFile)
 			cmd = exec.Command("hexai", prompt)
-			cmd.Stdin = strings.NewReader(string(readmeContent))
-		}
-	case "aichat":
-		fmt.Printf("Running aichat command:\n")
-		if readmeFound {
-			fmt.Printf("  echo <README content> | aichat \"%s\"\n", prompt)
-			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("aichat", prompt)
 			cmd.Stdin = strings.NewReader(string(readmeContent))
 		}
 	}
