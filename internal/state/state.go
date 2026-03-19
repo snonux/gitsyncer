@@ -73,7 +73,7 @@ func (s *State) HasRunWithinWeek() bool {
 	if s.LastBatchRun.IsZero() {
 		return false
 	}
-	return time.Since(s.LastBatchRun) < 7*24*time.Hour
+	return time.Since(s.LastBatchRun) < 17*24*time.Hour
 }
 
 // UpdateBatchRunTime updates the last batch run timestamp to now

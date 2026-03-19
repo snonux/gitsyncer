@@ -16,7 +16,7 @@ const (
 	defaultSyncInterval = 24 * time.Hour
 	throttleMinDays     = 60
 	throttleMaxDays     = 120
-	recentDays          = 7
+	recentDays          = 17
 )
 
 func loadSyncState(workDir string) (*state.Manager, *state.State, error) {
