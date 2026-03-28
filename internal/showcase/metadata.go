@@ -131,9 +131,9 @@ func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int, has
 	return score
 }
 
-// getCommitCount returns the total number of commits
+// getCommitCount returns the total number of commits reachable from the current HEAD.
 func getCommitCount(repoPath string) (int, error) {
-	cmd := exec.Command("git", "-C", repoPath, "rev-list", "--all", "--count")
+	cmd := exec.Command("git", "-C", repoPath, "rev-list", "--count", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return 0, err
@@ -179,7 +179,7 @@ func countLinesOfCode(repoPath string) (int, error) {
 
 // getFirstCommitDate returns the date of the first commit
 func getFirstCommitDate(repoPath string) (string, error) {
-	cmd := exec.Command("git", "-C", repoPath, "log", "--reverse", "--pretty=format:%ai", "--date=short")
+	cmd := exec.Command("git", "-C", repoPath, "log", "--reverse", "--pretty=format:%ai", "--date=short", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -199,7 +199,7 @@ func getFirstCommitDate(repoPath string) (string, error) {
 
 // getLastCommitDate returns the date of the last commit
 func getLastCommitDate(repoPath string) (string, error) {
-	cmd := exec.Command("git", "-C", repoPath, "log", "-1", "--pretty=format:%ai", "--date=short")
+	cmd := exec.Command("git", "-C", repoPath, "log", "-1", "--pretty=format:%ai", "--date=short", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return "", err
@@ -273,7 +273,7 @@ func detectLicense(repoPath string) string {
 // getAverageCommitAge calculates the average age of the last N commits in days
 func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 	// Get the last N commit dates
-	cmd := exec.Command("git", "-C", repoPath, "log", fmt.Sprintf("-%d", commitCount), "--pretty=format:%at")
+	cmd := exec.Command("git", "-C", repoPath, "log", fmt.Sprintf("-%d", commitCount), "--pretty=format:%at", "HEAD")
 	output, err := cmd.Output()
 	if err != nil {
 		return 0, err
@@ -311,14 +311,15 @@ func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 	return totalAge / float64(validCommits), nil
 }
 
-// getLatestTag returns the latest version-like tag, its date, whether the repo has releases, and total tag count.
+// getLatestTag returns the latest version-like tag merged into HEAD, its date,
+// whether the repo has releases, and total merged tag count.
 func getLatestTag(repoPath string) (string, string, bool, int, error) {
 	// First try to get tags sorted by version
-	cmd := exec.Command("git", "-C", repoPath, "tag", "-l", "--sort=-version:refname")
+	cmd := exec.Command("git", "-C", repoPath, "tag", "-l", "--merged", "HEAD", "--sort=-version:refname")
 	output, err := cmd.Output()
 	if err != nil {
 		// Fallback to describe
-		cmd = exec.Command("git", "-C", repoPath, "describe", "--tags", "--abbrev=0")
+		cmd = exec.Command("git", "-C", repoPath, "describe", "--tags", "--abbrev=0", "HEAD")
 		output, err = cmd.Output()
 		if err != nil {
 			// No tags at all

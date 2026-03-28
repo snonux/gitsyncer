@@ -205,9 +205,10 @@ type Organization struct {
 #### type Config
 ```go
 type Config struct {
-    Organizations   []Organization `json:"organizations"`    // List of git organizations
-    Repositories    []string       `json:"repositories"`     // Specific repos to sync
-    ExcludeBranches []string       `json:"exclude_branches"` // Regex patterns for branch exclusion
+    Organizations         []Organization      `json:"organizations"`             // List of git organizations
+    Repositories          []string            `json:"repositories"`              // Specific repos to sync
+    ExcludeBranches       []string            `json:"exclude_branches"`          // Regex patterns for branch exclusion
+    ShowcaseStatsBranches map[string]string   `json:"showcase_stats_branches"`   // Per-repo branch overrides for showcase stats/code snippets
 }
 ```
 

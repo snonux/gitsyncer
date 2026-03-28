@@ -174,7 +174,11 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 // runCommandWithTimeout runs a command with a short timeout and returns trimmed stdout.
 // Stderr is included in the error message for easier debugging when GITSYNCER_DEBUG=1.
 func runCommandWithTimeout(name string, args ...string) (string, error) {
-	ctx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	return runCommandWithCustomTimeout(8*time.Second, name, args...)
+}
+
+func runCommandWithCustomTimeout(timeout time.Duration, name string, args ...string) (string, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), timeout)
 	defer cancel()
 	cmd := exec.CommandContext(ctx, name, args...)
 	out, err := cmd.CombinedOutput()
@@ -680,6 +684,88 @@ func (g *Generator) buildProjectLinks(repoName string) (string, string) {
 	return codebergURL, githubURL
 }
 
+func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, func() error, error) {
+	if g.config == nil {
+		return repoPath, func() error { return nil }, nil
+	}
+
+	branch := strings.TrimSpace(g.config.ShowcaseStatsBranches[repoName])
+	if branch == "" {
+		return repoPath, func() error { return nil }, nil
+	}
+
+	resolvedRef, err := resolveShowcaseStatsRef(repoPath, branch)
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to resolve showcase stats branch for %s: %w", repoName, err)
+	}
+
+	tempPrefix := strings.ReplaceAll(repoName, string(os.PathSeparator), "-")
+	tempRoot, err := os.MkdirTemp("", "gitsyncer-showcase-"+tempPrefix+"-")
+	if err != nil {
+		return "", nil, fmt.Errorf("failed to create temporary worktree root for %s: %w", repoName, err)
+	}
+
+	worktreePath := filepath.Join(tempRoot, "repo")
+	if _, err := runCommandWithCustomTimeout(45*time.Second, "git", "-C", repoPath, "worktree", "add", "--detach", worktreePath, resolvedRef); err != nil {
+		_ = os.RemoveAll(tempRoot)
+		return "", nil, fmt.Errorf("failed to create showcase stats worktree for %s on branch %q: %w", repoName, branch, err)
+	}
+
+	cleanup := func() error {
+		defer os.RemoveAll(tempRoot)
+
+		if _, err := runCommandWithCustomTimeout(45*time.Second, "git", "-C", repoPath, "worktree", "remove", "--force", worktreePath); err != nil {
+			return fmt.Errorf("failed to remove temporary worktree for %s: %w", repoName, err)
+		}
+
+		return nil
+	}
+
+	if resolvedRef == branch {
+		fmt.Printf("Using showcase stats branch %q for %s\n", branch, repoName)
+	} else {
+		fmt.Printf("Using showcase stats branch %q for %s (resolved to %s)\n", branch, repoName, resolvedRef)
+	}
+
+	return worktreePath, cleanup, nil
+}
+
+func resolveShowcaseStatsRef(repoPath, branch string) (string, error) {
+	localRef := "refs/heads/" + branch
+	if _, err := runCommandWithTimeout("git", "-C", repoPath, "show-ref", "--verify", "--quiet", localRef); err == nil {
+		return branch, nil
+	}
+
+	output, err := runCommandWithTimeout("git", "-C", repoPath, "for-each-ref", "--format=%(refname)", "refs/remotes")
+	if err != nil {
+		return "", fmt.Errorf("failed to inspect remote refs for branch %q: %w", branch, err)
+	}
+
+	var candidates []string
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		ref := strings.TrimSpace(line)
+		if ref == "" || strings.HasSuffix(ref, "/HEAD") {
+			continue
+		}
+		if strings.HasSuffix(ref, "/"+branch) {
+			candidates = append(candidates, ref)
+		}
+	}
+
+	if len(candidates) == 0 {
+		return "", fmt.Errorf("branch %q not found locally or on any remote", branch)
+	}
+
+	sort.Strings(candidates)
+	for _, ref := range candidates {
+		if strings.HasPrefix(ref, "refs/remotes/origin/") {
+			return ref, nil
+		}
+	}
+
+	return candidates[0], nil
+}
+
 // generateProjectSummary generates a summary for a single project
 func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool) (*ProjectSummary, error) {
 	repoPath := filepath.Join(g.workDir, repoName)
@@ -708,9 +794,19 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 
 	readmeContent, readmeFile, readmeFound := findReadmeContent(repoPath)
 
+	statsRepoPath, cleanupStatsRepoPath, err := g.prepareStatsRepoPath(repoName, repoPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err := cleanupStatsRepoPath(); err != nil {
+			fmt.Printf("Warning: %v\n", err)
+		}
+	}()
+
 	// Always extract metadata (not cached)
 	fmt.Printf("Extracting repository metadata...\n")
-	metadata, err := extractRepoMetadata(repoPath)
+	metadata, err := extractRepoMetadata(statsRepoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to extract some metadata: %v\n", err)
 		// Continue anyway with partial metadata
@@ -755,7 +851,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	// Extract code snippet for all projects
 	var codeSnippet, codeLanguage string
 	if metadata != nil && len(metadata.Languages) > 0 {
-		snippet, lang, err := extractCodeSnippet(repoPath, metadata.Languages)
+		snippet, lang, err := extractCodeSnippet(statsRepoPath, metadata.Languages)
 		if err != nil {
 			fmt.Printf("Warning: Failed to extract code snippet: %v\n", err)
 		} else {

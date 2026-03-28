@@ -19,11 +19,12 @@ type Organization struct {
 
 // Config holds the application configuration
 type Config struct {
-	Organizations       []Organization `json:"organizations"`
-	Repositories        []string       `json:"repositories,omitempty"`
-	ExcludeBranches     []string       `json:"exclude_branches,omitempty"`      // Regex patterns for branches to exclude
-	WorkDir             string         `json:"work_dir,omitempty"`              // Working directory for cloning repositories
-	ExcludeFromShowcase []string       `json:"exclude_from_showcase,omitempty"` // Repository names to exclude from showcase
+	Organizations         []Organization    `json:"organizations"`
+	Repositories          []string          `json:"repositories,omitempty"`
+	ExcludeBranches       []string          `json:"exclude_branches,omitempty"`        // Regex patterns for branches to exclude
+	WorkDir               string            `json:"work_dir,omitempty"`                // Working directory for cloning repositories
+	ExcludeFromShowcase   []string          `json:"exclude_from_showcase,omitempty"`   // Repository names to exclude from showcase
+	ShowcaseStatsBranches map[string]string `json:"showcase_stats_branches,omitempty"` // Repository names mapped to the branch used for showcase stats/code snippets
 	// SkipReleases maps a repository name to a list of tag names for which
 	// releases should NOT be created on any platform (GitHub/Codeberg)
 	SkipReleases map[string][]string `json:"skip_releases,omitempty"`
@@ -99,6 +100,15 @@ func (c *Config) Validate() error {
 		// Name can be empty for file:// URLs or SSH backup locations
 		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() {
 			return fmt.Errorf("organization %d: missing name", i)
+		}
+	}
+
+	for repo, branch := range c.ShowcaseStatsBranches {
+		if strings.TrimSpace(repo) == "" {
+			return fmt.Errorf("showcase_stats_branches: repository name cannot be empty")
+		}
+		if strings.TrimSpace(branch) == "" {
+			return fmt.Errorf("showcase_stats_branches[%q]: branch name cannot be empty", repo)
 		}
 	}
 

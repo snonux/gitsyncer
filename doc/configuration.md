@@ -37,7 +37,10 @@ GitSyncer looks for configuration files in the following order:
   "exclude_branches": [
     "^temp-",
     "-wip$"
-  ]
+  ],
+  "showcase_stats_branches": {
+    "foo.zone": "content-gemtext"
+  }
 }
 ```
 
@@ -74,6 +77,18 @@ Example:
   "skip_releases": {
     "fapi": ["0.0.1", "0.0.2"],
     "another-repo": ["v1.0.0"]
+  }
+}
+```
+
+#### showcase_stats_branches (optional)
+Map of repository names to the branch that should be used when generating showcase statistics and cached code snippets. This is useful when the primary content for a repo lives on a non-default branch.
+
+Example:
+```json
+{
+  "showcase_stats_branches": {
+    "foo.zone": "content-gemtext"
   }
 }
 ```
@@ -123,7 +138,10 @@ Sync between GitHub and Codeberg:
     "^temp-",
     "-wip$",
     "^old-"
-  ]
+  ],
+  "showcase_stats_branches": {
+    "foo.zone": "content-gemtext"
+  }
 }
 ```
 

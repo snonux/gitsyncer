@@ -79,6 +79,69 @@ func TestGetLatestTag_ReturnsTotalTagCount(t *testing.T) {
 	}
 }
 
+func TestExtractRepoMetadata_UsesCurrentBranchState(t *testing.T) {
+	t.Parallel()
+
+	repoPath := t.TempDir()
+	runGit(t, repoPath, "init", "--initial-branch=main")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	writeAndCommit := func(name, content, message string) {
+		path := filepath.Join(repoPath, name)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("write file %s: %v", name, err)
+		}
+		runGit(t, repoPath, "add", name)
+		runGit(t, repoPath, "commit", "-m", message)
+	}
+
+	writeAndCommit("main.go", "package main\n\nfunc main() {\n}\n", "main branch")
+	runGit(t, repoPath, "tag", "v1.0.0")
+
+	runGit(t, repoPath, "checkout", "-b", "content-gemtext")
+	writeAndCommit("content.go", "package main\n\nfunc render() string {\n\treturn \"gemtext\"\n}\n", "content branch")
+	runGit(t, repoPath, "tag", "v2.0.0")
+
+	runGit(t, repoPath, "checkout", "main")
+
+	mainMetadata, err := extractRepoMetadata(repoPath)
+	if err != nil {
+		t.Fatalf("extractRepoMetadata(main) error = %v", err)
+	}
+	if mainMetadata.CommitCount != 1 {
+		t.Fatalf("main branch CommitCount = %d, want %d", mainMetadata.CommitCount, 1)
+	}
+	if mainMetadata.LinesOfCode != 4 {
+		t.Fatalf("main branch LinesOfCode = %d, want %d", mainMetadata.LinesOfCode, 4)
+	}
+	if mainMetadata.LatestTag != "v1.0.0" {
+		t.Fatalf("main branch LatestTag = %q, want %q", mainMetadata.LatestTag, "v1.0.0")
+	}
+	if mainMetadata.TagCount != 1 {
+		t.Fatalf("main branch TagCount = %d, want %d", mainMetadata.TagCount, 1)
+	}
+
+	runGit(t, repoPath, "checkout", "content-gemtext")
+
+	contentMetadata, err := extractRepoMetadata(repoPath)
+	if err != nil {
+		t.Fatalf("extractRepoMetadata(content-gemtext) error = %v", err)
+	}
+	if contentMetadata.CommitCount != 2 {
+		t.Fatalf("content-gemtext CommitCount = %d, want %d", contentMetadata.CommitCount, 2)
+	}
+	if contentMetadata.LinesOfCode != 9 {
+		t.Fatalf("content-gemtext LinesOfCode = %d, want %d", contentMetadata.LinesOfCode, 9)
+	}
+	if contentMetadata.LatestTag != "v2.0.0" {
+		t.Fatalf("content-gemtext LatestTag = %q, want %q", contentMetadata.LatestTag, "v2.0.0")
+	}
+	if contentMetadata.TagCount != 2 {
+		t.Fatalf("content-gemtext TagCount = %d, want %d", contentMetadata.TagCount, 2)
+	}
+}
+
 func runGit(t *testing.T, repoPath string, args ...string) string {
 	t.Helper()
 

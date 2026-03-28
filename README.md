@@ -62,7 +62,10 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
   "repositories": [
     "repo1",
     "repo2"
-  ]
+  ],
+  "showcase_stats_branches": {
+    "foo.zone": "content-gemtext"
+  }
 }
 ```
 
@@ -448,6 +451,8 @@ Weekly rank snapshots are written on full showcase runs (all repositories), incl
 ### Configuration
 
 The showcase output is written to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl` by default (currently hardcoded).
+
+You can override the branch used for showcase stats and cached code snippets on a per-repository basis with `showcase_stats_branches`. For example, `foo.zone` can use `content-gemtext` while the rest of the repos continue to use their current checkout branch.
 
 Projects can be excluded from the showcase by creating a `.nosync` file in their repository root.
 

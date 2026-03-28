@@ -2,6 +2,7 @@ package showcase
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"reflect"
 	"strings"
@@ -227,5 +228,129 @@ func TestExtractUsefulSummary_SkipsFencedCodeBlocks(t *testing.T) {
 
 	if got != want {
 		t.Fatalf("extractUsefulSummary() = %q, want %q", got, want)
+	}
+}
+
+func TestPrepareStatsRepoPath_UsesConfiguredBranchWithoutChangingMainCheckout(t *testing.T) {
+	t.Parallel()
+
+	repoPath := t.TempDir()
+	runGit(t, repoPath, "init", "--initial-branch=main")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	mainFile := filepath.Join(repoPath, "README.md")
+	if err := os.WriteFile(mainFile, []byte("main branch"), 0644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	runGit(t, repoPath, "add", "README.md")
+	runGit(t, repoPath, "commit", "-m", "main")
+
+	runGit(t, repoPath, "checkout", "-b", "content-gemtext")
+	branchOnlyFile := filepath.Join(repoPath, "branch-only.txt")
+	if err := os.WriteFile(branchOnlyFile, []byte("content branch"), 0644); err != nil {
+		t.Fatalf("write branch-only.txt: %v", err)
+	}
+	runGit(t, repoPath, "add", "branch-only.txt")
+	runGit(t, repoPath, "commit", "-m", "content branch")
+	runGit(t, repoPath, "checkout", "main")
+
+	g := &Generator{
+		config: &config.Config{
+			ShowcaseStatsBranches: map[string]string{
+				"foo.zone": "content-gemtext",
+			},
+		},
+	}
+
+	statsRepoPath, cleanup, err := g.prepareStatsRepoPath("foo.zone", repoPath)
+	if err != nil {
+		t.Fatalf("prepareStatsRepoPath() error = %v", err)
+	}
+	defer func() {
+		if err := cleanup(); err != nil {
+			t.Fatalf("cleanup() error = %v", err)
+		}
+	}()
+
+	if statsRepoPath == repoPath {
+		t.Fatal("expected a detached worktree path for configured stats branch")
+	}
+	if _, err := os.Stat(filepath.Join(statsRepoPath, "branch-only.txt")); err != nil {
+		t.Fatalf("expected branch-only file in detached worktree: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(repoPath, "branch-only.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected branch-only file to stay absent from main checkout, stat err = %v", err)
+	}
+
+	currentBranch := strings.TrimSpace(runGit(t, repoPath, "branch", "--show-current"))
+	if currentBranch != "main" {
+		t.Fatalf("current branch = %q, want %q", currentBranch, "main")
+	}
+}
+
+func TestPrepareStatsRepoPath_UsesRemoteTrackingBranchWhenLocalBranchMissing(t *testing.T) {
+	t.Parallel()
+
+	rootDir := t.TempDir()
+	seedRepoPath := filepath.Join(rootDir, "seed")
+	runGit(t, rootDir, "init", "--initial-branch=main", seedRepoPath)
+	runGit(t, seedRepoPath, "config", "user.name", "Test User")
+	runGit(t, seedRepoPath, "config", "user.email", "test@example.com")
+
+	if err := os.WriteFile(filepath.Join(seedRepoPath, "README.md"), []byte("main branch"), 0644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	runGit(t, seedRepoPath, "add", "README.md")
+	runGit(t, seedRepoPath, "commit", "-m", "main")
+
+	runGit(t, seedRepoPath, "checkout", "-b", "content-gemtext")
+	if err := os.WriteFile(filepath.Join(seedRepoPath, "branch-only.txt"), []byte("content branch"), 0644); err != nil {
+		t.Fatalf("write branch-only.txt: %v", err)
+	}
+	runGit(t, seedRepoPath, "add", "branch-only.txt")
+	runGit(t, seedRepoPath, "commit", "-m", "content branch")
+	runGit(t, seedRepoPath, "checkout", "main")
+
+	remoteRepoPath := filepath.Join(rootDir, "remote.git")
+	cloneCmd := exec.Command("git", "clone", "--bare", seedRepoPath, remoteRepoPath)
+	if output, err := cloneCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git clone --bare failed: %v\n%s", err, string(output))
+	}
+
+	cloneRepoPath := filepath.Join(rootDir, "clone")
+	workingCloneCmd := exec.Command("git", "clone", remoteRepoPath, cloneRepoPath)
+	if output, err := workingCloneCmd.CombinedOutput(); err != nil {
+		t.Fatalf("git clone failed: %v\n%s", err, string(output))
+	}
+
+	g := &Generator{
+		config: &config.Config{
+			ShowcaseStatsBranches: map[string]string{
+				"foo.zone": "content-gemtext",
+			},
+		},
+	}
+
+	statsRepoPath, cleanup, err := g.prepareStatsRepoPath("foo.zone", cloneRepoPath)
+	if err != nil {
+		t.Fatalf("prepareStatsRepoPath() error = %v", err)
+	}
+	defer func() {
+		if err := cleanup(); err != nil {
+			t.Fatalf("cleanup() error = %v", err)
+		}
+	}()
+
+	if _, err := os.Stat(filepath.Join(statsRepoPath, "branch-only.txt")); err != nil {
+		t.Fatalf("expected branch-only file in detached worktree from remote branch: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(cloneRepoPath, "branch-only.txt")); !os.IsNotExist(err) {
+		t.Fatalf("expected branch-only file to stay absent from main checkout, stat err = %v", err)
+	}
+
+	currentBranch := strings.TrimSpace(runGit(t, cloneRepoPath, "branch", "--show-current"))
+	if currentBranch != "main" {
+		t.Fatalf("current branch = %q, want %q", currentBranch, "main")
 	}
 }
