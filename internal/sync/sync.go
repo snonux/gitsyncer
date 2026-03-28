@@ -6,9 +6,18 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	stdsync "sync"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
+
+type backupSessionState struct {
+	mu       stdsync.Mutex
+	disabled bool
+	reason   string
+}
+
+var currentBackupSession backupSessionState
 
 // Syncer handles repository synchronization between organizations
 type Syncer struct {
@@ -43,6 +52,55 @@ func New(cfg *config.Config, workDir string) *Syncer {
 // SetBackupEnabled enables or disables syncing to backup locations
 func (s *Syncer) SetBackupEnabled(enabled bool) {
 	s.backupEnabled = enabled
+}
+
+func (s *Syncer) backupActive() bool {
+	if !s.backupEnabled {
+		return false
+	}
+
+	disabled, _ := currentBackupSession.status()
+	return !disabled
+}
+
+func (s *Syncer) disableBackupForSession(remoteName string, err error) {
+	if !s.backupEnabled {
+		return
+	}
+
+	reason := fmt.Sprintf("%s: %v", remoteName, err)
+	if currentBackupSession.disable(reason) {
+		fmt.Printf("Warning: Backup sync to %s failed: %v\n", remoteName, err)
+		fmt.Println("Warning: Disabling backup sync for the remainder of this session.")
+	}
+}
+
+func (b *backupSessionState) disable(reason string) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	if b.disabled {
+		return false
+	}
+
+	b.disabled = true
+	b.reason = reason
+	return true
+}
+
+func (b *backupSessionState) status() (bool, string) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return b.disabled, b.reason
+}
+
+func resetBackupSessionState() {
+	currentBackupSession.mu.Lock()
+	defer currentBackupSession.mu.Unlock()
+
+	currentBackupSession.disabled = false
+	currentBackupSession.reason = ""
 }
 
 // SyncRepository synchronizes a repository across all configured organizations
@@ -234,7 +292,7 @@ func (s *Syncer) fetchAll() error {
 	for remote := range remotes {
 		// Check if this remote is a backup location
 		if org, exists := allOrgsMap[remote]; exists && org.BackupLocation {
-			if !s.backupEnabled {
+			if !s.backupActive() {
 				// Silently skip - don't even print a message since backup is not enabled
 				continue
 			}
@@ -260,13 +318,9 @@ func (s *Syncer) getAllBranches() ([]string, error) {
 		return nil, err
 	}
 
-	// If backup is disabled, filter out branches from backup locations
-	if !s.backupEnabled {
-		filteredOutput := s.filterBackupBranches(output)
-		return getAllUniqueBranches(filteredOutput), nil
-	}
-
-	return getAllUniqueBranches(output), nil
+	// Backup remotes are push-only and must never influence branch discovery.
+	filteredOutput := s.filterBackupBranches(output)
+	return getAllUniqueBranches(filteredOutput), nil
 }
 
 // syncBranch synchronizes a specific branch across all remotes
@@ -296,7 +350,7 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 	}
 
 	// Push to all remotes
-	return pushToAllRemotes(repoPath, branch, remotes, remotesWithBranch)
+	return s.pushToAllRemotes(repoPath, branch, remotes, remotesWithBranch)
 }
 
 // handleWorkingDirectoryState checks for conflicts and stashes changes if needed

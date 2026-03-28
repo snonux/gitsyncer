@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"net/url"
 	"os/exec"
 	"regexp"
 	"strings"
@@ -245,23 +246,19 @@ func getAllUniqueBranches(output []byte) []string {
 
 // createSSHBareRepository creates a bare repository on an SSH server
 func createSSHBareRepository(sshHost, repoPath string) error {
-	// Extract user@host and path components
-	parts := strings.Split(sshHost, ":")
-	if len(parts) != 2 {
-		return fmt.Errorf("invalid SSH host format: %s", sshHost)
+	userHost, sshArgs, basePath, err := parseSSHLocation(sshHost)
+	if err != nil {
+		return err
 	}
 
-	userHost := parts[0]
-	basePath := parts[1]
-
 	// Full path to the repository
-	fullRepoPath := fmt.Sprintf("%s/%s.git", basePath, repoPath)
+	fullRepoPath := strings.TrimRight(basePath, "/") + "/" + repoPath + ".git"
 
 	fmt.Printf("Creating bare repository at %s:%s\n", userHost, fullRepoPath)
 
 	// Create the repository directory and initialize as bare
-	commands := fmt.Sprintf("mkdir -p %s && cd %s && git init --bare", fullRepoPath, fullRepoPath)
-	cmd := exec.Command("ssh", userHost, commands)
+	commands := fmt.Sprintf("mkdir -p %q && cd %q && git init --bare", fullRepoPath, fullRepoPath)
+	cmd := exec.Command("ssh", append(sshArgs, commands)...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -270,6 +267,41 @@ func createSSHBareRepository(sshHost, repoPath string) error {
 
 	fmt.Printf("Successfully created bare repository at %s:%s\n", userHost, fullRepoPath)
 	return nil
+}
+
+func parseSSHLocation(sshHost string) (string, []string, string, error) {
+	if strings.HasPrefix(sshHost, "ssh://") {
+		parsed, err := url.Parse(sshHost)
+		if err != nil {
+			return "", nil, "", fmt.Errorf("invalid SSH host format: %w", err)
+		}
+
+		host := parsed.Hostname()
+		if host == "" || parsed.Path == "" {
+			return "", nil, "", fmt.Errorf("invalid SSH host format: %s", sshHost)
+		}
+
+		userHost := host
+		if parsed.User != nil && parsed.User.Username() != "" {
+			userHost = parsed.User.Username() + "@" + host
+		}
+
+		sshArgs := make([]string, 0, 3)
+		if port := parsed.Port(); port != "" {
+			sshArgs = append(sshArgs, "-p", port)
+		}
+		sshArgs = append(sshArgs, userHost)
+
+		return userHost, sshArgs, parsed.Path, nil
+	}
+
+	parts := strings.SplitN(sshHost, ":", 2)
+	if len(parts) != 2 || parts[0] == "" || parts[1] == "" {
+		return "", nil, "", fmt.Errorf("invalid SSH host format: %s", sshHost)
+	}
+
+	userHost := parts[0]
+	return userHost, []string{userHost}, parts[1], nil
 }
 
 // pushBranchWithBackupSupport pushes a branch to a remote, creating SSH repos if needed

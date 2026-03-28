@@ -148,6 +148,25 @@ func TestFormatGemtext_SanitizesMarkdownHeadingsInSummary(t *testing.T) {
 	}
 }
 
+func TestFormatGemtext_IncludesCgitLink(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{config: &config.Config{}}
+	content := g.formatGemtext([]ProjectSummary{
+		{
+			Name:        "cpuinfo",
+			Summary:     "summary",
+			CodebergURL: "https://codeberg.org/snonux/cpuinfo",
+			GitHubURL:   "https://github.com/snonux/cpuinfo",
+			CgitURL:     "https://cgit.f3s.buetow.org/cpuinfo/",
+		},
+	})
+
+	if !strings.Contains(content, "=> https://cgit.f3s.buetow.org/cpuinfo/ View in cgit\n") {
+		t.Fatalf("cgit link was not rendered: %s", content)
+	}
+}
+
 func TestFindReadmeContent_UsesRepoPathWithoutChangingCWD(t *testing.T) {
 	t.Parallel()
 

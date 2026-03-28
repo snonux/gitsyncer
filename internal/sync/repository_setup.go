@@ -55,8 +55,8 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 		}
 		org := &s.config.Organizations[i]
 
-		// Skip backup locations if backup is not enabled
-		if org.BackupLocation && !s.backupEnabled {
+		// Skip backup locations unless backup sync is currently active.
+		if org.BackupLocation && !s.backupActive() {
 			continue
 		}
 
@@ -76,8 +76,8 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
 
-		// Skip backup locations if backup is not enabled
-		if org.BackupLocation && !s.backupEnabled {
+		// Skip backup locations unless backup sync is currently active.
+		if org.BackupLocation && !s.backupActive() {
 			continue
 		}
 
@@ -102,8 +102,8 @@ func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
 
-		// Skip backup locations if backup is not enabled
-		if org.BackupLocation && !s.backupEnabled {
+		// Skip backup locations unless backup sync is currently active.
+		if org.BackupLocation && !s.backupActive() {
 			continue
 		}
 

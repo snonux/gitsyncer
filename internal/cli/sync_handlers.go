@@ -12,6 +12,14 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/sync"
 )
 
+func shouldEnableBackupSync(flags *Flags) bool {
+	if flags == nil {
+		return false
+	}
+
+	return flags.Backup || flags.FullSync
+}
+
 // HandleSync handles syncing a single repository
 func HandleSync(cfg *config.Config, flags *Flags) int {
 	stateManager, syncState, err := loadSyncState(flags.WorkDir)
@@ -50,7 +58,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 	}
 
 	syncer := sync.New(cfg, flags.WorkDir)
-	syncer.SetBackupEnabled(flags.Backup)
+	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
 	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
 		fmt.Printf("ERROR: Sync failed: %v\n", err)
 		return 1
@@ -107,7 +115,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 
 	syncer := sync.New(cfg, flags.WorkDir)
-	syncer.SetBackupEnabled(flags.Backup)
+	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
 	successCount := 0
 	// Load descriptions cache
 	descCache := loadDescriptionCache(flags.WorkDir)
@@ -421,7 +429,7 @@ func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
 		descCache: loadDescriptionCache(flags.WorkDir),
 		syncer:    sync.New(cfg, flags.WorkDir),
 	}
-	execution.syncer.SetBackupEnabled(flags.Backup)
+	execution.syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
 
 	manager, st, err := loadSyncState(flags.WorkDir)
 	if err != nil {

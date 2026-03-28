@@ -27,6 +27,7 @@ type ProjectSummary struct {
 	Summary      string
 	CodebergURL  string
 	GitHubURL    string
+	CgitURL      string
 	Metadata     *RepoMetadata
 	RankHistory  []RepoRankHistory // Latest 5 weekly rank points, newest first
 	Images       []string          // Relative paths to images in showcase directory
@@ -669,9 +670,10 @@ func (g *Generator) getRepositories() ([]string, error) {
 	return repos, nil
 }
 
-func (g *Generator) buildProjectLinks(repoName string) (string, string) {
+func (g *Generator) buildProjectLinks(repoName string) (string, string, string) {
 	codebergURL := ""
 	githubURL := ""
+	cgitURL := fmt.Sprintf("https://cgit.f3s.buetow.org/%s/", repoName)
 
 	if codebergOrg := g.config.FindCodebergOrg(); codebergOrg != nil {
 		codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
@@ -681,7 +683,7 @@ func (g *Generator) buildProjectLinks(repoName string) (string, string) {
 		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
 	}
 
-	return codebergURL, githubURL
+	return codebergURL, githubURL, cgitURL
 }
 
 func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, func() error, error) {
@@ -833,7 +835,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	summary = sanitizeSummaryForGemtext(summary)
 
 	// Build URLs
-	codebergURL, githubURL := g.buildProjectLinks(repoName)
+	codebergURL, githubURL, cgitURL := g.buildProjectLinks(repoName)
 
 	// Always extract images from README (not cached)
 	fmt.Printf("Extracting images from README...\n")
@@ -865,6 +867,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		Summary:      summary,
 		CodebergURL:  codebergURL,
 		GitHubURL:    githubURL,
+		CgitURL:      cgitURL,
 		Metadata:     metadata,
 		Images:       images,
 		CodeSnippet:  codeSnippet,
@@ -1077,6 +1080,9 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 		}
 		if summary.GitHubURL != "" {
 			builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
+		}
+		if summary.CgitURL != "" {
+			builder.WriteString(fmt.Sprintf("=> %s View in cgit\n", summary.CgitURL))
 		}
 
 	}

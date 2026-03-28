@@ -10,11 +10,13 @@ import (
 
 // Organization represents a git organization with its host and name
 type Organization struct {
-	Host           string `json:"host"`
-	Name           string `json:"name"`
-	GitHubToken    string `json:"github_token,omitempty"`
-	CodebergToken  string `json:"codeberg_token,omitempty"`
-	BackupLocation bool   `json:"backupLocation,omitempty"` // Mark this as a backup-only destination
+	Host                string `json:"host"`
+	Name                string `json:"name"`
+	GitHubToken         string `json:"github_token,omitempty"`
+	CodebergToken       string `json:"codeberg_token,omitempty"`
+	BackupLocation      bool   `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
+	DescriptionSyncHost string `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
+	DescriptionSyncRoot string `json:"descriptionSyncRoot,omitempty"` // Filesystem path on DescriptionSyncHost where bare repos live
 }
 
 // Config holds the application configuration
@@ -100,6 +102,11 @@ func (c *Config) Validate() error {
 		// Name can be empty for file:// URLs or SSH backup locations
 		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() {
 			return fmt.Errorf("organization %d: missing name", i)
+		}
+		hasDescriptionSyncHost := strings.TrimSpace(org.DescriptionSyncHost) != ""
+		hasDescriptionSyncRoot := strings.TrimSpace(org.DescriptionSyncRoot) != ""
+		if hasDescriptionSyncHost != hasDescriptionSyncRoot {
+			return fmt.Errorf("organization %d: descriptionSyncHost and descriptionSyncRoot must be set together", i)
 		}
 	}
 

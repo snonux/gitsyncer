@@ -27,7 +27,8 @@ It has been vibe coded mainly using AI tools (Claude Code CLI and amp).
 - Merge conflict detection with clear error messages
 - Never deletes branches (only adds/updates)
 - GitHub token validation tool
-- Opt-in backup mode with --backup flag for resilient offline backups
+- Backup sync for full-sync modes, with `--backup` available for single-repo and `sync all` runs
+- In-memory backup fail-fast for a run: after the first backup failure, later repos skip backup attempts
 - Default once-daily sync limit with --force override
 - Opt-in sync throttling with --throttle based on local activity
 - AI-powered project showcase generation for documentation
@@ -56,7 +57,9 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
     },
     {
       "host": "user@nas.local:git",
-      "backupLocation": true
+      "backupLocation": true,
+      "descriptionSyncHost": "root@nas.local",
+      "descriptionSyncRoot": "/srv/git/repos"
     }
   ],
   "repositories": [
@@ -96,7 +99,7 @@ gitsyncer sync --help
 ```bash
 gitsyncer sync repo myproject
 
-# Include backup locations
+# Include backup locations for a single repository run
 gitsyncer sync repo myproject --backup
 
 # Preview what would be synced
@@ -130,7 +133,7 @@ When `--throttle` is enabled, GitSyncer still applies the default once-daily lim
 ```bash
 gitsyncer sync all
 
-# Include backup locations
+# Include backup locations when running sync all
 gitsyncer sync all --backup
 ```
 
@@ -162,10 +165,9 @@ gitsyncer sync bidirectional
 
 # Preview what would be synced
 gitsyncer sync bidirectional --dry-run
-
-# Include backup locations
-gitsyncer sync bidirectional --backup
 ```
+
+`sync bidirectional`, `sync codeberg-to-github`, `sync github-to-codeberg`, and `manage batch-run` now always try configured backup locations when `backupLocation: true` is present in the config. If the first backup push fails because the backup host is offline or unavailable, GitSyncer records that failure in memory and skips backup attempts for the rest of that process while continuing the primary sync targets.
 
 ### Release Management
 
@@ -362,6 +364,7 @@ You can configure SSH backup locations for one-way repository backups to private
    - Initialize a bare git repository
 4. **Archive functionality**: Repositories that exist only on the backup location are considered archived and won't be synced to other organizations
 5. **All branches and tags**: Every branch and tag is pushed to the backup location when `--backup` is used
+6. **Optional cgit description sync**: Set `descriptionSyncHost` and `descriptionSyncRoot` on a backup organization to mirror the canonical repository description into the bare repo `description` file used by cgit
 
 ### SSH Backup Example
 

@@ -40,9 +40,27 @@ func mergeFromRemotes(repoPath, branch string, remotesWithBranch map[string]bool
 	return nil
 }
 
+// handlePushError decides whether a push error should stop sync or only disable backup for this session.
+func (s *Syncer) handlePushError(remoteName string, org *config.Organization, err error) error {
+	if err == nil {
+		return nil
+	}
+
+	if org != nil && org.BackupLocation {
+		s.disableBackupForSession(remoteName, err)
+		return nil
+	}
+
+	return err
+}
+
 // pushToAllRemotes pushes the branch to all configured remotes
-func pushToAllRemotes(repoPath, branch string, remotes map[string]*config.Organization, remotesWithBranch map[string]bool) error {
+func (s *Syncer) pushToAllRemotes(repoPath, branch string, remotes map[string]*config.Organization, remotesWithBranch map[string]bool) error {
 	for remoteName, org := range remotes {
+		if org.BackupLocation && !s.backupActive() {
+			continue
+		}
+
 		// Check if this remote has the branch
 		remoteHasBranch := remotesWithBranch[remoteName]
 
@@ -52,7 +70,7 @@ func pushToAllRemotes(repoPath, branch string, remotes map[string]*config.Organi
 			fmt.Printf("  Pushing to %s (%s)...\n", remoteName, org.Host)
 		}
 
-		if err := pushBranchWithBackupSupport(repoPath, remoteName, branch, remoteHasBranch, org); err != nil {
+		if err := s.handlePushError(remoteName, org, pushBranchWithBackupSupport(repoPath, remoteName, branch, remoteHasBranch, org)); err != nil {
 			return err
 		}
 	}
