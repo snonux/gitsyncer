@@ -19,8 +19,8 @@ var releaseCmd = &cobra.Command{
 	Use:   "release",
 	Short: "Manage releases across platforms",
 	Long: `Check for version tags without releases and create them across 
-GitHub and Codeberg. Supports AI-generated release notes via amp (stdin pipeline),
-with fallback to hexai or Claude.`,
+GitHub and Codeberg. Supports AI-generated release notes via opencode (launch run with glm-5.1:cloud),
+with fallback to hexai, claude, or amp.`,
 }
 
 var releaseCheckCmd = &cobra.Command{
@@ -74,8 +74,8 @@ If no repository is specified, processes all configured repositories.`,
   # Create for specific repository without AI
   gitsyncer release create myproject --no-ai-notes
   
-  # Use amp for AI release notes
-gitsyncer release create --ai-tool amp`,
+  # Use opencode for AI release notes
+  gitsyncer release create --ai-tool opencode`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.CheckReleases = true
@@ -109,5 +109,5 @@ func init() {
 	releaseCreateCmd.Flags().BoolVar(&noAINotes, "no-ai-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 	releaseCreateCmd.Flags().BoolVar(&updateExisting, "update-existing", false, "update existing releases with new AI-generated notes")
 	releaseCreateCmd.Flags().StringVar(&templatePath, "template", "", "custom template for release notes")
-	releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "amp", "AI tool to use for release notes (amp, claude, or hexai; amp is tried first if available)")
+	releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "opencode", "AI tool to use for release notes (opencode, hexai, claude, or amp; opencode is tried first if available)")
 }

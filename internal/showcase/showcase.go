@@ -51,7 +51,7 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
-		aiTool:  "opencode", // default to opencode (local Ollama with gpt-oss:120b)
+		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.1:cloud)
 	}
 }
 
@@ -221,38 +221,39 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 func selectSummaryTool(aiTool string) string {
 	switch aiTool {
 	case "opencode", "":
-		// Default chain: opencode → amp → hexai → claude
-		if _, err := exec.LookPath("opencode"); err == nil {
+		// Default chain: opencode (via ollama launch) → hexai → claude → amp
+		if _, err := exec.LookPath("ollama"); err == nil {
 			return "opencode"
 		}
+		if _, err := exec.LookPath("hexai"); err == nil {
+			return "hexai"
+		}
+		if _, err := exec.LookPath("claude"); err == nil {
+			return "claude"
+		}
 		if _, err := exec.LookPath("amp"); err == nil {
 			return "amp"
-		}
-		if _, err := exec.LookPath("hexai"); err == nil {
-			return "hexai"
-		}
-		if _, err := exec.LookPath("claude"); err == nil {
-			return "claude"
-		}
-	case "amp":
-		// Explicit amp: amp → hexai → claude
-		if _, err := exec.LookPath("amp"); err == nil {
-			return "amp"
-		}
-		if _, err := exec.LookPath("hexai"); err == nil {
-			return "hexai"
-		}
-		if _, err := exec.LookPath("claude"); err == nil {
-			return "claude"
-		}
-	case "claude", "claude-code":
-		if _, err := exec.LookPath("claude"); err == nil {
-			return "claude"
-		}
-		if _, err := exec.LookPath("hexai"); err == nil {
-			return "hexai"
 		}
 	case "hexai":
+		// Explicit hexai: hexai → claude → amp
+		if _, err := exec.LookPath("hexai"); err == nil {
+			return "hexai"
+		}
+		if _, err := exec.LookPath("claude"); err == nil {
+			return "claude"
+		}
+		if _, err := exec.LookPath("amp"); err == nil {
+			return "amp"
+		}
+	case "claude", "claude-code":
+		// Explicit claude: claude → amp
+		if _, err := exec.LookPath("claude"); err == nil {
+			return "claude"
+		}
+		if _, err := exec.LookPath("amp"); err == nil {
+			return "amp"
+		}
+	case "amp":
 		if _, err := exec.LookPath(aiTool); err == nil {
 			return aiTool
 		}
@@ -266,31 +267,31 @@ func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeCon
 
 	switch selectedTool {
 	case "opencode":
-		fmt.Printf("Running opencode command (stdin payload)\n")
+		fmt.Printf("Running ollama launch opencode command\n")
 		if readmeFound {
-			fmt.Printf("  echo <README content> | opencode run --model ollama/gpt-oss:120b \"%s\"\n", prompt)
+			fullPrompt := prompt + "\n\nREADME content:\n" + string(readmeContent)
+			fmt.Printf("  ollama launch opencode --model glm-5.1:cloud -y -- run \"...\"\n")
 			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("opencode", "run", "--model", "ollama/gpt-oss:120b", prompt)
-			cmd.Stdin = strings.NewReader(string(readmeContent))
+			cmd = exec.Command("ollama", "launch", "opencode", "--model", "glm-5.1:cloud", "-y", "--", "run", fullPrompt)
 		}
-	case "amp":
-		fmt.Printf("Running amp command (stdin payload)\n")
-		if readmeFound {
-			fmt.Printf("  echo <README content> | amp --execute \"%s\"\n", prompt)
-			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("amp", "--execute", prompt)
-			cmd.Stdin = strings.NewReader(string(readmeContent))
-		}
-	case "claude":
-		fmt.Printf("Running Claude command:\n")
-		fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
-		cmd = exec.Command("claude", "--model", "sonnet", prompt)
 	case "hexai":
 		fmt.Printf("Running hexai command (stdin payload)\n")
 		if readmeFound {
 			fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
 			fmt.Printf("  Using %s as input\n", readmeFile)
 			cmd = exec.Command("hexai", prompt)
+			cmd.Stdin = strings.NewReader(string(readmeContent))
+		}
+	case "claude":
+		fmt.Printf("Running Claude command:\n")
+		fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
+		cmd = exec.Command("claude", "--model", "sonnet", prompt)
+	case "amp":
+		fmt.Printf("Running amp command (stdin payload)\n")
+		if readmeFound {
+			fmt.Printf("  echo <README content> | amp --execute \"%s\"\n", prompt)
+			fmt.Printf("  Using %s as input\n", readmeFile)
+			cmd = exec.Command("amp", "--execute", prompt)
 			cmd.Stdin = strings.NewReader(string(readmeContent))
 		}
 	}
@@ -788,7 +789,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	}
 
 	// Determine which AI tool to use (only if we need to run it)
-	// Prefer amp if available when default tool is "" (aligns with release flow)
+	// Prefer opencode if available when default tool is "" (aligns with release flow)
 	selectedTool := g.aiTool
 	if !haveCachedSummary {
 		selectedTool = selectSummaryTool(g.aiTool)

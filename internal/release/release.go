@@ -431,48 +431,25 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 
 	var releaseNotes string
 
-	// 0) Try opencode first (local Ollama with gpt-oss:120b)
-	if _, err := exec.LookPath("opencode"); err == nil {
-		fmt.Println("  Running opencode CLI command (stdin payload)...")
-		cmd := exec.Command("opencode", "run", "--model", "ollama/gpt-oss:120b", instr.String())
-		cmd.Stdin = strings.NewReader(input.String())
+	// 0) Try opencode first (glm-5.1:cloud via ollama launch)
+	if _, err := exec.LookPath("ollama"); err == nil {
+		fmt.Println("  Running ollama launch opencode ...")
+		cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.1:cloud", "-y", "--", "run", fullPrompt)
 		cmd.Stderr = os.Stderr
 		out, err := cmd.Output()
 		if err != nil {
-			fmt.Printf("  opencode CLI failed: %v\n", err)
+			fmt.Printf("opencode ollama failed: %v\n", err)
 		} else {
 			notes := strings.TrimSpace(string(out))
 			if notes == "" {
-				fmt.Println("  opencode returned empty output; will try fallbacks...")
+				fmt.Println("  ollama opencode returned empty output; will try fallbacks...")
 			} else {
 				releaseNotes = notes
 			}
 		}
 	}
 
-	// 1) Try amp as fallback: echo input to stdin and pass instructions as argument
-	// Note: print stderr to console, but only use stdout for notes
-	if releaseNotes == "" {
-		if _, err := exec.LookPath("amp"); err == nil {
-			fmt.Println("  Running amp CLI command (stdin payload)...")
-			cmd := exec.Command("amp", "--execute", instr.String())
-			cmd.Stdin = strings.NewReader(input.String())
-			cmd.Stderr = os.Stderr
-			out, err := cmd.Output()
-			if err != nil {
-				fmt.Printf("  amp CLI failed: %v\n", err)
-			} else {
-				notes := strings.TrimSpace(string(out))
-				if notes == "" {
-					fmt.Println("  amp returned empty output; will try fallbacks...")
-				} else {
-					releaseNotes = notes
-				}
-			}
-		}
-	}
-
-	// 2) Try hexai as fallback
+	// 1) Try hexai as fallback
 	if releaseNotes == "" {
 		if _, err := exec.LookPath("hexai"); err == nil {
 			fmt.Println("  Running hexai CLI command (stdin payload)...")
@@ -493,14 +470,12 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		}
 	}
 
-	if releaseNotes == "" && aiTool == "claude" {
-		fmt.Println("  Running claude CLI command...")
-		if _, err := exec.LookPath("claude"); err != nil {
-			fmt.Println("  claude CLI not found, all fallbacks exhausted")
-		} else {
+	// 2) Try claude as fallback
+	if releaseNotes == "" {
+		if _, err := exec.LookPath("claude"); err == nil {
+			fmt.Println("  Running claude CLI command...")
 			cmd := exec.Command("claude", "--model", "sonnet", fullPrompt)
 			cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
-
 			notes, err := m.executeAICommand(cmd, "claude")
 			if err != nil {
 				fmt.Printf("  Claude CLI failed: %v\n", err)
@@ -510,8 +485,26 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		}
 	}
 
-	if releaseNotes == "" && (aiTool == "opencode" || aiTool == "amp") {
-		return "", fmt.Errorf("opencode/amp CLI not found in PATH and fallbacks failed")
+	// 3) Try amp as fallback: echo input to stdin and pass instructions as argument
+	// Note: print stderr to console, but only use stdout for notes
+	if releaseNotes == "" {
+		if _, err := exec.LookPath("amp"); err == nil {
+			fmt.Println("  Running amp CLI command (stdin payload)...")
+			cmd := exec.Command("amp", "--execute", instr.String())
+			cmd.Stdin = strings.NewReader(input.String())
+			cmd.Stderr = os.Stderr
+			out, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("  amp CLI failed: %v\n", err)
+			} else {
+				notes := strings.TrimSpace(string(out))
+				if notes == "" {
+					fmt.Println("  amp returned empty output; will try fallbacks...")
+				} else {
+					releaseNotes = notes
+				}
+			}
+		}
 	}
 
 	if releaseNotes == "" {

@@ -22,7 +22,7 @@ var showcaseCmd = &cobra.Command{
 	Short: "Generate AI-powered project showcase",
 	Long: `Generate a comprehensive showcase of all your projects using AI.
 This feature creates a formatted document with project summaries, statistics,
-and code snippets. By default uses opencode (local Ollama), with fallback to amp, hexai, and claude.`,
+and code snippets. By default uses opencode (via ollama launch with glm-5.1:cloud), with fallback to hexai, claude, and amp.`,
 	Example: `  # Generate showcase with cached summaries
   gitsyncer showcase
   
@@ -63,6 +63,6 @@ func init() {
 	showcaseCmd.Flags().StringVarP(&outputPath, "output", "o", "", "custom output eath (default: ~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl)")
 	showcaseCmd.Flags().StringVar(&outputFormat, "format", "gemtext", "output format: gemtext, markdown, html")
 	showcaseCmd.Flags().StringVar(&excludePattern, "exclude", "", "exclude repos matching pattern")
-	showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "opencode", "AI tool for summaries: opencode, amp, hexai, claude, or claude-code (default tries opencode→amp→hexai→claude)")
+  showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "opencode", "AI tool for summaries: opencode, hexai, claude, amp, or claude-code (default tries opencode→hexai→claude→amp)")
 	showcaseCmd.Flags().StringVar(&showcaseRepo, "repo", "", "only generate showcase for a single repository")
 }
