@@ -324,7 +324,7 @@ svg{background:#1a1a2e;font-family:monospace}
 .title{fill:#ddd;font-size:14px;font-weight:bold}
 .sub{fill:#666;font-size:10px}
 .pg{cursor:pointer;opacity:.55;transition:opacity .15s}
-.pl{stroke-width:1.8;fill:none}
+.pl{stroke-width:1;fill:none}
 .pd circle{transition:r .15s}
 .lg{cursor:pointer;opacity:1;transition:opacity .15s}
 .ltx{fill:#aaa;font-size:9px}
