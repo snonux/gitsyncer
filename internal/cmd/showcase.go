@@ -63,6 +63,6 @@ func init() {
 	showcaseCmd.Flags().StringVarP(&outputPath, "output", "o", "", "custom output eath (default: ~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl)")
 	showcaseCmd.Flags().StringVar(&outputFormat, "format", "gemtext", "output format: gemtext, markdown, html")
 	showcaseCmd.Flags().StringVar(&excludePattern, "exclude", "", "exclude repos matching pattern")
-  showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "opencode", "AI tool for summaries: opencode, hexai, claude, amp, or claude-code (default tries opencode→hexai→claude→amp)")
+	showcaseCmd.Flags().StringVar(&showcaseAITool, "ai-tool", "opencode", "AI tool for summaries: opencode, hexai, claude, amp, or claude-code (default tries opencode→hexai→claude→amp)")
 	showcaseCmd.Flags().StringVar(&showcaseRepo, "repo", "", "only generate showcase for a single repository")
 }

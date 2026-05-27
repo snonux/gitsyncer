@@ -156,17 +156,28 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 
 	applyRankHistoryToSummaries(summaries, rankHistoryStore, anchorDate, rankHistoryPoints)
 
-	// When filtering (single repo), we need to update existing showcase
+	// When filtering (single repo), we need to update existing showcase.
+	// updateShowcaseFile merges the new summary with all cached ones and returns
+	// the complete, sorted list so we can regenerate the SVG consistently.
+	var allSummaries []ProjectSummary
 	if len(repoFilter) > 0 {
-		if err := g.updateShowcaseFile(summaries); err != nil {
+		allSummaries, err = g.updateShowcaseFile(summaries)
+		if err != nil {
 			return fmt.Errorf("failed to update showcase file: %w", err)
 		}
 	} else {
-		// Full regeneration - format as Gemtext and write
+		// Full regeneration - format as Gemtext and write.
 		content := g.formatGemtext(summaries)
 		if err := g.writeShowcaseFile(content); err != nil {
 			return fmt.Errorf("failed to write showcase file: %w", err)
 		}
+		allSummaries = summaries
+	}
+
+	// Always regenerate the interactive SVG rank history alongside the text showcase.
+	if err := g.writeRankHistorySVGFile(allSummaries); err != nil {
+		// Non-fatal: log the warning but don't abort the showcase run.
+		fmt.Printf("Warning: failed to write rank history SVG: %v\n", err)
 	}
 
 	return nil
@@ -840,11 +851,10 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 
 	// Always extract images from README (not cached)
 	fmt.Printf("Extracting images from README...\n")
-	home, err := os.UserHomeDir()
+	showcaseDir, err := showcaseOutputDir()
 	if err != nil {
-		return nil, fmt.Errorf("failed to get home directory: %w", err)
+		return nil, err
 	}
-	showcaseDir := filepath.Join(home, "git", "foo.zone-content", "gemtext", "about")
 	images, err := extractImagesFromRepo(repoPath, repoName, showcaseDir)
 	if err != nil {
 		fmt.Printf("Warning: Failed to extract images: %v\n", err)
@@ -897,6 +907,9 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 
 	// Introduction paragraph
 	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, releases, and licensing. The projects are ranked by score, which combines recent activity, project size, tag history, and whether the project has shipped a release.\n\n")
+
+	// Link to the interactive SVG rank history graph generated alongside this file.
+	builder.WriteString("=> rank-history.svg Interactive Project Rank History Graph (SVG)\n\n")
 
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
@@ -1091,15 +1104,24 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	return builder.String()
 }
 
-// writeShowcaseFile writes the showcase content to the target file
-func (g *Generator) writeShowcaseFile(content string) error {
-	// Build target path
+// showcaseOutputDir returns the canonical directory where showcase output files
+// (Gemtext, SVG, images) are written. Centralised here so all writers agree on
+// the path and a future change only needs to touch one place.
+func showcaseOutputDir() (string, error) {
 	home, err := os.UserHomeDir()
 	if err != nil {
-		return fmt.Errorf("failed to get home directory: %w", err)
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(home, "git", "foo.zone-content", "gemtext", "about"), nil
+}
+
+// writeShowcaseFile writes the showcase content to the target file
+func (g *Generator) writeShowcaseFile(content string) error {
+	targetDir, err := showcaseOutputDir()
+	if err != nil {
+		return err
 	}
 
-	targetDir := filepath.Join(home, "git", "foo.zone-content", "gemtext", "about")
 	targetFile := filepath.Join(targetDir, "showcase.gmi.tpl")
 
 	// Create directory if it doesn't exist
@@ -1116,21 +1138,51 @@ func (g *Generator) writeShowcaseFile(content string) error {
 	return nil
 }
 
-// updateShowcaseFile updates specific entries in an existing showcase file
-func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
-	// Load existing summaries from cache files instead of parsing Gemtext
+// writeRankHistorySVGFile generates an interactive SVG rank history graph and
+// writes it to the same directory as the showcase Gemtext file.
+func (g *Generator) writeRankHistorySVGFile(summaries []ProjectSummary) error {
+	targetDir, err := showcaseOutputDir()
+	if err != nil {
+		return err
+	}
+
+	if err := os.MkdirAll(targetDir, 0755); err != nil {
+		return fmt.Errorf("failed to create directory %s: %w", targetDir, err)
+	}
+
+	svgContent := GenerateRankHistorySVG(summaries)
+
+	targetFile := filepath.Join(targetDir, "rank-history.svg")
+	if err := os.WriteFile(targetFile, []byte(svgContent), 0644); err != nil {
+		return fmt.Errorf("failed to write rank history SVG: %w", err)
+	}
+
+	fmt.Printf("Rank history SVG written to: %s\n", targetFile)
+	return nil
+}
+
+// updateShowcaseFile merges newSummaries with all existing cached project
+// summaries, re-sorts by score, applies rank history, regenerates the Gemtext
+// showcase file, and returns the complete sorted summary list so the caller
+// can also regenerate the SVG graph consistently.
+func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) ([]ProjectSummary, error) {
+	// Load all cached summaries from disk so the full project list is available.
 	existingSummaries := make(map[string]ProjectSummary)
 
-	// Get all repositories in work directory to load their cached summaries
+	// Load all existing cached summaries so the single-repo update does not
+	// accidentally truncate the full showcase to just the one regenerated project.
+	// If getRepositories fails (e.g. work directory temporarily unavailable),
+	// log a warning and continue — the overlay below will still write newSummaries,
+	// which is better than silently producing an empty/truncated output file.
 	repos, err := g.getRepositories()
-	if err == nil {
+	if err != nil {
+		fmt.Printf("Warning: failed to list repositories for showcase update: %v (cached repos may be missing from output)\n", err)
+	} else {
 		cacheDir := filepath.Join(g.workDir, ".gitsyncer-showcase-cache")
 		for _, repo := range repos {
-			// Skip excluded repos
 			if g.isExcluded(repo) {
 				continue
 			}
-
 			cacheFile := filepath.Join(cacheDir, repo+".json")
 			if cached, err := g.loadFromCache(cacheFile); err == nil {
 				existingSummaries[repo] = *cached
@@ -1138,44 +1190,40 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) error {
 		}
 	}
 
-	// Update with new summaries
+	// Overlay the freshly generated summaries onto the cached set.
 	for _, summary := range newSummaries {
 		existingSummaries[summary.Name] = summary
 	}
 
-	// Convert map to slice
-	var allSummaries []ProjectSummary
+	// Flatten map to slice and sort by score (highest first).
+	allSummaries := make([]ProjectSummary, 0, len(existingSummaries))
 	for _, summary := range existingSummaries {
 		allSummaries = append(allSummaries, summary)
 	}
-
-	// Sort by score (highest first)
 	sort.Slice(allSummaries, func(i, j int) bool {
-		// If metadata is missing, put at the end
 		if allSummaries[i].Metadata == nil {
 			return false
 		}
 		if allSummaries[j].Metadata == nil {
 			return true
 		}
-		// Higher score is better (combines LOC and recent activity)
 		return allSummaries[i].Metadata.Score > allSummaries[j].Metadata.Score
 	})
 
 	rankHistoryFile := filepath.Join(g.workDir, rankHistoryFilename)
 	rankHistoryStore, err := loadRankHistory(rankHistoryFile)
 	if err != nil {
-		return fmt.Errorf("failed to load rank history: %w", err)
+		return nil, fmt.Errorf("failed to load rank history: %w", err)
 	}
 	applyRankHistoryToSummaries(allSummaries, rankHistoryStore, time.Now(), rankHistoryPoints)
 
-	// Format and write
+	// Format and write the Gemtext showcase.
 	content := g.formatGemtext(allSummaries)
 	if err := g.writeShowcaseFile(content); err != nil {
-		return err
+		return nil, err
 	}
 
-	return nil
+	return allSummaries, nil
 }
 
 // loadFromCache loads a project summary from cache
@@ -1217,12 +1265,10 @@ func (g *Generator) verifyImages(summary *ProjectSummary) error {
 		return nil
 	}
 
-	home, err := os.UserHomeDir()
+	showcaseDir, err := showcaseOutputDir()
 	if err != nil {
 		return err
 	}
-
-	showcaseDir := filepath.Join(home, "git", "foo.zone-content", "gemtext", "about")
 
 	for _, imgPath := range summary.Images {
 		fullPath := filepath.Join(showcaseDir, imgPath)
