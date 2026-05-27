@@ -309,11 +309,12 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	// --- Assemble the full SVG ---
 	var svg strings.Builder
 
-	// width/height="100%" makes the SVG fill the browser window.  No viewBox
-	// or preserveAspectRatio here — the JS rescale() function sets the viewBox
-	// to the window size and applies a translate+scale transform on #chart so
-	// the graph always fits the window without letterboxing.
-	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">`)
+	// position:fixed + top/left:0 overrides the browser's default body margin
+	// so the SVG sits flush against all four edges of the viewport.  No width,
+	// height, or viewBox is set here; rescale() writes them as explicit pixel
+	// values derived from window.innerWidth/innerHeight so the chart always
+	// fills the window without letterboxing.
+	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" style="position:fixed;top:0;left:0;display:block">`)
 
 	// Embedded CSS – kept compact but readable.
 	svg.WriteString(`<style>
@@ -394,11 +395,15 @@ var allLG=chartEl.querySelectorAll('.lg');
 var activeIdx=-1;
 
 // rescale keeps the chart group centered and fully visible at any window size.
-// It sets a viewBox matching the window and applies a uniform scale+translate
-// to #chart so that the fixed CHART_W×CHART_H design fits without letterboxing.
+// Sets explicit pixel width/height (bypassing the body-margin trap that
+// makes percentage-relative sizes fall short in standalone SVG files) and a
+// matching viewBox, then applies a uniform scale+translate to #chart so the
+// CHART_W x CHART_H design fills the window exactly along the limiting axis.
 function rescale(){
   var W=window.innerWidth||document.documentElement.clientWidth;
   var H=window.innerHeight||document.documentElement.clientHeight;
+  svgEl.setAttribute('width',W);
+  svgEl.setAttribute('height',H);
   svgEl.setAttribute('viewBox','0 0 '+W+' '+H);
   var s=Math.min(W/CHART_W,H/CHART_H);
   var tx=(W-CHART_W*s)/2, ty=(H-CHART_H*s)/2;
