@@ -309,11 +309,11 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	// --- Assemble the full SVG ---
 	var svg strings.Builder
 
-	// width/height="100%" makes the SVG fill the browser window while the
-	// viewBox preserves internal coordinate space and aspect ratio.
-	fmt.Fprintf(&svg,
-		`<svg xmlns="http://www.w3.org/2000/svg" width="100%%" height="100%%" viewBox="0 0 %d %d" preserveAspectRatio="xMidYMid meet">`,
-		svgViewWidth, svgViewHeight)
+	// width/height="100%" makes the SVG fill the browser window.  No viewBox
+	// or preserveAspectRatio here — the JS rescale() function sets the viewBox
+	// to the window size and applies a translate+scale transform on #chart so
+	// the graph always fits the window without letterboxing.
+	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" width="100%" height="100%">`)
 
 	// Embedded CSS – kept compact but readable.
 	svg.WriteString(`<style>
@@ -334,9 +334,11 @@ svg{background:#1a1a2e;font-family:monospace}
 .ttrow{fill:#bbb;font-size:10px;font-family:monospace}
 </style>`)
 
-	// Solid background rect (belt-and-suspenders for SVG viewers that ignore
-	// the CSS background property).
-	fmt.Fprintf(&svg, `<rect width="%d" height="%d" fill="#1a1a2e"/>`, svgViewWidth, svgViewHeight)
+	// Solid background rect covers the whole viewport regardless of how the
+	// chart group is transformed.  #chart is opened next so that rescale()
+	// can reposition all chart elements together as a single unit.
+	svg.WriteString(`<rect width="100%" height="100%" fill="#1a1a2e"/>`)
+	svg.WriteString(`<g id="chart">`)
 
 	// Title + subtitle.
 	fmt.Fprintf(&svg, `<text class="title" x="%d" y="28" text-anchor="middle">Project Rank History</text>`, svgViewWidth/2)
@@ -368,19 +370,42 @@ svg{background:#1a1a2e;font-family:monospace}
 <g id="ttbd"></g>
 </g>`)
 
-	// Inline JavaScript for interactivity.
+	// Close the #chart group before the script so all chart elements are
+	// contained inside it and can be repositioned together by rescale().
+	svg.WriteString(`</g>`)
+
+	// Inline JavaScript for interactivity and dynamic scaling.
 	// PROJECTS is the JSON array; each entry has name, color, and points[].
+	// CHART_W / CHART_H are the fixed viewBox coordinates used when designing
+	// the chart; rescale() maps them to the actual window size at runtime.
 	fmt.Fprintf(&svg, `<script><![CDATA[
 var PROJECTS=%s;
+var CHART_W=%d, CHART_H=%d;
 var svgEl=document.querySelector('svg');
+var chartEl=document.getElementById('chart');
 var tt=document.getElementById('tt');
 var ttbg=document.getElementById('ttbg');
 var tttl=document.getElementById('tttl');
 var ttbd=document.getElementById('ttbd');
 // allPG = plot line groups; allLG = legend entry groups (same count, same order).
-var allPG=svgEl.querySelectorAll('.pg');
-var allLG=svgEl.querySelectorAll('.lg');
+// Query inside chartEl so the IDs are scoped to the chart group.
+var allPG=chartEl.querySelectorAll('.pg');
+var allLG=chartEl.querySelectorAll('.lg');
 var activeIdx=-1;
+
+// rescale keeps the chart group centered and fully visible at any window size.
+// It sets a viewBox matching the window and applies a uniform scale+translate
+// to #chart so that the fixed CHART_W×CHART_H design fits without letterboxing.
+function rescale(){
+  var W=window.innerWidth||document.documentElement.clientWidth;
+  var H=window.innerHeight||document.documentElement.clientHeight;
+  svgEl.setAttribute('viewBox','0 0 '+W+' '+H);
+  var s=Math.min(W/CHART_W,H/CHART_H);
+  var tx=(W-CHART_W*s)/2, ty=(H-CHART_H*s)/2;
+  chartEl.setAttribute('transform','translate('+tx+','+ty+') scale('+s+')');
+}
+window.addEventListener('resize',rescale);
+rescale();
 
 // onEnter is called when the cursor enters a project group or legend entry.
 // It dims all other groups, shows the tooltip, and marks the project active.
@@ -420,7 +445,7 @@ function onEnter(idx,evt){
   for(var i=0;i<allPG.length;i++){
     allPG[i].style.opacity=(i===idx)?'1':'0.08';
   }
-  // Bold the hovered line. allPG[idx] is already the correct element.
+  // Bold the hovered line.
   allPG[idx].querySelector('.pl').style.strokeWidth='3';
 
   // Highlight hovered legend entry; dim all others.
@@ -450,21 +475,22 @@ svgEl.addEventListener('mousemove',function(evt){
   if(activeIdx>=0)moveTT(evt);
 });
 
-// moveTT repositions the tooltip near the cursor, keeping it inside the viewBox.
+// moveTT repositions the tooltip near the cursor, keeping it inside the chart
+// coordinate space (CHART_W × CHART_H).  chartEl.getScreenCTM() accounts for
+// the rescale() transform, so the returned point is already in chart coords.
 function moveTT(evt){
   var pt=svgEl.createSVGPoint();
   pt.x=evt.clientX; pt.y=evt.clientY;
-  var sp=pt.matrixTransform(svgEl.getScreenCTM().inverse());
+  var sp=pt.matrixTransform(chartEl.getScreenCTM().inverse());
   var w=parseFloat(ttbg.getAttribute('width'));
   var h=parseFloat(ttbg.getAttribute('height'));
   var tx=sp.x+14, ty=sp.y-10;
-  var vw=svgEl.viewBox.baseVal.width, vh=svgEl.viewBox.baseVal.height;
-  if(tx+w>vw-5)tx=sp.x-w-14;
-  if(ty+h>vh-5)ty=vh-h-5;
+  if(tx+w>CHART_W-5)tx=sp.x-w-14;
+  if(ty+h>CHART_H-5)ty=CHART_H-h-5;
   if(ty<5)ty=5;
   tt.setAttribute('transform','translate('+tx+','+ty+')');
 }
-]]></script>`, string(projectsJSON))
+]]></script>`, string(projectsJSON), svgViewWidth, svgViewHeight)
 
 	svg.WriteString(`</svg>`)
 	return svg.String()
