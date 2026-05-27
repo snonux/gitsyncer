@@ -384,11 +384,15 @@ svg{background:#1a1a2e;font-family:monospace}
 	svg.WriteString(`<rect width="100%" height="100%" fill="#1a1a2e"/>`)
 	svg.WriteString(`<g id="chart">`)
 
-	// Title + subtitle.
+	// Title + two subtitle lines.
 	fmt.Fprintf(&svg, `<text class="title" x="%d" y="28" text-anchor="middle">Project Rank History</text>`, svgViewWidth/2)
 	fmt.Fprintf(&svg,
 		`<text class="sub" x="%d" y="44" text-anchor="middle">rank 1 = highest score · hover a line or legend entry to highlight · %d projects tracked</text>`,
 		svgViewWidth/2, len(allProjects))
+	// Second subtitle: explain the grey lines so readers know what they mean.
+	fmt.Fprintf(&svg,
+		`<text class="sub" x="%d" y="57" text-anchor="middle">grey lines = inactive projects (no meaningful commits in 1+ years) · hover legend entry to highlight</text>`,
+		svgViewWidth/2)
 
 	// Rotated Y-axis label.
 	cx := float64(svgMarginLeft) - 40
