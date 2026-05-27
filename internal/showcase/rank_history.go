@@ -11,7 +11,7 @@ import (
 
 const (
 	rankHistoryFilename = ".gitsyncer-showcase-rank-history.json"
-	rankHistoryPoints   = 5
+	rankHistoryPoints   = 32 // up to 32 weekly snapshots kept in history
 	rankHistoryVersion  = 1
 )
 

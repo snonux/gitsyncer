@@ -159,7 +159,7 @@ func buildLegendSVG(allProjects []svgProjectData, legendX, plotH int) string {
 //     legend entry highlights the corresponding plot line.
 //   - The SVG uses width/height="100%" so it fills the browser window.
 func GenerateRankHistorySVG(summaries []ProjectSummary) string {
-	numPoints := rankHistoryPoints // 5 weekly snapshots
+	numPoints := rankHistoryPoints // up to 32 weekly snapshots
 
 	// Collect per-project data, reversing the history so oldest is on the left.
 	allProjects := make([]svgProjectData, 0, len(summaries))
@@ -209,11 +209,29 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 		colorIdx++
 	}
 
-	// Human-readable X-axis labels (left = oldest, right = "now").
-	// Position i is (numPoints-1-i) weeks ago; position numPoints-1 is "now".
-	xLabels := make([]string, numPoints)
-	for i := 0; i < numPoints; i++ {
-		weeksAgo := numPoints - 1 - i
+	// Trim leading all-zero columns so the graph starts at the oldest week
+	// that has real data for any project (not at week 32 if history only goes
+	// back 5 weeks).  The rightmost column is always "now" (index numPoints-1).
+	firstDataCol := numPoints - 1 // pessimistic: show at least "now"
+outer:
+	for col := 0; col < numPoints; col++ {
+		for _, proj := range allProjects {
+			if proj.Points[col].Spot > 0 {
+				firstDataCol = col
+				break outer
+			}
+		}
+	}
+	for i := range allProjects {
+		allProjects[i].Points = allProjects[i].Points[firstDataCol:]
+	}
+	displayPoints := numPoints - firstDataCol // actual columns to render
+
+	// Human-readable X-axis labels (left = oldest visible, right = "now").
+	// Position i is (displayPoints-1-i) weeks ago; position displayPoints-1 is "now".
+	xLabels := make([]string, displayPoints)
+	for i := 0; i < displayPoints; i++ {
+		weeksAgo := displayPoints - 1 - i
 		if weeksAgo == 0 {
 			xLabels[i] = "now"
 		} else {
@@ -226,10 +244,10 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	plotH := svgViewHeight - svgMarginTop - svgMarginBottom
 
 	xPos := func(i int) float64 {
-		if numPoints <= 1 {
+		if displayPoints <= 1 {
 			return float64(svgMarginLeft) + float64(plotW)/2
 		}
-		return float64(svgMarginLeft) + float64(i)*float64(plotW)/float64(numPoints-1)
+		return float64(svgMarginLeft) + float64(i)*float64(plotW)/float64(displayPoints-1)
 	}
 
 	// rank 1 → top of plot, maxRank → bottom of plot.
@@ -264,16 +282,21 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	}
 
 	// Vertical grid lines and X-axis labels.
+	// When there are many columns (long history), only label every Nth column
+	// so the axis stays readable; "now" (rightmost) is always labelled.
 	var xAxisBuf strings.Builder
 	plotBottom := float64(svgMarginTop + plotH)
-	for i := 0; i < numPoints; i++ {
+	labelStep := xLabelStep(displayPoints)
+	for i := 0; i < displayPoints; i++ {
 		x := xPos(i)
 		fmt.Fprintf(&xAxisBuf,
 			`<line class="gl" x1="%.1f" y1="%d" x2="%.1f" y2="%.1f"/>`,
 			x, svgMarginTop, x, plotBottom)
-		fmt.Fprintf(&xAxisBuf,
-			`<text class="al" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`,
-			x, plotBottom+16, xLabels[i])
+		if i%labelStep == 0 || i == displayPoints-1 {
+			fmt.Fprintf(&xAxisBuf,
+				`<text class="al" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`,
+				x, plotBottom+16, xLabels[i])
+		}
 	}
 
 	// Project lines and dot groups.
@@ -540,6 +563,22 @@ func gridStep(maxRank int) int {
 	case maxRank > 15:
 		return 3
 	case maxRank > 8:
+		return 2
+	default:
+		return 1
+	}
+}
+
+// xLabelStep returns how many X-axis columns to skip between printed labels so
+// the time axis stays readable when many weeks of history are displayed.
+// Grid lines are always drawn at every column; only labels are thinned.
+func xLabelStep(displayPoints int) int {
+	switch {
+	case displayPoints > 24:
+		return 8
+	case displayPoints > 12:
+		return 4
+	case displayPoints > 6:
 		return 2
 	default:
 		return 1

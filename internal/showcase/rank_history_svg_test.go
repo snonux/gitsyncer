@@ -16,7 +16,7 @@ func makeTestSummaries() []ProjectSummary {
 				{Spot: 2, Anchor: "1w", SnapshotDate: "2026-05-20"},
 				{Spot: 2, Anchor: "2w", SnapshotDate: "2026-05-13"},
 				{Spot: 3, Anchor: "3w", SnapshotDate: "2026-05-06"},
-				{Spot: 0, Anchor: "4w"}, // missing snapshot week
+				{Spot: 4, Anchor: "4w", SnapshotDate: "2026-04-29"}, // oldest data point
 			},
 		},
 		{
@@ -237,6 +237,32 @@ func TestGenerateRankHistorySVG_PartialRankHistory(t *testing.T) {
 
 	require(strings.Contains(svg, `"name":"partial"`), "SVG should include 'partial' project")
 	require(strings.Contains(svg, `"name":"single-entry"`), "SVG should include 'single-entry' project")
+}
+
+// TestXLabelStep_ReturnsSensibleSteps verifies the X-axis label density
+// function thins out labels as the number of display columns grows.
+func TestXLabelStep_ReturnsSensibleSteps(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		displayPoints int
+		wantMax       int // step must be ≤ wantMax
+	}{
+		{5, 1},
+		{10, 2},
+		{20, 4},
+		{32, 8},
+	}
+
+	for _, tc := range tests {
+		got := xLabelStep(tc.displayPoints)
+		if got > tc.wantMax {
+			t.Errorf("xLabelStep(%d) = %d, want ≤ %d", tc.displayPoints, got, tc.wantMax)
+		}
+		if got <= 0 {
+			t.Errorf("xLabelStep(%d) = %d, want > 0", tc.displayPoints, got)
+		}
+	}
 }
 
 // TestGridStep_ReturnsSensibleSteps ensures the Y-axis step function keeps
