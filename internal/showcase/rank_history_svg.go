@@ -394,20 +394,21 @@ var allPG=chartEl.querySelectorAll('.pg');
 var allLG=chartEl.querySelectorAll('.lg');
 var activeIdx=-1;
 
-// rescale keeps the chart group centered and fully visible at any window size.
-// Sets explicit pixel width/height (bypassing the body-margin trap that
-// makes percentage-relative sizes fall short in standalone SVG files) and a
-// matching viewBox, then applies a uniform scale+translate to #chart so the
-// CHART_W x CHART_H design fills the window exactly along the limiting axis.
+// rescale stretches the chart to fill the full browser window in both axes.
+// Sets explicit pixel width/height (bypassing the body-margin trap that makes
+// percentage-relative sizes fall short in standalone SVG files) and a matching
+// viewBox, then applies independent x/y scales so the chart always occupies
+// every pixel — width tracks window width, height tracks window height.
+// chartEl.getScreenCTM().inverse() accounts for both scale factors, keeping
+// tooltip hit-testing correct regardless of the window aspect ratio.
 function rescale(){
   var W=window.innerWidth||document.documentElement.clientWidth;
   var H=window.innerHeight||document.documentElement.clientHeight;
   svgEl.setAttribute('width',W);
   svgEl.setAttribute('height',H);
   svgEl.setAttribute('viewBox','0 0 '+W+' '+H);
-  var s=Math.min(W/CHART_W,H/CHART_H);
-  var tx=(W-CHART_W*s)/2, ty=(H-CHART_H*s)/2;
-  chartEl.setAttribute('transform','translate('+tx+','+ty+') scale('+s+')');
+  var sx=W/CHART_W, sy=H/CHART_H;
+  chartEl.setAttribute('transform','scale('+sx+','+sy+')');
 }
 window.addEventListener('resize',rescale);
 rescale();
