@@ -37,10 +37,11 @@ type svgTimePoint struct {
 }
 
 // svgProjectData carries per-project metadata used by the interactive JS layer.
-// Inactive is true when the project's average commit age exceeds 730 days AND
-// the last commit was over a year ago — matching the gemtext inactivity notice.
-// Inactive projects are rendered as grey lines by default and only switch to
-// their project colour when the user mouses over their legend entry.
+// Inactive is true when the project's average commit age (last 42 commits on
+// HEAD) exceeds 730 days (~2 years).  A single recent commit does not rescue
+// a dormant project; ~42 recent commits are needed to move the average below
+// the threshold.  Inactive projects are rendered as grey lines by default and
+// only switch to their project colour when the user mouses over their legend entry.
 type svgProjectData struct {
 	Name     string         `json:"name"`
 	Color    string         `json:"color"`
@@ -393,7 +394,7 @@ svg{background:#1a1a2e;font-family:monospace}
 		svgViewWidth/2, len(allProjects))
 	// Second subtitle: explain the grey lines so readers know what they mean.
 	fmt.Fprintf(&svg,
-		`<text class="sub" x="%d" y="57" text-anchor="middle">grey lines = inactive projects (no meaningful commits in 1+ years) · hover legend entry to highlight</text>`,
+		`<text class="sub" x="%d" y="57" text-anchor="middle">grey lines = inactive projects (avg commit age &gt; 2 years) · hover legend entry to highlight</text>`,
 		svgViewWidth/2)
 
 	// Rotated Y-axis label.
