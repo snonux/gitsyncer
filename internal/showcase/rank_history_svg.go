@@ -8,13 +8,24 @@ import (
 )
 
 // SVG canvas and margin constants (pixels in viewBox coordinates).
+// The legend panel is placed to the right of the plot area; svgMarginRight
+// is wide enough to contain it so the plot width stays exactly svgPlotWidth.
 const (
-	svgViewWidth    = 1000
 	svgViewHeight   = 560
 	svgMarginLeft   = 55
-	svgMarginRight  = 20
 	svgMarginTop    = 70
 	svgMarginBottom = 50
+
+	// Legend panel sits to the right of the plot area.
+	svgLegendGap   = 25                            // gap between plot right edge and legend
+	svgLegendCols  = 3                             // columns in the legend grid
+	svgLegendColW  = 95                            // width per legend column (px)
+	svgLegendWidth = svgLegendCols * svgLegendColW // 285 px total legend width
+
+	// Plot area: explicitly sized so svgViewWidth is simply additive.
+	svgPlotWidth   = 900
+	svgMarginRight = svgLegendGap + svgLegendWidth + 15            // 325 px
+	svgViewWidth   = svgMarginLeft + svgPlotWidth + svgMarginRight // 1280 px
 )
 
 // svgTimePoint is one weekly data snapshot for a project, embedded in the SVG
@@ -69,15 +80,84 @@ func hslToRGBHex(h, s, l float64) string {
 	return fmt.Sprintf("#%02x%02x%02x", ri, gi, bi)
 }
 
+// truncateName shortens s to at most maxRunes runes, appending "…" if cut.
+func truncateName(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
+// xmlEscape replaces the characters that are special in SVG/XML text content.
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}
+
+// buildLegendSVG returns SVG markup for the 3-column project legend panel.
+// Each entry calls onEnter/onLeave to synchronise with the plot lines.
+// legendX is the left edge of the first legend column.
+func buildLegendSVG(allProjects []svgProjectData, legendX, plotH int) string {
+	if len(allProjects) == 0 {
+		return ""
+	}
+
+	var buf strings.Builder
+
+	// Faint vertical separator between plot and legend.
+	fmt.Fprintf(&buf,
+		`<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#2a2a5a" stroke-width="1"/>`,
+		legendX-12, svgMarginTop, legendX-12, svgMarginTop+plotH)
+
+	// Legend header.
+	fmt.Fprintf(&buf,
+		`<text class="lhd" x="%d" y="%d">PROJECTS (hover to highlight)</text>`,
+		legendX, svgMarginTop-8)
+
+	// Distribute entries across columns: first fill column 0, then 1, then 2.
+	rowsPerCol := (len(allProjects) + svgLegendCols - 1) / svgLegendCols
+	const rowH = 13     // vertical stride per legend entry (px)
+	const sqSize = 8    // colored square side length
+	const maxChars = 12 // max display characters before truncation
+
+	for i, proj := range allProjects {
+		col := i / rowsPerCol
+		row := i % rowsPerCol
+
+		colX := legendX + col*svgLegendColW
+		// rowY is the text baseline; the square is centered on it.
+		rowY := svgMarginTop + row*rowH + rowH
+
+		name := xmlEscape(truncateName(proj.Name, maxChars))
+
+		// Each legend entry reuses onEnter/onLeave so hovering a legend item
+		// highlights the corresponding plot line and opens the same tooltip.
+		fmt.Fprintf(&buf,
+			`<g class="lg" id="lg-%d" onmouseenter="onEnter(%d,event)" onmouseleave="onLeave()">`,
+			i, i)
+		fmt.Fprintf(&buf,
+			`<rect class="lsq" x="%d" y="%d" width="%d" height="%d" fill="%s"/>`,
+			colX, rowY-sqSize+1, sqSize, sqSize, proj.Color)
+		fmt.Fprintf(&buf,
+			`<text class="ltx" x="%d" y="%d">%s</text>`,
+			colX+sqSize+3, rowY, name)
+		buf.WriteString(`</g>`)
+	}
+
+	return buf.String()
+}
+
 // GenerateRankHistorySVG creates an interactive inline SVG that shows a
 // Google-Trends-style rank history graph for all projects.
 //
 // Layout:
-//   - X-axis: left = oldest snapshot, right = "now".
-//   - Y-axis: rank 1 at top (best), max rank at bottom.
-//   - Each project is one colored polyline; gaps occur when a week has no data.
-//   - Hovering a line highlights it, dims others, and shows a tooltip with the
-//     project name and rank at each recorded snapshot.
+//   - Plot area: left = oldest snapshot, right = "now"; rank 1 at top.
+//   - Legend panel: 3-column grid to the right of the plot; hovering a
+//     legend entry highlights the corresponding plot line.
+//   - The SVG uses width/height="100%" so it fills the browser window.
 func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	numPoints := rankHistoryPoints // 5 weekly snapshots
 
@@ -142,7 +222,7 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	}
 
 	// --- Layout helpers ---
-	plotW := svgViewWidth - svgMarginLeft - svgMarginRight
+	plotW := svgViewWidth - svgMarginLeft - svgMarginRight // = svgPlotWidth = 900
 	plotH := svgViewHeight - svgMarginTop - svgMarginBottom
 
 	xPos := func(i int) float64 {
@@ -229,9 +309,11 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 	// --- Assemble the full SVG ---
 	var svg strings.Builder
 
+	// width/height="100%" makes the SVG fill the browser window while the
+	// viewBox preserves internal coordinate space and aspect ratio.
 	fmt.Fprintf(&svg,
-		`<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">`,
-		svgViewWidth, svgViewHeight, svgViewWidth, svgViewHeight)
+		`<svg xmlns="http://www.w3.org/2000/svg" width="100%%" height="100%%" viewBox="0 0 %d %d" preserveAspectRatio="xMidYMid meet">`,
+		svgViewWidth, svgViewHeight)
 
 	// Embedded CSS – kept compact but readable.
 	svg.WriteString(`<style>
@@ -243,6 +325,9 @@ svg{background:#1a1a2e;font-family:monospace}
 .pg{cursor:pointer;opacity:.55;transition:opacity .15s}
 .pl{stroke-width:1.8;fill:none}
 .pd circle{transition:r .15s}
+.lg{cursor:pointer;opacity:1;transition:opacity .15s}
+.ltx{fill:#aaa;font-size:9px}
+.lhd{fill:#555;font-size:9px}
 #tt{pointer-events:none;display:none}
 #ttbg{fill:#1a1a40;stroke:#4444aa;stroke-width:1}
 #tttl{fill:#fff;font-size:12px;font-weight:bold;font-family:monospace}
@@ -256,7 +341,7 @@ svg{background:#1a1a2e;font-family:monospace}
 	// Title + subtitle.
 	fmt.Fprintf(&svg, `<text class="title" x="%d" y="28" text-anchor="middle">Project Rank History</text>`, svgViewWidth/2)
 	fmt.Fprintf(&svg,
-		`<text class="sub" x="%d" y="44" text-anchor="middle">rank 1 = highest score · hover a line to highlight · %d projects tracked</text>`,
+		`<text class="sub" x="%d" y="44" text-anchor="middle">rank 1 = highest score · hover a line or legend entry to highlight · %d projects tracked</text>`,
 		svgViewWidth/2, len(allProjects))
 
 	// Rotated Y-axis label.
@@ -271,7 +356,12 @@ svg{background:#1a1a2e;font-family:monospace}
 	svg.WriteString(xAxisBuf.String())
 	svg.WriteString(linesBuf.String())
 
+	// Legend panel to the right of the plot area.
+	legendX := svgMarginLeft + plotW + svgLegendGap
+	svg.WriteString(buildLegendSVG(allProjects, legendX, plotH))
+
 	// Tooltip overlay (hidden until a project is hovered).
+	// #tttl is the project-name title; #ttbd holds the per-snapshot rows below it.
 	svg.WriteString(`<g id="tt">
 <rect id="ttbg" x="0" y="0" width="220" height="100" rx="5" ry="5"/>
 <text id="tttl" x="10" y="18"></text>
@@ -287,10 +377,12 @@ var tt=document.getElementById('tt');
 var ttbg=document.getElementById('ttbg');
 var tttl=document.getElementById('tttl');
 var ttbd=document.getElementById('ttbd');
+// allPG = plot line groups; allLG = legend entry groups (same count, same order).
 var allPG=svgEl.querySelectorAll('.pg');
+var allLG=svgEl.querySelectorAll('.lg');
 var activeIdx=-1;
 
-// onEnter is called when the cursor enters a project group.
+// onEnter is called when the cursor enters a project group or legend entry.
 // It dims all other groups, shows the tooltip, and marks the project active.
 function onEnter(idx,evt){
   activeIdx=idx;
@@ -301,7 +393,8 @@ function onEnter(idx,evt){
   while(ttbd.firstChild)ttbd.removeChild(ttbd.firstChild);
 
   // Build one row per snapshot, newest first (points array is oldest-first).
-  var y=16;
+  // Start below the title (baseline y=18 + gap) so rows never overlap the title.
+  var y=32;
   for(var i=p.points.length-1;i>=0;i--){
     var pt=p.points[i];
     if(pt.spot<=0)continue;
@@ -316,17 +409,24 @@ function onEnter(idx,evt){
     y+=13;
   }
 
-  // Resize tooltip background to fit content.
-  var w=220, h=26+y;
+  // Resize tooltip background: width adapts to the project name, height to rows.
+  var nameW=p.name.length*7.5+20;
+  var w=Math.max(160,Math.min(300,nameW));
+  var h=Math.max(36,y+8);
   ttbg.setAttribute('width',w);
   ttbg.setAttribute('height',h);
 
-  // Highlight hovered group; dim all others.
+  // Highlight hovered plot line; dim all others.
   for(var i=0;i<allPG.length;i++){
     allPG[i].style.opacity=(i===idx)?'1':'0.08';
   }
-  // Bold the hovered line. allPG[idx] is already that element — no getElementById needed.
+  // Bold the hovered line. allPG[idx] is already the correct element.
   allPG[idx].querySelector('.pl').style.strokeWidth='3';
+
+  // Highlight hovered legend entry; dim all others.
+  for(var i=0;i<allLG.length;i++){
+    allLG[i].style.opacity=(i===idx)?'1':'0.2';
+  }
 
   moveTT(evt);
   tt.style.display='block';
@@ -338,6 +438,9 @@ function onLeave(){
   for(var i=0;i<allPG.length;i++){
     allPG[i].style.opacity='0.55';
     allPG[i].querySelector('.pl').style.strokeWidth='';
+  }
+  for(var i=0;i<allLG.length;i++){
+    allLG[i].style.opacity='1';
   }
   activeIdx=-1;
 }
