@@ -47,6 +47,7 @@ type svgProjectData struct {
 	Color    string         `json:"color"`
 	Points   []svgTimePoint `json:"points"`
 	Inactive bool           `json:"inactive"`
+	Score    float64        `json:"score"` // project score for tooltip display
 }
 
 // projectColor returns a visually distinct CSS hex color for project index i.
@@ -228,11 +229,17 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 			}
 		}
 
+		score := 0.0
+		if s.Metadata != nil {
+			score = s.Metadata.Score
+		}
+
 		allProjects = append(allProjects, svgProjectData{
 			Name:     s.Name,
 			Color:    projectColor(colorIdx),
 			Points:   pts,
 			Inactive: inactive,
+			Score:    score,
 		})
 		colorIdx++
 	}
@@ -495,9 +502,18 @@ function onEnter(idx,evt){
   // Clear old tooltip rows.
   while(ttbd.firstChild)ttbd.removeChild(ttbd.firstChild);
 
+  // Score row just below the title.
+  var scoreRow=document.createElementNS('http://www.w3.org/2000/svg','text');
+  scoreRow.setAttribute('x','10');
+  scoreRow.setAttribute('y','30');
+  scoreRow.setAttribute('class','ttrow');
+  scoreRow.setAttribute('fill','#888');
+  scoreRow.textContent='score: '+p.score.toFixed(1);
+  ttbd.appendChild(scoreRow);
+
   // Build one row per snapshot, newest first (points array is oldest-first).
-  // Start below the title (baseline y=18 + gap) so rows never overlap the title.
-  var y=32;
+  // Start below the score row; y=44 keeps clear of title (y=18) and score (y=30).
+  var y=44;
   for(var i=p.points.length-1;i>=0;i--){
     var pt=p.points[i];
     if(pt.spot<=0)continue;
