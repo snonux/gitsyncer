@@ -905,11 +905,12 @@ func (g *Generator) formatGemtext(summaries []ProjectSummary) string {
 	// Generated date at the top
 	builder.WriteString(fmt.Sprintf("Generated on: %s\n\n", time.Now().Format("2006-01-02")))
 
+	// Link to the interactive SVG rank history graph — placed at the very top
+	// so it is the first thing a reader sees after the date line.
+	builder.WriteString("=> showcase-rank-history.svg Interactive Project Rank History Graph (SVG)\n\n")
+
 	// Introduction paragraph
 	builder.WriteString("This page showcases my side projects, providing an overview of what each project does, its technical implementation, and key metrics. Each project summary includes information about the programming languages used, development activity, releases, and licensing. The projects are ranked by score, which combines recent activity, project size, tag history, and whether the project has shipped a release.\n\n")
-
-	// Link to the interactive SVG rank history graph generated alongside this file.
-	builder.WriteString("=> rank-history.svg Interactive Project Rank History Graph (SVG)\n\n")
 
 	// Template inline TOC
 	builder.WriteString("<< template::inline::toc\n\n")
@@ -1152,7 +1153,7 @@ func (g *Generator) writeRankHistorySVGFile(summaries []ProjectSummary) error {
 
 	svgContent := GenerateRankHistorySVG(summaries)
 
-	targetFile := filepath.Join(targetDir, "rank-history.svg")
+	targetFile := filepath.Join(targetDir, "showcase-rank-history.svg")
 	if err := os.WriteFile(targetFile, []byte(svgContent), 0644); err != nil {
 		return fmt.Errorf("failed to write rank history SVG: %w", err)
 	}
