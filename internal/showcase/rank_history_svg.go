@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"math"
 	"strings"
-	"time"
 )
 
 // SVG canvas and margin constants (pixels in viewBox coordinates).
@@ -209,25 +208,13 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 		}
 
 		// A project is inactive when its average commit age (HEAD) exceeds 730
-		// days AND no commit on ANY local branch is younger than 365 days.
-		// Using LastActivityDate (all-branches) avoids false positives for
-		// projects whose default branch is old but development continues on
-		// another branch (e.g. a "develop" or "master" branch).
-		// Code stats (AvgCommitAge, score) remain HEAD-only per config rules.
-		inactive := false
-		if s.Metadata != nil && s.Metadata.AvgCommitAge > 730 {
-			activityDate := s.Metadata.LastActivityDate
-			if activityDate == "" {
-				activityDate = s.Metadata.LastCommitDate // fallback if field absent
-			}
-			if activityDate != "" {
-				if last, err := time.Parse("2006-01-02", activityDate); err == nil {
-					if time.Since(last).Hours()/24 > 365 {
-						inactive = true
-					}
-				}
-			}
-		}
+		// days (~2 years).  AvgCommitAge is the mean age of the last 42 commits,
+		// so a single stray "add deprecation notice" commit does not rescue a
+		// decade-old dormant project.  A genuinely revived project needs ~42
+		// recent commits before the average drops below the threshold.
+		// LastActivityDate (all-branches) is retained in the struct for future
+		// use but is not part of this check so one-off commits cannot mask decay.
+		inactive := s.Metadata != nil && s.Metadata.AvgCommitAge > 730
 
 		score := 0.0
 		if s.Metadata != nil {
