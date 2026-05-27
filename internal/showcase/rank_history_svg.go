@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"math"
 	"strings"
+	"time"
 )
 
 // SVG canvas and margin constants (pixels in viewBox coordinates).
@@ -37,10 +38,15 @@ type svgTimePoint struct {
 }
 
 // svgProjectData carries per-project metadata used by the interactive JS layer.
+// Inactive is true when the project's average commit age exceeds 730 days AND
+// the last commit was over a year ago — matching the gemtext inactivity notice.
+// Inactive projects are rendered as grey lines by default and only switch to
+// their project colour when the user mouses over their legend entry.
 type svgProjectData struct {
-	Name   string         `json:"name"`
-	Color  string         `json:"color"`
-	Points []svgTimePoint `json:"points"`
+	Name     string         `json:"name"`
+	Color    string         `json:"color"`
+	Points   []svgTimePoint `json:"points"`
+	Inactive bool           `json:"inactive"`
 }
 
 // projectColor returns a visually distinct CSS hex color for project index i.
@@ -201,10 +207,24 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 			continue // skip projects that have never appeared in any snapshot
 		}
 
+		// Mirror the inactivity check from formatGemtext: avg commit age > 730 days
+		// AND the most recent commit was also over a year ago.  Inactive projects
+		// are still drawn but as grey lines so they do not compete visually with
+		// active ones; they turn coloured only on legend-entry hover.
+		inactive := false
+		if s.Metadata != nil && s.Metadata.AvgCommitAge > 730 && s.Metadata.LastCommitDate != "" {
+			if last, err := time.Parse("2006-01-02", s.Metadata.LastCommitDate); err == nil {
+				if time.Since(last).Hours()/24 > 365 {
+					inactive = true
+				}
+			}
+		}
+
 		allProjects = append(allProjects, svgProjectData{
-			Name:   s.Name,
-			Color:  projectColor(colorIdx),
-			Points: pts,
+			Name:     s.Name,
+			Color:    projectColor(colorIdx),
+			Points:   pts,
+			Inactive: inactive,
 		})
 		colorIdx++
 	}
@@ -436,8 +456,25 @@ function rescale(){
 window.addEventListener('resize',rescale);
 rescale();
 
+// Initialise inactive projects: grey plot line, dimmed legend entry.
+// This runs once after DOM and rescale() are ready.
+for(var i=0;i<allPG.length;i++){
+  if(PROJECTS[i].inactive){
+    allPG[i].style.opacity='0.3';
+    allPG[i].querySelector('.pl').style.stroke='#555';
+  }
+}
+for(var i=0;i<allLG.length;i++){
+  if(PROJECTS[i].inactive) allLG[i].style.opacity='0.35';
+}
+
+// defaultPGOpacity returns the resting opacity for a plot group.
+function defaultPGOpacity(i){return PROJECTS[i].inactive?'0.3':'0.55';}
+// defaultLGOpacity returns the resting opacity for a legend entry.
+function defaultLGOpacity(i){return PROJECTS[i].inactive?'0.35':'1';}
+
 // onEnter is called when the cursor enters a project group or legend entry.
-// It dims all other groups, shows the tooltip, and marks the project active.
+// It dims/greys all other groups, shows the tooltip, and marks the project active.
 function onEnter(idx,evt){
   activeIdx=idx;
   var p=PROJECTS[idx];
@@ -470,14 +507,26 @@ function onEnter(idx,evt){
   ttbg.setAttribute('width',w);
   ttbg.setAttribute('height',h);
 
-  // Highlight hovered plot line; dim all others.
+  // Apply per-project opacity for plot lines:
+  //   - hovered project → full opacity + project colour (restores inactive grey)
+  //   - active others   → dimmed to 0.08
+  //   - inactive others → stay at their grey resting state (not dimmed further)
   for(var i=0;i<allPG.length;i++){
-    allPG[i].style.opacity=(i===idx)?'1':'0.08';
+    var pl=allPG[i].querySelector('.pl');
+    if(i===idx){
+      allPG[i].style.opacity='1';
+      pl.style.stroke=PROJECTS[i].color; // restore colour for inactive projects
+      pl.style.strokeWidth='3';
+    } else if(PROJECTS[i].inactive){
+      // Keep inactive lines at their grey resting state so they do not compete.
+      allPG[i].style.opacity='0.3';
+      pl.style.stroke='#555';
+    } else {
+      allPG[i].style.opacity='0.08';
+    }
   }
-  // Bold the hovered line.
-  allPG[idx].querySelector('.pl').style.strokeWidth='3';
 
-  // Highlight hovered legend entry; dim all others.
+  // Highlight hovered legend entry; dim all others uniformly.
   for(var i=0;i<allLG.length;i++){
     allLG[i].style.opacity=(i===idx)?'1':'0.2';
   }
@@ -486,15 +535,18 @@ function onEnter(idx,evt){
   tt.style.display='block';
 }
 
-// onLeave restores all groups to their default opacity and hides the tooltip.
+// onLeave restores all groups to their per-project resting state.
 function onLeave(){
   tt.style.display='none';
   for(var i=0;i<allPG.length;i++){
-    allPG[i].style.opacity='0.55';
-    allPG[i].querySelector('.pl').style.strokeWidth='';
+    var pl=allPG[i].querySelector('.pl');
+    allPG[i].style.opacity=defaultPGOpacity(i);
+    pl.style.strokeWidth='';
+    // Restore grey stroke for inactive projects; clear override for active ones.
+    pl.style.stroke=PROJECTS[i].inactive?'#555':'';
   }
   for(var i=0;i<allLG.length;i++){
-    allLG[i].style.opacity='1';
+    allLG[i].style.opacity=defaultLGOpacity(i);
   }
   activeIdx=-1;
 }
