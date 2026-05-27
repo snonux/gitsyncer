@@ -207,15 +207,23 @@ func GenerateRankHistorySVG(summaries []ProjectSummary) string {
 			continue // skip projects that have never appeared in any snapshot
 		}
 
-		// Mirror the inactivity check from formatGemtext: avg commit age > 730 days
-		// AND the most recent commit was also over a year ago.  Inactive projects
-		// are still drawn but as grey lines so they do not compete visually with
-		// active ones; they turn coloured only on legend-entry hover.
+		// A project is inactive when its average commit age (HEAD) exceeds 730
+		// days AND no commit on ANY local branch is younger than 365 days.
+		// Using LastActivityDate (all-branches) avoids false positives for
+		// projects whose default branch is old but development continues on
+		// another branch (e.g. a "develop" or "master" branch).
+		// Code stats (AvgCommitAge, score) remain HEAD-only per config rules.
 		inactive := false
-		if s.Metadata != nil && s.Metadata.AvgCommitAge > 730 && s.Metadata.LastCommitDate != "" {
-			if last, err := time.Parse("2006-01-02", s.Metadata.LastCommitDate); err == nil {
-				if time.Since(last).Hours()/24 > 365 {
-					inactive = true
+		if s.Metadata != nil && s.Metadata.AvgCommitAge > 730 {
+			activityDate := s.Metadata.LastActivityDate
+			if activityDate == "" {
+				activityDate = s.Metadata.LastCommitDate // fallback if field absent
+			}
+			if activityDate != "" {
+				if last, err := time.Parse("2006-01-02", activityDate); err == nil {
+					if time.Since(last).Hours()/24 > 365 {
+						inactive = true
+					}
 				}
 			}
 		}

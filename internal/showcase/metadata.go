@@ -22,20 +22,21 @@ type LanguageStats struct {
 
 // RepoMetadata holds metadata about a repository
 type RepoMetadata struct {
-	Languages       []LanguageStats // Programming languages with usage statistics
-	Documentation   []LanguageStats // Documentation/text files with usage statistics
-	CommitCount     int
-	LinesOfCode     int // Lines of code (excluding documentation)
-	LinesOfDocs     int // Lines of documentation
-	FirstCommitDate string
-	LastCommitDate  string
-	License         string
-	AvgCommitAge    float64 // Average age of last 42 commits in days
-	TagCount        int     // Total number of git tags in the repository
-	Score           float64 // Project score combining recent activity, reduced LOC weight, tag count, and release status
-	LatestTag       string  // Latest version tag (empty if no tags)
-	LatestTagDate   string  // Date of the latest tag (empty if no tags)
-	HasReleases     bool    // Whether the project has any releases/tags
+	Languages        []LanguageStats // Programming languages with usage statistics
+	Documentation    []LanguageStats // Documentation/text files with usage statistics
+	CommitCount      int
+	LinesOfCode      int // Lines of code (excluding documentation)
+	LinesOfDocs      int // Lines of documentation
+	FirstCommitDate  string
+	LastCommitDate   string
+	LastActivityDate string  // Most recent commit on any local branch (--all); used for activity checks
+	License          string
+	AvgCommitAge     float64 // Average age of last 42 commits in days (HEAD only; used for score)
+	TagCount         int     // Total number of git tags in the repository
+	Score            float64 // Project score combining recent activity, reduced LOC weight, tag count, and release status
+	LatestTag        string  // Latest version tag (empty if no tags)
+	LatestTagDate    string  // Date of the latest tag (empty if no tags)
+	HasReleases      bool    // Whether the project has any releases/tags
 }
 
 // extractRepoMetadata extracts metadata from a repository
@@ -82,6 +83,18 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 		fmt.Printf("Warning: Failed to get last commit date: %v\n", err)
 	}
 	metadata.LastCommitDate = lastDate
+
+	// LastActivityDate is the most recent commit across ALL local branches so
+	// that projects with active development on non-default branches (e.g. a
+	// "develop" branch while HEAD is an old "master") are not falsely marked
+	// inactive.  Code stats (LOC, AvgCommitAge, score) remain HEAD-only per
+	// the configured branch rules.
+	activityDate, err := getLastActivityDate(repoPath)
+	if err != nil {
+		fmt.Printf("Warning: Failed to get last activity date: %v\n", err)
+		activityDate = lastDate // fall back to HEAD-based date
+	}
+	metadata.LastActivityDate = activityDate
 
 	// Check for license file
 	license := detectLicense(repoPath)
@@ -212,6 +225,25 @@ func getLastCommitDate(repoPath string) (string, error) {
 	}
 
 	return "", fmt.Errorf("no commits found")
+}
+
+// getLastActivityDate returns the date of the most recent commit across all
+// local branches (--all).  This is intentionally local-only: no network
+// fetch is performed, so it reflects the state of the last sync.  It is used
+// solely for the inactivity check (greying in the rank-history SVG) so that
+// projects with active work on non-default branches are not falsely flagged.
+// Code stats (LOC, AvgCommitAge, score) remain HEAD-only as per config.
+func getLastActivityDate(repoPath string) (string, error) {
+	cmd := exec.Command("git", "-C", repoPath, "log", "--all", "-1", "--pretty=format:%ai")
+	output, err := cmd.Output()
+	if err != nil {
+		return "", err
+	}
+	parts := strings.Fields(string(output))
+	if len(parts) > 0 {
+		return parts[0], nil
+	}
+	return "", fmt.Errorf("no commits found across all branches")
 }
 
 // detectLicense checks for common license files
