@@ -231,7 +231,11 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 }
 
 func selectSummaryTool(aiTool string) string {
-	return string(aitool.FirstAvailable(aiTool, nil))
+	return selectSummaryToolWithLookPath(aiTool, nil)
+}
+
+func selectSummaryToolWithLookPath(aiTool string, lookPath aitool.LookPathFunc) string {
+	return string(aitool.FirstAvailable(aiTool, lookPath))
 }
 
 func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeContent []byte, readmeFound bool) string {

@@ -362,6 +362,10 @@ func (m *Manager) executeAICommand(cmd *exec.Cmd, toolName string) (string, erro
 	return content, nil
 }
 
+func (m *Manager) availableReleaseNotesTools(lookPath aitool.LookPathFunc) []aitool.Tool {
+	return aitool.AvailableChain(m.aiTool, lookPath)
+}
+
 // GenerateAIReleaseNotes generates prose release notes using an AI tool, with fallback.
 func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags []string, commits []string) (string, error) {
 	// Find the previous tag
@@ -417,7 +421,7 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 
 	var releaseNotes string
 
-	for _, tool := range aitool.AvailableChain("opencode", nil) {
+	for _, tool := range m.availableReleaseNotesTools(nil) {
 		switch tool {
 		case aitool.ToolOpencode:
 			fmt.Println("  Running ollama launch opencode ...")
