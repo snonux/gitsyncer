@@ -1,6 +1,10 @@
 package sync
 
-import "testing"
+import (
+	"os/exec"
+	"strings"
+	"testing"
+)
 
 func TestGitCommand_SetsDir(t *testing.T) {
 	cmd := gitCommand("/tmp/example-repo", "status")
@@ -16,4 +20,73 @@ func TestGitCommand_LeavesDirEmptyForGlobalCommands(t *testing.T) {
 	if cmd.Dir != "" {
 		t.Fatalf("expected empty dir for global command, got %q", cmd.Dir)
 	}
+}
+
+func TestParseTagHashOutput_EmptyOutput(t *testing.T) {
+	for _, in := range [][]byte{nil, []byte(""), []byte("   \n\t  \n")} {
+		hash, err := parseTagHashOutput(in, "v1.0.0", "origin")
+		if err == nil {
+			t.Fatalf("expected error for empty output %q, got hash %q", in, hash)
+		}
+		if hash != "" {
+			t.Fatalf("expected empty hash for empty output, got %q", hash)
+		}
+		if !strings.Contains(err.Error(), "v1.0.0") || !strings.Contains(err.Error(), "origin") {
+			t.Fatalf("expected error to mention tag and source, got %v", err)
+		}
+	}
+}
+
+func TestParseTagHashOutput_ReturnsFirstField(t *testing.T) {
+	hash, err := parseTagHashOutput([]byte("abc123\trefs/tags/v1.0.0\n"), "v1.0.0", "origin")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if hash != "abc123" {
+		t.Fatalf("expected hash %q, got %q", "abc123", hash)
+	}
+}
+
+func TestGetTagCommitHash_LocalTagPeelsToCommitHash(t *testing.T) {
+	repoPath := t.TempDir()
+
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "-c", "user.name=Test", "-c", "user.email=test@example.com", "commit", "--allow-empty", "-m", "initial commit")
+	runGit(t, repoPath, "tag", "-a", "v1.0.0", "-m", "release v1.0.0")
+
+	headHash := runGit(t, repoPath, "rev-parse", "HEAD")
+	tagHash, err := getTagCommitHash(repoPath, "v1.0.0", "local")
+	if err != nil {
+		t.Fatalf("expected local tag hash lookup to succeed, got error: %v", err)
+	}
+	if tagHash != headHash {
+		t.Fatalf("expected peeled local tag hash %q, got %q", headHash, tagHash)
+	}
+}
+
+func TestGetTagCommitHash_LocalTagMissingReturnsError(t *testing.T) {
+	repoPath := t.TempDir()
+	runGit(t, repoPath, "init")
+
+	tagHash, err := getTagCommitHash(repoPath, "v9.9.9", "local")
+	if err == nil {
+		t.Fatalf("expected error for missing local tag, got hash %q", tagHash)
+	}
+	if tagHash != "" {
+		t.Fatalf("expected empty hash for missing local tag, got %q", tagHash)
+	}
+}
+
+func runGit(t *testing.T, repoPath string, args ...string) string {
+	t.Helper()
+
+	cmd := exec.Command("git", args...)
+	cmd.Dir = repoPath
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("git %v failed: %v\n%s", args, err, string(output))
+	}
+
+	return strings.TrimSpace(string(output))
 }

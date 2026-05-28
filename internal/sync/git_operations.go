@@ -181,7 +181,7 @@ func handleTagConflict(repoPath, remote string, output []byte) error {
 func getTagCommitHash(repoPath, tag, source string) (string, error) {
 	var cmd *exec.Cmd
 	if source == "local" {
-		cmd = gitCommand(repoPath, "rev-parse", tag+"^{\\}")
+		cmd = gitCommand(repoPath, "rev-parse", tag+"^{}")
 	} else {
 		cmd = gitCommand(repoPath, "ls-remote", "--tags", source, tag)
 	}
@@ -191,8 +191,17 @@ func getTagCommitHash(repoPath, tag, source string) (string, error) {
 		return "", err
 	}
 
-	hash := strings.Fields(string(output))[0]
-	return hash, nil
+	return parseTagHashOutput(output, tag, source)
+}
+
+// parseTagHashOutput extracts the first whitespace-separated field from output
+// as the commit hash for a tag, returning an error when output is empty.
+func parseTagHashOutput(output []byte, tag, source string) (string, error) {
+	fields := strings.Fields(string(output))
+	if len(fields) == 0 {
+		return "", fmt.Errorf("no hash found for tag %s from %s", tag, source)
+	}
+	return fields[0], nil
 }
 
 // checkoutExistingBranch tries to checkout an existing branch
