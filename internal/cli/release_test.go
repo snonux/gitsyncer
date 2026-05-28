@@ -3,6 +3,9 @@ package cli
 import (
 	"errors"
 	"testing"
+
+	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/release"
 )
 
 type fakeReleaseNotesGenerator struct {
@@ -232,5 +235,194 @@ func TestResolveReleaseNotes_CreateAISuccessContinuesOnCacheSaveError(t *testing
 	}
 	if len(failed) != 0 {
 		t.Fatalf("unexpected failed list: %#v", failed)
+	}
+}
+
+func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
+	cfg := &config.Config{
+		SkipReleases: map[string][]string{
+			"demo": {"v1.0.0"},
+		},
+	}
+	releaseManager := release.NewManager("")
+	target := releaseTarget{
+		name:  "GitHub",
+		owner: "owner",
+		getReleases: func(_ string, _ string) ([]string, error) {
+			return []string{"v0.9.0"}, nil
+		},
+	}
+
+	missing := getMissingReleasesForTarget(cfg, releaseManager, target, "demo", []string{"v0.9.0", "v1.0.0", "v1.1.0"})
+
+	if len(missing) != 1 || missing[0] != "v1.1.0" {
+		t.Fatalf("expected only non-skipped missing release v1.1.0, got %#v", missing)
+	}
+}
+
+func TestGetMissingReleasesForTarget_GetReleasesErrorReturnsNil(t *testing.T) {
+	cfg := &config.Config{}
+	releaseManager := release.NewManager("")
+	target := releaseTarget{
+		name:  "GitHub",
+		owner: "owner",
+		getReleases: func(_ string, _ string) ([]string, error) {
+			return nil, errors.New("upstream unavailable")
+		},
+	}
+
+	missing := getMissingReleasesForTarget(cfg, releaseManager, target, "demo", []string{"v1.0.0"})
+
+	if missing != nil {
+		t.Fatalf("expected nil missing releases on getReleases error, got %#v", missing)
+	}
+}
+
+func TestProcessCreateReleasesForTarget_CreateErrorDoesNotStopOtherTags(t *testing.T) {
+	cfg := &config.Config{}
+	flags := &Flags{AutoCreateReleases: true}
+	releaseManager := release.NewManager("")
+
+	created := make([]string, 0, 2)
+	target := releaseTarget{
+		name:  "GitHub",
+		owner: "owner",
+		createRelease: func(_ string, _ string, tag string, _ string) error {
+			created = append(created, tag)
+			if tag == "v1.0.0" {
+				return errors.New("create failed")
+			}
+			return nil
+		},
+	}
+
+	processCreateReleasesForTarget(
+		cfg,
+		flags,
+		releaseManager,
+		target,
+		"demo",
+		"/definitely/not/a/repo",
+		[]string{"v1.0.0", "v1.1.0"},
+		[]string{"v1.0.0", "v1.1.0"},
+		"/tmp/cache.json",
+		map[string]string{},
+		&[]string{},
+	)
+
+	if len(created) != 2 || created[0] != "v1.0.0" || created[1] != "v1.1.0" {
+		t.Fatalf("expected both releases to be attempted despite first failure, got %#v", created)
+	}
+}
+
+func TestProcessCreateReleasesForTarget_HonorsConfiguredSkip(t *testing.T) {
+	cfg := &config.Config{
+		SkipReleases: map[string][]string{
+			"demo": {"v1.0.0"},
+		},
+	}
+	flags := &Flags{AutoCreateReleases: true}
+	releaseManager := release.NewManager("")
+	created := make([]string, 0, 1)
+	target := releaseTarget{
+		name:  "Codeberg",
+		owner: "owner",
+		createRelease: func(_ string, _ string, tag string, _ string) error {
+			created = append(created, tag)
+			return nil
+		},
+	}
+
+	processCreateReleasesForTarget(
+		cfg,
+		flags,
+		releaseManager,
+		target,
+		"demo",
+		"/definitely/not/a/repo",
+		[]string{"v1.0.0", "v1.1.0"},
+		[]string{"v1.0.0", "v1.1.0"},
+		"/tmp/cache.json",
+		map[string]string{},
+		&[]string{},
+	)
+
+	if len(created) != 1 || created[0] != "v1.1.0" {
+		t.Fatalf("expected only non-skipped release creation attempt, got %#v", created)
+	}
+}
+
+func TestProcessUpdateReleasesForTarget_UsesCachedAIAndSkipsNonVersionTags(t *testing.T) {
+	flags := &Flags{
+		AIReleaseNotes:     true,
+		AutoCreateReleases: true,
+	}
+	releaseManager := release.NewManager("")
+	updated := make([]string, 0, 1)
+	target := releaseTarget{
+		name:  "GitHub",
+		owner: "owner",
+		getReleases: func(_ string, _ string) ([]string, error) {
+			return []string{"latest", "v1.0.0"}, nil
+		},
+		updateRelease: func(_ string, _ string, tag string, notes string) error {
+			if notes != "cached ai notes" {
+				t.Fatalf("expected cached AI notes, got %q", notes)
+			}
+			updated = append(updated, tag)
+			return nil
+		},
+	}
+
+	processUpdateReleasesForTarget(
+		flags,
+		releaseManager,
+		target,
+		"demo",
+		"/definitely/not/a/repo",
+		[]string{"v1.0.0"},
+		"/tmp/cache.json",
+		map[string]string{"demo:v1.0.0": "cached ai notes"},
+		&[]string{},
+	)
+
+	if len(updated) != 1 || updated[0] != "v1.0.0" {
+		t.Fatalf("expected exactly one version tag update, got %#v", updated)
+	}
+}
+
+func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.T) {
+	flags := &Flags{
+		AIReleaseNotes:     true,
+		AutoCreateReleases: true,
+	}
+	releaseManager := release.NewManager("")
+	updateCalls := 0
+	target := releaseTarget{
+		name:  "Codeberg",
+		owner: "owner",
+		getReleases: func(_ string, _ string) ([]string, error) {
+			return nil, errors.New("api error")
+		},
+		updateRelease: func(_ string, _ string, _ string, _ string) error {
+			updateCalls++
+			return nil
+		},
+	}
+
+	processUpdateReleasesForTarget(
+		flags,
+		releaseManager,
+		target,
+		"demo",
+		"/definitely/not/a/repo",
+		[]string{"v1.0.0"},
+		"/tmp/cache.json",
+		map[string]string{"demo:v1.0.0": "cached ai notes"},
+		&[]string{},
+	)
+
+	if updateCalls != 0 {
+		t.Fatalf("expected no update attempts when getReleases fails, got %d", updateCalls)
 	}
 }
