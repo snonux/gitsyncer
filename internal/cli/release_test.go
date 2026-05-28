@@ -363,7 +363,7 @@ func TestProcessUpdateReleasesForTarget_UsesCachedAIAndSkipsNonVersionTags(t *te
 		name:  "GitHub",
 		owner: "owner",
 		getReleases: func(_ string, _ string) ([]string, error) {
-			return []string{"latest", "v1.0.0"}, nil
+			return []string{"latest", "1-beta", "v1.0.0"}, nil
 		},
 		updateRelease: func(_ string, _ string, tag string, notes string) error {
 			if notes != "cached ai notes" {

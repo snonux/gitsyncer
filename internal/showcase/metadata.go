@@ -9,6 +9,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"codeberg.org/snonux/gitsyncer/internal/version"
 )
 
 const unreleasedScorePenalty = 0.75
@@ -29,7 +31,7 @@ type RepoMetadata struct {
 	LinesOfDocs      int // Lines of documentation
 	FirstCommitDate  string
 	LastCommitDate   string
-	LastActivityDate string  // Most recent commit on any local branch (--all); used for activity checks
+	LastActivityDate string // Most recent commit on any local branch (--all); used for activity checks
 	License          string
 	AvgCommitAge     float64 // Average age of last 42 commits in days (HEAD only; used for score)
 	TagCount         int     // Total number of git tags in the repository
@@ -374,7 +376,7 @@ func getLatestTag(repoPath string) (string, string, bool, int, error) {
 	// Find the first tag that looks like a version number
 	latestTag := ""
 	for _, tag := range tags {
-		if isVersionTag(tag) {
+		if version.IsVersionTag(tag) {
 			latestTag = tag
 			break
 		}
@@ -402,40 +404,4 @@ func getLatestTag(repoPath string) (string, string, bool, int, error) {
 
 	// Return the latest tag and its date
 	return latestTag, tagDate, true, tagCount, nil
-}
-
-// isVersionTag checks if a tag looks like a version number
-func isVersionTag(tag string) bool {
-	// Remove 'v' prefix if present
-	versionStr := strings.TrimPrefix(tag, "v")
-
-	// Check if the remaining string contains at least one digit and one dot
-	hasDigit := false
-	hasDot := false
-
-	for _, ch := range versionStr {
-		if ch >= '0' && ch <= '9' {
-			hasDigit = true
-		} else if ch == '.' {
-			hasDot = true
-		} else if ch != '-' && ch != '+' && ch != '_' &&
-			(ch < 'a' || ch > 'z') && (ch < 'A' || ch > 'Z') {
-			// Allow alphanumeric characters and common separators
-			// but anything else makes it not a version
-			return false
-		}
-	}
-
-	// Must have at least one digit, and either:
-	// - have a dot (e.g., 1.0, 0.1.2)
-	// - be just digits (e.g., 2, 2024)
-	// - start with a digit (e.g., 1-beta)
-	if hasDigit && len(versionStr) > 0 {
-		firstChar := versionStr[0]
-		if firstChar >= '0' && firstChar <= '9' {
-			return true
-		}
-	}
-
-	return hasDigit && hasDot
 }

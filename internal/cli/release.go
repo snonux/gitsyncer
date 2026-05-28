@@ -5,21 +5,12 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/release"
+	"codeberg.org/snonux/gitsyncer/internal/version"
 )
-
-// isVersionTag checks if a tag name is a version tag
-// Supports formats: vX.Y.Z, vX.Y, vX, X.Y.Z, X.Y, X
-func isVersionTag(tag string) bool {
-	// Pattern matches version tags with optional 'v' prefix
-	pattern := `^v?\d+(\.\d+)?(\.\d+)?$`
-	matched, _ := regexp.MatchString(pattern, tag)
-	return matched
-}
 
 // HandleCheckReleases checks for version tags without releases and creates them with confirmation
 func HandleCheckReleases(cfg *config.Config, flags *Flags) int {
@@ -392,7 +383,7 @@ func processUpdateReleasesForTarget(
 
 	fmt.Printf("\n  Updating existing %s releases...\n", target.name)
 	for _, tag := range existingReleases {
-		if !isVersionTag(tag) {
+		if !version.IsVersionTag(tag) {
 			continue
 		}
 

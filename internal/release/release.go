@@ -8,11 +8,11 @@ import (
 	"net/http"
 	"os"
 	"os/exec"
-	"regexp"
 	"sort"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/httpclient"
+	"codeberg.org/snonux/gitsyncer/internal/version"
 )
 
 // Tag represents a git tag
@@ -117,15 +117,6 @@ func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
 	return nil
 }
 
-// isVersionTag checks if a tag name is a version tag
-// Supports formats: vX.Y.Z, vX.Y, vX, X.Y.Z, X.Y, X
-func isVersionTag(tag string) bool {
-	// Pattern matches version tags with optional 'v' prefix
-	pattern := `^v?\d+(\.\d+)?(\.\d+)?$`
-	matched, _ := regexp.MatchString(pattern, tag)
-	return matched
-}
-
 // GetLocalTags returns all version tags from the local git repository
 func (m *Manager) GetLocalTags(repoPath string) ([]string, error) {
 	cmd := exec.Command("git", "-C", repoPath, "tag", "--list")
@@ -139,7 +130,7 @@ func (m *Manager) GetLocalTags(repoPath string) ([]string, error) {
 
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
-		if tag != "" && isVersionTag(tag) {
+		if tag != "" && version.IsVersionTag(tag) {
 			versionTags = append(versionTags, tag)
 		}
 	}

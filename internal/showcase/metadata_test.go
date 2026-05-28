@@ -59,6 +59,7 @@ func TestGetLatestTag_ReturnsTotalTagCount(t *testing.T) {
 
 	writeAndCommit("README.md", "first", "first")
 	runGit(t, repoPath, "tag", "notes")
+	runGit(t, repoPath, "tag", "1-beta")
 	runGit(t, repoPath, "tag", "v1.0.0")
 
 	writeAndCommit("README.md", "second", "second")
@@ -74,8 +75,8 @@ func TestGetLatestTag_ReturnsTotalTagCount(t *testing.T) {
 	if !hasReleases {
 		t.Fatal("expected hasReleases to be true")
 	}
-	if tagCount != 3 {
-		t.Fatalf("tagCount = %d, want %d", tagCount, 3)
+	if tagCount != 4 {
+		t.Fatalf("tagCount = %d, want %d", tagCount, 4)
 	}
 }
 
