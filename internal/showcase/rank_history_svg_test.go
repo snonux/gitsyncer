@@ -390,3 +390,93 @@ func TestBuildXLabels_SinglePoint(t *testing.T) {
 		t.Fatalf("buildXLabels(1) = %#v, want [\"now\"]", labels)
 	}
 }
+
+func TestRenderAxes_LabelThinningBoundaryTransitions(t *testing.T) {
+	t.Parallel()
+
+	xPos := func(i int) float64 { return float64(100 + i*10) }
+	yPos := func(rank int) float64 { return float64(200 - rank*5) }
+
+	tests := []struct {
+		displayPoints int
+		wantLabels    int
+	}{
+		// xLabelStep transitions: 1 -> 2 at 7, 2 -> 4 at 13, 4 -> 8 at 25.
+		{displayPoints: 6, wantLabels: 6},
+		{displayPoints: 7, wantLabels: 4},
+		{displayPoints: 12, wantLabels: 7},
+		{displayPoints: 13, wantLabels: 4},
+		{displayPoints: 24, wantLabels: 7},
+		{displayPoints: 25, wantLabels: 4},
+	}
+
+	for _, tc := range tests {
+		_, xAxis := renderAxes(5, tc.displayPoints, 100, 60, xPos, yPos, buildXLabels(tc.displayPoints))
+
+		if got := strings.Count(xAxis, `<line class="gl"`); got != tc.displayPoints {
+			t.Errorf("displayPoints=%d: x-axis grid line count = %d, want %d", tc.displayPoints, got, tc.displayPoints)
+		}
+		if got := strings.Count(xAxis, `<text class="al"`); got != tc.wantLabels {
+			t.Errorf("displayPoints=%d: x-axis label count = %d, want %d", tc.displayPoints, got, tc.wantLabels)
+		}
+		if got := strings.Count(xAxis, ">now</text>"); got != 1 {
+			t.Errorf("displayPoints=%d: expected exactly one 'now' label, got %d", tc.displayPoints, got)
+		}
+	}
+}
+
+func TestRenderAxes_SinglePointAxisRendering(t *testing.T) {
+	t.Parallel()
+
+	xPos := func(int) float64 { return 123.4 }
+	yPos := func(rank int) float64 { return float64(rank * 10) }
+
+	grid, xAxis := renderAxes(3, 1, 100, 80, xPos, yPos, []string{"now"})
+	if grid == "" {
+		t.Fatal("expected non-empty Y-axis/grid SVG for single-point chart")
+	}
+	if got := strings.Count(xAxis, `<line class="gl"`); got != 1 {
+		t.Fatalf("single-point x-axis should render exactly 1 vertical grid line, got %d", got)
+	}
+	if got := strings.Count(xAxis, `<text class="al"`); got != 1 {
+		t.Fatalf("single-point x-axis should render exactly 1 label, got %d", got)
+	}
+	if !strings.Contains(xAxis, `x1="123.4"`) {
+		t.Fatalf("single-point x-axis should use provided x position, got: %s", xAxis)
+	}
+	if !strings.Contains(xAxis, ">now</text>") {
+		t.Fatalf("single-point x-axis should render 'now' label, got: %s", xAxis)
+	}
+}
+
+func TestRenderLines_EmptyAndAllInvalid(t *testing.T) {
+	t.Parallel()
+
+	xPos := func(i int) float64 { return float64(i * 10) }
+
+	if got := renderLines(nil, xPos, func(rank int) float64 { return float64(rank * 5) }); got != "" {
+		t.Fatalf("renderLines(nil, ...) = %q, want empty string", got)
+	}
+
+	projects := []svgProjectData{
+		{
+			Name:  "zeroes",
+			Color: "#111111",
+			Points: []svgTimePoint{
+				{Spot: 0},
+				{Spot: 0},
+			},
+		},
+		{
+			Name:  "offchart",
+			Color: "#222222",
+			Points: []svgTimePoint{
+				{Spot: 1},
+				{Spot: 2},
+			},
+		},
+	}
+	if got := renderLines(projects, xPos, func(int) float64 { return -1 }); got != "" {
+		t.Fatalf("renderLines(all-invalid, ...) = %q, want empty string", got)
+	}
+}
