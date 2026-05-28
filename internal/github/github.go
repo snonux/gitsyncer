@@ -10,6 +10,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 	"codeberg.org/snonux/gitsyncer/internal/httpclient"
 )
 
@@ -18,6 +19,8 @@ type Client struct {
 	token string
 	org   string
 }
+
+var _ forge.RepoClient = (*Client)(nil)
 
 // NewClient creates a new GitHub API client
 func NewClient(token, org string) Client {
@@ -124,9 +127,9 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 
 	fmt.Printf("  Checking if GitHub repo %s/%s exists...\n", c.org, repoName)
 	// First check if it already exists
-	exists, err := c.RepoExists(repoName)
+	exists, err := forge.CheckRepoExists(repoName, c.RepoExists)
 	if err != nil {
-		return fmt.Errorf("failed to check if repo exists: %w", err)
+		return err
 	}
 	if exists {
 		fmt.Printf("  GitHub repo already exists, skipping creation\n")
@@ -356,14 +359,8 @@ func (c *Client) DeleteRepo(repoName string) error {
 		return fmt.Errorf("GitHub token required to delete repository")
 	}
 
-	// First check if the repo exists
-	exists, err := c.RepoExists(repoName)
-	if err != nil {
-		return fmt.Errorf("failed to check if repo exists: %w", err)
-	}
-	if !exists {
-		// Repo doesn't exist, nothing to delete
-		return fmt.Errorf("repository %s/%s does not exist", c.org, repoName)
+	if err := forge.EnsureRepoExists(c.org, repoName, c.RepoExists); err != nil {
+		return err
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
@@ -383,20 +380,6 @@ func (c *Client) DeleteRepo(repoName string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 204 {
-		// Successfully deleted
-		return nil
-	} else if resp.StatusCode == 404 {
-		// Already gone, consider it a success
-		return nil
-	} else if resp.StatusCode == 403 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("permission denied (403): %s", string(body))
-	} else if resp.StatusCode == 401 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("authentication failed (401): %s", string(body))
-	}
-
 	body, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("failed to delete repository: status %d: %s", resp.StatusCode, string(body))
+	return forge.DeleteStatusError(resp.StatusCode, string(body))
 }

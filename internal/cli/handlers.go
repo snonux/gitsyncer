@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/github"
 	"codeberg.org/snonux/gitsyncer/internal/version"
@@ -175,20 +174,12 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 	}
 
 	for _, org := range cfg.Organizations {
-		var exists bool
-		var err error
-
-		switch org.Host {
-		case "git@github.com":
-			client := github.NewClient(org.GitHubToken, org.Name)
-			exists, err = client.RepoExists(repoName)
-		case "git@codeberg.org":
-			client := codeberg.NewClient(org.Name, org.CodebergToken)
-			exists, err = client.RepoExists(repoName)
-		default:
+		client, supported := newRepoClientForOrg(org)
+		if !supported {
 			fmt.Printf("Skipping unsupported host: %s\n", org.Host)
 			continue
 		}
+		exists, err := client.RepoExists(repoName)
 
 		orgsWithRepo = append(orgsWithRepo, struct {
 			org    config.Organization
@@ -240,15 +231,8 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 
 		fmt.Printf("  Deleting from %s... ", info.org.GetGitURL())
 
-		var deleteErr error
-		switch info.org.Host {
-		case "git@github.com":
-			client := github.NewClient(info.org.GitHubToken, info.org.Name)
-			deleteErr = client.DeleteRepo(repoName)
-		case "git@codeberg.org":
-			client := codeberg.NewClient(info.org.Name, info.org.CodebergToken)
-			deleteErr = client.DeleteRepo(repoName)
-		}
+		client, _ := newRepoClientForOrg(info.org)
+		deleteErr := client.DeleteRepo(repoName)
 
 		if deleteErr != nil {
 			fmt.Printf("FAILED: %v\n", deleteErr)
