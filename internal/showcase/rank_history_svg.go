@@ -28,342 +28,7 @@ const (
 	svgViewWidth   = svgMarginLeft + svgPlotWidth + svgMarginRight // 1280 px
 )
 
-// svgTimePoint is one weekly data snapshot for a project, embedded in the SVG
-// for JavaScript tooltip rendering.
-type svgTimePoint struct {
-	Label string `json:"label"` // "now", "1w", "2w", …
-	Spot  int    `json:"spot"`  // 0 means no data for this week
-	Date  string `json:"date,omitempty"`
-}
-
-// svgProjectData carries per-project metadata used by the interactive JS layer.
-// Inactive is true when the project's average commit age (last 42 commits on
-// HEAD) exceeds 730 days (~2 years).  A single recent commit does not rescue
-// a dormant project; ~42 recent commits are needed to move the average below
-// the threshold.  Inactive projects are rendered as grey lines by default and
-// only switch to their project colour when the user mouses over their legend entry.
-type svgProjectData struct {
-	Name     string         `json:"name"`
-	Color    string         `json:"color"`
-	Points   []svgTimePoint `json:"points"`
-	Inactive bool           `json:"inactive"`
-	Score    float64        `json:"score"` // project score for tooltip display
-}
-
-// projectColor returns a visually distinct CSS hex color for project index i.
-// It uses golden-ratio hue spacing so successive projects never look similar.
-func projectColor(i int) string {
-	const golden = 0.618033988749895
-	hue := math.Mod(float64(i)*golden*360, 360)
-	return hslToRGBHex(hue, 0.75, 0.62)
-}
-
-// hslToRGBHex converts an HSL color (h in [0,360), s and l in [0,1]) to a
-// CSS hex string like "#rrggbb".
-func hslToRGBHex(h, s, l float64) string {
-	c := (1 - math.Abs(2*l-1)) * s
-	x := c * (1 - math.Abs(math.Mod(h/60, 2)-1))
-	m := l - c/2
-
-	var r, g, b float64
-	switch {
-	case h < 60:
-		r, g, b = c, x, 0
-	case h < 120:
-		r, g, b = x, c, 0
-	case h < 180:
-		r, g, b = 0, c, x
-	case h < 240:
-		r, g, b = 0, x, c
-	case h < 300:
-		r, g, b = x, 0, c
-	default:
-		r, g, b = c, 0, x
-	}
-
-	ri := int(math.Round((r + m) * 255))
-	gi := int(math.Round((g + m) * 255))
-	bi := int(math.Round((b + m) * 255))
-	return fmt.Sprintf("#%02x%02x%02x", ri, gi, bi)
-}
-
-// truncateName shortens s to at most maxRunes runes, appending "…" if cut.
-func truncateName(s string, maxRunes int) string {
-	runes := []rune(s)
-	if len(runes) <= maxRunes {
-		return s
-	}
-	return string(runes[:maxRunes-1]) + "…"
-}
-
-// xmlEscape replaces the characters that are special in SVG/XML text content.
-func xmlEscape(s string) string {
-	s = strings.ReplaceAll(s, "&", "&amp;")
-	s = strings.ReplaceAll(s, "<", "&lt;")
-	s = strings.ReplaceAll(s, ">", "&gt;")
-	return s
-}
-
-// buildLegendSVG returns SVG markup for the 3-column project legend panel.
-// Each entry calls onEnter/onLeave to synchronise with the plot lines.
-// legendX is the left edge of the first legend column.
-func buildLegendSVG(allProjects []svgProjectData, legendX, plotH int) string {
-	if len(allProjects) == 0 {
-		return ""
-	}
-
-	var buf strings.Builder
-
-	// Faint vertical separator between plot and legend.
-	fmt.Fprintf(&buf,
-		`<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#2a2a5a" stroke-width="1"/>`,
-		legendX-12, svgMarginTop, legendX-12, svgMarginTop+plotH)
-
-	// Legend header.
-	fmt.Fprintf(&buf,
-		`<text class="lhd" x="%d" y="%d">PROJECTS (hover to highlight)</text>`,
-		legendX, svgMarginTop-8)
-
-	// Distribute entries across columns: first fill column 0, then 1, then 2.
-	rowsPerCol := (len(allProjects) + svgLegendCols - 1) / svgLegendCols
-	const rowH = 13     // vertical stride per legend entry (px)
-	const sqSize = 8    // colored square side length
-	const maxChars = 12 // max display characters before truncation
-
-	for i, proj := range allProjects {
-		col := i / rowsPerCol
-		row := i % rowsPerCol
-
-		colX := legendX + col*svgLegendColW
-		// rowY is the text baseline; the square is centered on it.
-		rowY := svgMarginTop + row*rowH + rowH
-
-		name := xmlEscape(truncateName(proj.Name, maxChars))
-
-		// Each legend entry reuses onEnter/onLeave so hovering a legend item
-		// highlights the corresponding plot line and opens the same tooltip.
-		fmt.Fprintf(&buf,
-			`<g class="lg" id="lg-%d" onmouseenter="onEnter(%d,event)" onmouseleave="onLeave()">`,
-			i, i)
-		fmt.Fprintf(&buf,
-			`<rect class="lsq" x="%d" y="%d" width="%d" height="%d" fill="%s"/>`,
-			colX, rowY-sqSize+1, sqSize, sqSize, proj.Color)
-		fmt.Fprintf(&buf,
-			`<text class="ltx" x="%d" y="%d">%s</text>`,
-			colX+sqSize+3, rowY, name)
-		buf.WriteString(`</g>`)
-	}
-
-	return buf.String()
-}
-
-// GenerateRankHistorySVG creates an interactive inline SVG that shows a
-// Google-Trends-style rank history graph for all projects.
-//
-// Layout:
-//   - Plot area: left = oldest snapshot, right = "now"; rank 1 at top.
-//   - Legend panel: 3-column grid to the right of the plot; hovering a
-//     legend entry highlights the corresponding plot line.
-//   - The SVG uses width/height="100%" so it fills the browser window.
-func GenerateRankHistorySVG(summaries []ProjectSummary) string {
-	numPoints := rankHistoryPoints // up to 32 weekly snapshots
-
-	// Collect per-project data, reversing the history so oldest is on the left.
-	allProjects := make([]svgProjectData, 0, len(summaries))
-	maxRank := 1
-	colorIdx := 0
-
-	for _, s := range summaries {
-		if len(s.RankHistory) == 0 {
-			continue
-		}
-
-		pts := make([]svgTimePoint, numPoints)
-		hasData := false
-		// RankHistory is newest-first (index 0 = "now", index len-1 = oldest).
-		// We want pts to be oldest-first so the left side of the graph is
-		// the most distant point.  Place each source entry at its destination
-		// index (numPoints-1-j) so that "now" lands at pts[numPoints-1] and
-		// older entries land to the left.  Entries for weeks with no snapshot
-		// stay as zero-value svgTimePoint (Spot=0 → no data for that column).
-		// Using j as the source index (not a reversed index based on numPoints)
-		// prevents an out-of-bounds panic when len(s.RankHistory) < numPoints.
-		for j := 0; j < len(s.RankHistory) && j < numPoints; j++ {
-			dstIdx := numPoints - 1 - j // "now" (j=0) maps to rightmost slot
-			h := s.RankHistory[j]
-			pts[dstIdx] = svgTimePoint{
-				Label: h.Anchor,
-				Spot:  h.Spot,
-				Date:  h.SnapshotDate,
-			}
-			if h.Spot > maxRank {
-				maxRank = h.Spot
-			}
-			if h.Spot > 0 {
-				hasData = true
-			}
-		}
-
-		if !hasData {
-			continue // skip projects that have never appeared in any snapshot
-		}
-
-		// A project is inactive when its average commit age (HEAD) exceeds 730
-		// days (~2 years).  AvgCommitAge is the mean age of the last 42 commits,
-		// so a single stray "add deprecation notice" commit does not rescue a
-		// decade-old dormant project.  A genuinely revived project needs ~42
-		// recent commits before the average drops below the threshold.
-		// LastActivityDate (all-branches) is retained in the struct for future
-		// use but is not part of this check so one-off commits cannot mask decay.
-		inactive := s.Metadata != nil && s.Metadata.AvgCommitAge > 730
-
-		score := 0.0
-		if s.Metadata != nil {
-			score = s.Metadata.Score
-		}
-
-		allProjects = append(allProjects, svgProjectData{
-			Name:     s.Name,
-			Color:    projectColor(colorIdx),
-			Points:   pts,
-			Inactive: inactive,
-			Score:    score,
-		})
-		colorIdx++
-	}
-
-	// Trim leading all-zero columns so the graph starts at the oldest week
-	// that has real data for any project (not at week 32 if history only goes
-	// back 5 weeks).  The rightmost column is always "now" (index numPoints-1).
-	firstDataCol := numPoints - 1 // pessimistic: show at least "now"
-outer:
-	for col := 0; col < numPoints; col++ {
-		for _, proj := range allProjects {
-			if proj.Points[col].Spot > 0 {
-				firstDataCol = col
-				break outer
-			}
-		}
-	}
-	for i := range allProjects {
-		allProjects[i].Points = allProjects[i].Points[firstDataCol:]
-	}
-	displayPoints := numPoints - firstDataCol // actual columns to render
-
-	// Human-readable X-axis labels (left = oldest visible, right = "now").
-	// Position i is (displayPoints-1-i) weeks ago; position displayPoints-1 is "now".
-	xLabels := make([]string, displayPoints)
-	for i := 0; i < displayPoints; i++ {
-		weeksAgo := displayPoints - 1 - i
-		if weeksAgo == 0 {
-			xLabels[i] = "now"
-		} else {
-			xLabels[i] = fmt.Sprintf("%dw ago", weeksAgo)
-		}
-	}
-
-	// --- Layout helpers ---
-	plotW := svgViewWidth - svgMarginLeft - svgMarginRight // = svgPlotWidth = 900
-	plotH := svgViewHeight - svgMarginTop - svgMarginBottom
-
-	xPos := func(i int) float64 {
-		if displayPoints <= 1 {
-			return float64(svgMarginLeft) + float64(plotW)/2
-		}
-		return float64(svgMarginLeft) + float64(i)*float64(plotW)/float64(displayPoints-1)
-	}
-
-	// rank 1 → top of plot, maxRank → bottom of plot.
-	yPos := func(rank int) float64 {
-		if rank <= 0 {
-			return -999 // off-screen sentinel; caller should skip
-		}
-		if maxRank <= 1 {
-			return float64(svgMarginTop) + float64(plotH)/2
-		}
-		ratio := float64(rank-1) / float64(maxRank-1)
-		return float64(svgMarginTop) + ratio*float64(plotH)
-	}
-
-	// Embed project data as JSON for the JS tooltip layer.
-	projectsJSON, _ := json.Marshal(allProjects)
-
-	// --- Build SVG sub-sections ---
-
-	// Horizontal grid lines and Y-axis labels.
-	var gridBuf strings.Builder
-	yStep := gridStep(maxRank)
-	plotRight := float64(svgMarginLeft + plotW)
-	for r := 1; r <= maxRank; r += yStep {
-		y := yPos(r)
-		fmt.Fprintf(&gridBuf,
-			`<line class="gl" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>`,
-			float64(svgMarginLeft), y, plotRight, y)
-		fmt.Fprintf(&gridBuf,
-			`<text class="al" x="%.1f" y="%.1f" text-anchor="end">%d</text>`,
-			float64(svgMarginLeft)-6, y+4, r)
-	}
-
-	// Vertical grid lines and X-axis labels.
-	// When there are many columns (long history), only label every Nth column
-	// so the axis stays readable; "now" (rightmost) is always labelled.
-	var xAxisBuf strings.Builder
-	plotBottom := float64(svgMarginTop + plotH)
-	labelStep := xLabelStep(displayPoints)
-	for i := 0; i < displayPoints; i++ {
-		x := xPos(i)
-		fmt.Fprintf(&xAxisBuf,
-			`<line class="gl" x1="%.1f" y1="%d" x2="%.1f" y2="%.1f"/>`,
-			x, svgMarginTop, x, plotBottom)
-		if i%labelStep == 0 || i == displayPoints-1 {
-			fmt.Fprintf(&xAxisBuf,
-				`<text class="al" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`,
-				x, plotBottom+16, xLabels[i])
-		}
-	}
-
-	// Project lines and dot groups.
-	var linesBuf strings.Builder
-	for i, proj := range allProjects {
-		pathD := buildSVGPath(proj.Points, xPos, yPos)
-		if pathD == "" {
-			continue
-		}
-
-		// One circle per valid data point so the tooltip hit-area is larger.
-		var circleBuf strings.Builder
-		for j, pt := range proj.Points {
-			if pt.Spot <= 0 {
-				continue
-			}
-			x := xPos(j)
-			y := yPos(pt.Spot)
-			if y < 0 {
-				continue
-			}
-			fmt.Fprintf(&circleBuf, `<circle cx="%.1f" cy="%.1f" r="4"/>`, x, y)
-		}
-
-		fmt.Fprintf(&linesBuf,
-			`<g class="pg" id="pg-%d" onmouseenter="onEnter(%d,event)" onmouseleave="onLeave()">`,
-			i, i)
-		fmt.Fprintf(&linesBuf, `<path d="%s" stroke="%s" class="pl"/>`, pathD, proj.Color)
-		fmt.Fprintf(&linesBuf, `<g class="pd" fill="%s">%s</g>`, proj.Color, circleBuf.String())
-		linesBuf.WriteString(`</g>`)
-	}
-
-	// --- Assemble the full SVG ---
-	var svg strings.Builder
-
-	// position:fixed + top/left:0 overrides the browser's default body margin
-	// so the SVG sits flush against all four edges of the viewport.  No width,
-	// height, or viewBox is set here; rescale() writes them as explicit pixel
-	// values derived from window.innerWidth/innerHeight so the chart always
-	// fills the window without letterboxing.
-	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" style="position:fixed;top:0;left:0;display:block">`)
-
-	// Embedded CSS – kept compact but readable.
-	svg.WriteString(`<style>
+const rankHistorySVGStyle = `<style>
 svg{background:#1a1a2e;font-family:monospace}
 .gl{stroke:#2a2a5a;stroke-width:.6;stroke-dasharray:4,3}
 .al{fill:#888;font-size:11px}
@@ -379,57 +44,9 @@ svg{background:#1a1a2e;font-family:monospace}
 #ttbg{fill:#1a1a40;stroke:#4444aa;stroke-width:1}
 #tttl{fill:#fff;font-size:12px;font-weight:bold;font-family:monospace}
 .ttrow{fill:#bbb;font-size:10px;font-family:monospace}
-</style>`)
+</style>`
 
-	// Solid background rect covers the whole viewport regardless of how the
-	// chart group is transformed.  #chart is opened next so that rescale()
-	// can reposition all chart elements together as a single unit.
-	svg.WriteString(`<rect width="100%" height="100%" fill="#1a1a2e"/>`)
-	svg.WriteString(`<g id="chart">`)
-
-	// Title + two subtitle lines.
-	fmt.Fprintf(&svg, `<text class="title" x="%d" y="28" text-anchor="middle">Project Rank History</text>`, svgViewWidth/2)
-	fmt.Fprintf(&svg,
-		`<text class="sub" x="%d" y="44" text-anchor="middle">rank 1 = highest score · hover a line or legend entry to highlight · %d projects tracked</text>`,
-		svgViewWidth/2, len(allProjects))
-	// Second subtitle: explain the grey lines so readers know what they mean.
-	fmt.Fprintf(&svg,
-		`<text class="sub" x="%d" y="57" text-anchor="middle">grey lines = inactive projects (avg commit age &gt; 2 years) · hover legend entry to highlight</text>`,
-		svgViewWidth/2)
-
-	// Rotated Y-axis label.
-	cx := float64(svgMarginLeft) - 40
-	cy := float64(svgMarginTop) + float64(plotH)/2
-	fmt.Fprintf(&svg,
-		`<text class="al" text-anchor="middle" transform="rotate(-90 %.1f %.1f)" x="%.1f" y="%.1f">Rank</text>`,
-		cx, cy, cx, cy)
-
-	// Grid, axes, and project lines.
-	svg.WriteString(gridBuf.String())
-	svg.WriteString(xAxisBuf.String())
-	svg.WriteString(linesBuf.String())
-
-	// Legend panel to the right of the plot area.
-	legendX := svgMarginLeft + plotW + svgLegendGap
-	svg.WriteString(buildLegendSVG(allProjects, legendX, plotH))
-
-	// Tooltip overlay (hidden until a project is hovered).
-	// #tttl is the project-name title; #ttbd holds the per-snapshot rows below it.
-	svg.WriteString(`<g id="tt">
-<rect id="ttbg" x="0" y="0" width="220" height="100" rx="5" ry="5"/>
-<text id="tttl" x="10" y="18"></text>
-<g id="ttbd"></g>
-</g>`)
-
-	// Close the #chart group before the script so all chart elements are
-	// contained inside it and can be repositioned together by rescale().
-	svg.WriteString(`</g>`)
-
-	// Inline JavaScript for interactivity and dynamic scaling.
-	// PROJECTS is the JSON array; each entry has name, color, and points[].
-	// CHART_W / CHART_H are the fixed viewBox coordinates used when designing
-	// the chart; rescale() maps them to the actual window size at runtime.
-	fmt.Fprintf(&svg, `<script><![CDATA[
+const rankHistorySVGScriptTemplate = `<script><![CDATA[
 var PROJECTS=%s;
 var CHART_W=%d, CHART_H=%d;
 var svgEl=document.querySelector('svg');
@@ -587,7 +204,416 @@ function moveTT(evt){
   if(ty<5)ty=5;
   tt.setAttribute('transform','translate('+tx+','+ty+')');
 }
-]]></script>`, string(projectsJSON), svgViewWidth, svgViewHeight)
+]]></script>`
+
+// svgTimePoint is one weekly data snapshot for a project, embedded in the SVG
+// for JavaScript tooltip rendering.
+type svgTimePoint struct {
+	Label string `json:"label"` // "now", "1w", "2w", …
+	Spot  int    `json:"spot"`  // 0 means no data for this week
+	Date  string `json:"date,omitempty"`
+}
+
+// svgProjectData carries per-project metadata used by the interactive JS layer.
+// Inactive is true when the project's average commit age (last 42 commits on
+// HEAD) exceeds 730 days (~2 years).  A single recent commit does not rescue
+// a dormant project; ~42 recent commits are needed to move the average below
+// the threshold.  Inactive projects are rendered as grey lines by default and
+// only switch to their project colour when the user mouses over their legend entry.
+type svgProjectData struct {
+	Name     string         `json:"name"`
+	Color    string         `json:"color"`
+	Points   []svgTimePoint `json:"points"`
+	Inactive bool           `json:"inactive"`
+	Score    float64        `json:"score"` // project score for tooltip display
+}
+
+// projectColor returns a visually distinct CSS hex color for project index i.
+// It uses golden-ratio hue spacing so successive projects never look similar.
+func projectColor(i int) string {
+	const golden = 0.618033988749895
+	hue := math.Mod(float64(i)*golden*360, 360)
+	return hslToRGBHex(hue, 0.75, 0.62)
+}
+
+// hslToRGBHex converts an HSL color (h in [0,360), s and l in [0,1]) to a
+// CSS hex string like "#rrggbb".
+func hslToRGBHex(h, s, l float64) string {
+	c := (1 - math.Abs(2*l-1)) * s
+	x := c * (1 - math.Abs(math.Mod(h/60, 2)-1))
+	m := l - c/2
+
+	var r, g, b float64
+	switch {
+	case h < 60:
+		r, g, b = c, x, 0
+	case h < 120:
+		r, g, b = x, c, 0
+	case h < 180:
+		r, g, b = 0, c, x
+	case h < 240:
+		r, g, b = 0, x, c
+	case h < 300:
+		r, g, b = x, 0, c
+	default:
+		r, g, b = c, 0, x
+	}
+
+	ri := int(math.Round((r + m) * 255))
+	gi := int(math.Round((g + m) * 255))
+	bi := int(math.Round((b + m) * 255))
+	return fmt.Sprintf("#%02x%02x%02x", ri, gi, bi)
+}
+
+// truncateName shortens s to at most maxRunes runes, appending "…" if cut.
+func truncateName(s string, maxRunes int) string {
+	runes := []rune(s)
+	if len(runes) <= maxRunes {
+		return s
+	}
+	return string(runes[:maxRunes-1]) + "…"
+}
+
+// xmlEscape replaces the characters that are special in SVG/XML text content.
+func xmlEscape(s string) string {
+	s = strings.ReplaceAll(s, "&", "&amp;")
+	s = strings.ReplaceAll(s, "<", "&lt;")
+	s = strings.ReplaceAll(s, ">", "&gt;")
+	return s
+}
+
+// buildLegendSVG returns SVG markup for the 3-column project legend panel.
+// Each entry calls onEnter/onLeave to synchronise with the plot lines.
+// legendX is the left edge of the first legend column.
+func buildLegendSVG(allProjects []svgProjectData, legendX, plotH int) string {
+	if len(allProjects) == 0 {
+		return ""
+	}
+
+	var buf strings.Builder
+
+	// Faint vertical separator between plot and legend.
+	fmt.Fprintf(&buf,
+		`<line x1="%d" y1="%d" x2="%d" y2="%d" stroke="#2a2a5a" stroke-width="1"/>`,
+		legendX-12, svgMarginTop, legendX-12, svgMarginTop+plotH)
+
+	// Legend header.
+	fmt.Fprintf(&buf,
+		`<text class="lhd" x="%d" y="%d">PROJECTS (hover to highlight)</text>`,
+		legendX, svgMarginTop-8)
+
+	// Distribute entries across columns: first fill column 0, then 1, then 2.
+	rowsPerCol := (len(allProjects) + svgLegendCols - 1) / svgLegendCols
+	const rowH = 13     // vertical stride per legend entry (px)
+	const sqSize = 8    // colored square side length
+	const maxChars = 12 // max display characters before truncation
+
+	for i, proj := range allProjects {
+		col := i / rowsPerCol
+		row := i % rowsPerCol
+
+		colX := legendX + col*svgLegendColW
+		// rowY is the text baseline; the square is centered on it.
+		rowY := svgMarginTop + row*rowH + rowH
+
+		name := xmlEscape(truncateName(proj.Name, maxChars))
+
+		// Each legend entry reuses onEnter/onLeave so hovering a legend item
+		// highlights the corresponding plot line and opens the same tooltip.
+		fmt.Fprintf(&buf,
+			`<g class="lg" id="lg-%d" onmouseenter="onEnter(%d,event)" onmouseleave="onLeave()">`,
+			i, i)
+		fmt.Fprintf(&buf,
+			`<rect class="lsq" x="%d" y="%d" width="%d" height="%d" fill="%s"/>`,
+			colX, rowY-sqSize+1, sqSize, sqSize, proj.Color)
+		fmt.Fprintf(&buf,
+			`<text class="ltx" x="%d" y="%d">%s</text>`,
+			colX+sqSize+3, rowY, name)
+		buf.WriteString(`</g>`)
+	}
+
+	return buf.String()
+}
+
+func buildProjectData(summaries []ProjectSummary, numPoints int) ([]svgProjectData, int) {
+	allProjects := make([]svgProjectData, 0, len(summaries))
+	maxRank := 1
+	colorIdx := 0
+
+	for _, s := range summaries {
+		if len(s.RankHistory) == 0 {
+			continue
+		}
+
+		pts := make([]svgTimePoint, numPoints)
+		hasData := false
+		// RankHistory is newest-first (index 0 = "now", index len-1 = oldest).
+		// We want pts to be oldest-first so the left side of the graph is
+		// the most distant point.  Place each source entry at its destination
+		// index (numPoints-1-j) so that "now" lands at pts[numPoints-1] and
+		// older entries land to the left.  Entries for weeks with no snapshot
+		// stay as zero-value svgTimePoint (Spot=0 → no data for that column).
+		// Using j as the source index (not a reversed index based on numPoints)
+		// prevents an out-of-bounds panic when len(s.RankHistory) < numPoints.
+		for j := 0; j < len(s.RankHistory) && j < numPoints; j++ {
+			dstIdx := numPoints - 1 - j // "now" (j=0) maps to rightmost slot
+			h := s.RankHistory[j]
+			pts[dstIdx] = svgTimePoint{
+				Label: h.Anchor,
+				Spot:  h.Spot,
+				Date:  h.SnapshotDate,
+			}
+			if h.Spot > maxRank {
+				maxRank = h.Spot
+			}
+			if h.Spot > 0 {
+				hasData = true
+			}
+		}
+
+		if !hasData {
+			continue // skip projects that have never appeared in any snapshot
+		}
+
+		// A project is inactive when its average commit age (HEAD) exceeds 730
+		// days (~2 years).  AvgCommitAge is the mean age of the last 42 commits,
+		// so a single stray "add deprecation notice" commit does not rescue a
+		// decade-old dormant project.  A genuinely revived project needs ~42
+		// recent commits before the average drops below the threshold.
+		// LastActivityDate (all-branches) is retained in the struct for future
+		// use but is not part of this check so one-off commits cannot mask decay.
+		inactive := s.Metadata != nil && s.Metadata.AvgCommitAge > 730
+
+		score := 0.0
+		if s.Metadata != nil {
+			score = s.Metadata.Score
+		}
+
+		allProjects = append(allProjects, svgProjectData{
+			Name:     s.Name,
+			Color:    projectColor(colorIdx),
+			Points:   pts,
+			Inactive: inactive,
+			Score:    score,
+		})
+		colorIdx++
+	}
+
+	return allProjects, maxRank
+}
+
+// trimLeadingEmptyColumns removes leading columns where every project has no
+// data so the leftmost rendered column is the oldest available data point.
+func trimLeadingEmptyColumns(allProjects []svgProjectData, numPoints int) int {
+	firstDataCol := numPoints - 1 // pessimistic: show at least "now"
+outer:
+	for col := 0; col < numPoints; col++ {
+		for _, proj := range allProjects {
+			if proj.Points[col].Spot > 0 {
+				firstDataCol = col
+				break outer
+			}
+		}
+	}
+
+	for i := range allProjects {
+		allProjects[i].Points = allProjects[i].Points[firstDataCol:]
+	}
+
+	return numPoints - firstDataCol
+}
+
+func buildXLabels(displayPoints int) []string {
+	// Human-readable X-axis labels (left = oldest visible, right = "now").
+	// Position i is (displayPoints-1-i) weeks ago; position displayPoints-1 is "now".
+	xLabels := make([]string, displayPoints)
+	for i := 0; i < displayPoints; i++ {
+		weeksAgo := displayPoints - 1 - i
+		if weeksAgo == 0 {
+			xLabels[i] = "now"
+		} else {
+			xLabels[i] = fmt.Sprintf("%dw ago", weeksAgo)
+		}
+	}
+	return xLabels
+}
+
+func renderAxes(
+	maxRank, displayPoints, plotW, plotH int,
+	xPos func(int) float64,
+	yPos func(int) float64,
+	xLabels []string,
+) (string, string) {
+	var gridBuf strings.Builder
+	yStep := gridStep(maxRank)
+	plotRight := float64(svgMarginLeft + plotW)
+	for r := 1; r <= maxRank; r += yStep {
+		y := yPos(r)
+		fmt.Fprintf(&gridBuf,
+			`<line class="gl" x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f"/>`,
+			float64(svgMarginLeft), y, plotRight, y)
+		fmt.Fprintf(&gridBuf,
+			`<text class="al" x="%.1f" y="%.1f" text-anchor="end">%d</text>`,
+			float64(svgMarginLeft)-6, y+4, r)
+	}
+
+	var xAxisBuf strings.Builder
+	plotBottom := float64(svgMarginTop + plotH)
+	labelStep := xLabelStep(displayPoints)
+	for i := 0; i < displayPoints; i++ {
+		x := xPos(i)
+		fmt.Fprintf(&xAxisBuf,
+			`<line class="gl" x1="%.1f" y1="%d" x2="%.1f" y2="%.1f"/>`,
+			x, svgMarginTop, x, plotBottom)
+		if i%labelStep == 0 || i == displayPoints-1 {
+			fmt.Fprintf(&xAxisBuf,
+				`<text class="al" x="%.1f" y="%.1f" text-anchor="middle">%s</text>`,
+				x, plotBottom+16, xLabels[i])
+		}
+	}
+
+	return gridBuf.String(), xAxisBuf.String()
+}
+
+func renderLines(allProjects []svgProjectData, xPos func(int) float64, yPos func(int) float64) string {
+	var linesBuf strings.Builder
+
+	for i, proj := range allProjects {
+		pathD := buildSVGPath(proj.Points, xPos, yPos)
+		if pathD == "" {
+			continue
+		}
+
+		// One circle per valid data point so the tooltip hit-area is larger.
+		var circleBuf strings.Builder
+		for j, pt := range proj.Points {
+			if pt.Spot <= 0 {
+				continue
+			}
+			x := xPos(j)
+			y := yPos(pt.Spot)
+			if y < 0 {
+				continue
+			}
+			fmt.Fprintf(&circleBuf, `<circle cx="%.1f" cy="%.1f" r="4"/>`, x, y)
+		}
+
+		fmt.Fprintf(&linesBuf,
+			`<g class="pg" id="pg-%d" onmouseenter="onEnter(%d,event)" onmouseleave="onLeave()">`,
+			i, i)
+		fmt.Fprintf(&linesBuf, `<path d="%s" stroke="%s" class="pl"/>`, pathD, proj.Color)
+		fmt.Fprintf(&linesBuf, `<g class="pd" fill="%s">%s</g>`, proj.Color, circleBuf.String())
+		linesBuf.WriteString(`</g>`)
+	}
+
+	return linesBuf.String()
+}
+
+// GenerateRankHistorySVG creates an interactive inline SVG that shows a
+// Google-Trends-style rank history graph for all projects.
+//
+// Layout:
+//   - Plot area: left = oldest snapshot, right = "now"; rank 1 at top.
+//   - Legend panel: 3-column grid to the right of the plot; hovering a
+//     legend entry highlights the corresponding plot line.
+//   - The SVG uses width/height="100%" so it fills the browser window.
+func GenerateRankHistorySVG(summaries []ProjectSummary) string {
+	numPoints := rankHistoryPoints // up to 32 weekly snapshots
+
+	allProjects, maxRank := buildProjectData(summaries, numPoints)
+	displayPoints := trimLeadingEmptyColumns(allProjects, numPoints)
+	xLabels := buildXLabels(displayPoints)
+
+	// --- Layout helpers ---
+	plotW := svgViewWidth - svgMarginLeft - svgMarginRight // = svgPlotWidth = 900
+	plotH := svgViewHeight - svgMarginTop - svgMarginBottom
+
+	xPos := func(i int) float64 {
+		if displayPoints <= 1 {
+			return float64(svgMarginLeft) + float64(plotW)/2
+		}
+		return float64(svgMarginLeft) + float64(i)*float64(plotW)/float64(displayPoints-1)
+	}
+
+	// rank 1 → top of plot, maxRank → bottom of plot.
+	yPos := func(rank int) float64 {
+		if rank <= 0 {
+			return -999 // off-screen sentinel; caller should skip
+		}
+		if maxRank <= 1 {
+			return float64(svgMarginTop) + float64(plotH)/2
+		}
+		ratio := float64(rank-1) / float64(maxRank-1)
+		return float64(svgMarginTop) + ratio*float64(plotH)
+	}
+
+	// Embed project data as JSON for the JS tooltip layer.
+	projectsJSON, _ := json.Marshal(allProjects)
+
+	gridSVG, xAxisSVG := renderAxes(maxRank, displayPoints, plotW, plotH, xPos, yPos, xLabels)
+	linesSVG := renderLines(allProjects, xPos, yPos)
+
+	// --- Assemble the full SVG ---
+	var svg strings.Builder
+
+	// position:fixed + top/left:0 overrides the browser's default body margin
+	// so the SVG sits flush against all four edges of the viewport.  No width,
+	// height, or viewBox is set here; rescale() writes them as explicit pixel
+	// values derived from window.innerWidth/innerHeight so the chart always
+	// fills the window without letterboxing.
+	svg.WriteString(`<svg xmlns="http://www.w3.org/2000/svg" style="position:fixed;top:0;left:0;display:block">`)
+
+	svg.WriteString(rankHistorySVGStyle)
+
+	// Solid background rect covers the whole viewport regardless of how the
+	// chart group is transformed.  #chart is opened next so that rescale()
+	// can reposition all chart elements together as a single unit.
+	svg.WriteString(`<rect width="100%" height="100%" fill="#1a1a2e"/>`)
+	svg.WriteString(`<g id="chart">`)
+
+	// Title + two subtitle lines.
+	fmt.Fprintf(&svg, `<text class="title" x="%d" y="28" text-anchor="middle">Project Rank History</text>`, svgViewWidth/2)
+	fmt.Fprintf(&svg,
+		`<text class="sub" x="%d" y="44" text-anchor="middle">rank 1 = highest score · hover a line or legend entry to highlight · %d projects tracked</text>`,
+		svgViewWidth/2, len(allProjects))
+	// Second subtitle: explain the grey lines so readers know what they mean.
+	fmt.Fprintf(&svg,
+		`<text class="sub" x="%d" y="57" text-anchor="middle">grey lines = inactive projects (avg commit age &gt; 2 years) · hover legend entry to highlight</text>`,
+		svgViewWidth/2)
+
+	// Rotated Y-axis label.
+	cx := float64(svgMarginLeft) - 40
+	cy := float64(svgMarginTop) + float64(plotH)/2
+	fmt.Fprintf(&svg,
+		`<text class="al" text-anchor="middle" transform="rotate(-90 %.1f %.1f)" x="%.1f" y="%.1f">Rank</text>`,
+		cx, cy, cx, cy)
+
+	// Grid, axes, and project lines.
+	svg.WriteString(gridSVG)
+	svg.WriteString(xAxisSVG)
+	svg.WriteString(linesSVG)
+
+	// Legend panel to the right of the plot area.
+	legendX := svgMarginLeft + plotW + svgLegendGap
+	svg.WriteString(buildLegendSVG(allProjects, legendX, plotH))
+
+	// Tooltip overlay (hidden until a project is hovered).
+	// #tttl is the project-name title; #ttbd holds the per-snapshot rows below it.
+	svg.WriteString(`<g id="tt">
+<rect id="ttbg" x="0" y="0" width="220" height="100" rx="5" ry="5"/>
+<text id="tttl" x="10" y="18"></text>
+<g id="ttbd"></g>
+</g>`)
+
+	// Close the #chart group before the script so all chart elements are
+	// contained inside it and can be repositioned together by rescale().
+	svg.WriteString(`</g>`)
+
+	// Inline JavaScript for interactivity and dynamic scaling.
+	// PROJECTS is the JSON array; each entry has name, color, and points[].
+	// CHART_W / CHART_H are the fixed viewBox coordinates used when designing
+	// the chart; rescale() maps them to the actual window size at runtime.
+	fmt.Fprintf(&svg, rankHistorySVGScriptTemplate, string(projectsJSON), svgViewWidth, svgViewHeight)
 
 	svg.WriteString(`</svg>`)
 	return svg.String()

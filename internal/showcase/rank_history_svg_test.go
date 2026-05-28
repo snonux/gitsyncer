@@ -290,3 +290,103 @@ func TestGridStep_ReturnsSensibleSteps(t *testing.T) {
 		}
 	}
 }
+
+func TestBuildProjectData_MapsHistoryAndMetadata(t *testing.T) {
+	t.Parallel()
+
+	summaries := []ProjectSummary{
+		{
+			Name: "alpha",
+			Metadata: &RepoMetadata{
+				Score: 42.5,
+			},
+			RankHistory: []RepoRankHistory{
+				{Spot: 1, Anchor: "now", SnapshotDate: "2026-05-27"},
+				{Spot: 3, Anchor: "1w", SnapshotDate: "2026-05-20"},
+			},
+		},
+		{
+			Name: "dormant",
+			Metadata: &RepoMetadata{
+				AvgCommitAge: 1200,
+				Score:        1.5,
+			},
+			RankHistory: []RepoRankHistory{
+				{Spot: 4, Anchor: "now", SnapshotDate: "2026-05-27"},
+			},
+		},
+		{
+			Name:        "ghost",
+			RankHistory: []RepoRankHistory{{Spot: 0}, {Spot: 0}},
+		},
+	}
+
+	projects, maxRank := buildProjectData(summaries, 5)
+
+	if maxRank != 4 {
+		t.Fatalf("maxRank = %d, want 4", maxRank)
+	}
+	if len(projects) != 2 {
+		t.Fatalf("len(projects) = %d, want 2 (ghost should be skipped)", len(projects))
+	}
+
+	alpha := projects[0]
+	if alpha.Name != "alpha" {
+		t.Fatalf("first project name = %q, want alpha", alpha.Name)
+	}
+	if alpha.Score != 42.5 {
+		t.Fatalf("alpha score = %.1f, want 42.5", alpha.Score)
+	}
+	if alpha.Inactive {
+		t.Fatal("alpha should be active")
+	}
+	if alpha.Points[4].Label != "now" || alpha.Points[4].Spot != 1 {
+		t.Fatalf("alpha now point = %+v, want label=now spot=1", alpha.Points[4])
+	}
+	if alpha.Points[3].Label != "1w" || alpha.Points[3].Spot != 3 {
+		t.Fatalf("alpha 1w point = %+v, want label=1w spot=3", alpha.Points[3])
+	}
+
+	dormant := projects[1]
+	if !dormant.Inactive {
+		t.Fatal("dormant should be inactive")
+	}
+}
+
+func TestTrimLeadingEmptyColumns_EdgeCases(t *testing.T) {
+	t.Parallel()
+
+	noProjects := []svgProjectData{}
+	if got := trimLeadingEmptyColumns(noProjects, 5); got != 1 {
+		t.Fatalf("displayPoints for empty projects = %d, want 1", got)
+	}
+
+	projects := []svgProjectData{
+		{
+			Name: "alpha",
+			Points: []svgTimePoint{
+				{Spot: 0}, {Spot: 0}, {Spot: 0}, {Spot: 2}, {Spot: 1},
+			},
+		},
+	}
+
+	displayPoints := trimLeadingEmptyColumns(projects, 5)
+	if displayPoints != 2 {
+		t.Fatalf("displayPoints = %d, want 2", displayPoints)
+	}
+	if len(projects[0].Points) != 2 {
+		t.Fatalf("trimmed point count = %d, want 2", len(projects[0].Points))
+	}
+	if projects[0].Points[0].Spot != 2 || projects[0].Points[1].Spot != 1 {
+		t.Fatalf("trimmed points = %+v, want spots [2 1]", projects[0].Points)
+	}
+}
+
+func TestBuildXLabels_SinglePoint(t *testing.T) {
+	t.Parallel()
+
+	labels := buildXLabels(1)
+	if len(labels) != 1 || labels[0] != "now" {
+		t.Fatalf("buildXLabels(1) = %#v, want [\"now\"]", labels)
+	}
+}
