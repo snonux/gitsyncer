@@ -56,6 +56,27 @@ func HandleCheckReleasesForRepo(cfg *config.Config, flags *Flags, repoName strin
 	return HandleCheckReleasesForRepos(cfg, flags, []string{repoName})
 }
 
+type releaseNotesMode int
+
+const (
+	releaseNotesModeCreate releaseNotesMode = iota
+	releaseNotesModeUpdate
+)
+
+type releaseTarget struct {
+	name                  string
+	owner                 string
+	getReleases           func(owner, repo string) ([]string, error)
+	createRelease         func(owner, repo, tag, releaseNotes string) error
+	updateRelease         func(owner, repo, tag, releaseNotes string) error
+	ensureReleasesEnabled func(owner, repo string) error
+}
+
+type releaseNotesGenerator interface {
+	GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags []string, commits []string) (string, error)
+	GenerateReleaseNotes(repoPath, tag string, allTags []string) string
+}
+
 // HandleCheckReleasesForRepos checks for version tags without releases and creates them with confirmation
 func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories []string) int {
 	releaseManager := release.NewManager(flags.WorkDir)
@@ -68,6 +89,7 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 
 	// Track failed AI generations
 	failedAIGenerations := []string{}
+	var releaseTargets []releaseTarget
 
 	// Print summary at the end
 	defer func() {
@@ -115,6 +137,16 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		} else {
 			fmt.Println("WARNING: No GitHub token found - cannot create GitHub releases")
 		}
+
+		if githubOrg.Name != "" {
+			releaseTargets = append(releaseTargets, releaseTarget{
+				name:          "GitHub",
+				owner:         githubOrg.Name,
+				getReleases:   releaseManager.GetGitHubReleases,
+				createRelease: releaseManager.CreateGitHubRelease,
+				updateRelease: releaseManager.UpdateGitHubRelease,
+			})
+		}
 	} else {
 		fmt.Println("No GitHub organization found in config")
 	}
@@ -146,6 +178,17 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 			fmt.Printf("  Codeberg token loaded (length: %d)\n", len(token))
 		} else {
 			fmt.Println("WARNING: No Codeberg token found - cannot create Codeberg releases")
+		}
+
+		if codebergOrg.Name != "" {
+			releaseTargets = append(releaseTargets, releaseTarget{
+				name:                  "Codeberg",
+				owner:                 codebergOrg.Name,
+				getReleases:           releaseManager.GetCodebergReleases,
+				createRelease:         releaseManager.CreateCodebergRelease,
+				updateRelease:         releaseManager.UpdateCodebergRelease,
+				ensureReleasesEnabled: releaseManager.EnsureCodebergReleasesEnabled,
+			})
 		}
 	} else {
 		fmt.Println("No Codeberg organization found in config")
@@ -182,406 +225,293 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 			}
 		}
 
-		// Check GitHub releases if GitHub is configured
-		var missingGitHub []string
-		githubOrg := cfg.FindGitHubOrg()
-		if githubOrg != nil && githubOrg.Name != "" {
-			githubReleases, err := releaseManager.GetGitHubReleases(githubOrg.Name, repoName)
-			if err != nil {
-				fmt.Printf("  Error checking GitHub releases: %v\n", err)
-			} else {
-				missingGitHub = releaseManager.FindMissingReleases(localTags, githubReleases)
-				// Filter out tags that should be skipped per config
-				if len(missingGitHub) > 0 {
-					var filtered []string
-					var skipped []string
-					for _, t := range missingGitHub {
-						if cfg.ShouldSkipRelease(repoName, t) {
-							skipped = append(skipped, t)
-						} else {
-							filtered = append(filtered, t)
-						}
-					}
-					if len(skipped) > 0 {
-						fmt.Printf("  Skipping GitHub releases per config for tags: %s\n", strings.Join(skipped, ", "))
-					}
-					missingGitHub = filtered
-					if len(missingGitHub) > 0 {
-						fmt.Printf("  Missing GitHub releases: %s\n", strings.Join(missingGitHub, ", "))
-					}
-				}
-			}
-		}
-
-		// Check Codeberg releases if Codeberg is configured
-		var missingCodeberg []string
-		codebergOrg := cfg.FindCodebergOrg()
-		if codebergOrg != nil && codebergOrg.Name != "" {
-			codebergReleases, err := releaseManager.GetCodebergReleases(codebergOrg.Name, repoName)
-			if err != nil {
-				fmt.Printf("  Error checking Codeberg releases: %v\n", err)
-			} else {
-				missingCodeberg = releaseManager.FindMissingReleases(localTags, codebergReleases)
-				// Filter out tags that should be skipped per config
-				if len(missingCodeberg) > 0 {
-					var filtered []string
-					var skipped []string
-					for _, t := range missingCodeberg {
-						if cfg.ShouldSkipRelease(repoName, t) {
-							skipped = append(skipped, t)
-						} else {
-							filtered = append(filtered, t)
-						}
-					}
-					if len(skipped) > 0 {
-						fmt.Printf("  Skipping Codeberg releases per config for tags: %s\n", strings.Join(skipped, ", "))
-					}
-					missingCodeberg = filtered
-					if len(missingCodeberg) > 0 {
-						fmt.Printf("  Missing Codeberg releases: %s\n", strings.Join(missingCodeberg, ", "))
-					}
-				}
-			}
-		}
-
-		// Create missing releases with confirmation
-		if len(missingGitHub) > 0 && githubOrg != nil {
-			for _, tag := range missingGitHub {
-				// Skip if configured to skip this repo/tag
-				if cfg.ShouldSkipRelease(repoName, tag) {
-					fmt.Printf("  Skipping GitHub release for %s:%s per config skip_releases\n", repoName, tag)
-					continue
-				}
-				// Get commits for this tag
-				commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
-				if err != nil {
-					commits = []string{}
-				}
-
-				// Generate release notes
-				var releaseNotes string
-				if flags.AIReleaseNotes {
-					// Check cache first (unless --force is used)
-					cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
-					if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists && !flags.Force {
-						fmt.Printf("  Using cached AI release notes for %s\n", tag)
-						releaseNotes = cachedNotes
-					} else {
-						if flags.Force && aiReleaseNotesCache[cacheKey] != "" {
-							fmt.Printf("  Force regenerating AI release notes for %s (ignoring cache)\n", tag)
-						} else {
-							fmt.Printf("  Generating AI release notes for %s...\n", tag)
-						}
-						aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-						if err != nil {
-							fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-							fmt.Printf("  Falling back to standard release notes\n")
-							releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-							// Clear cache on failure and track
-							delete(aiReleaseNotesCache, cacheKey)
-							failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", githubOrg.Name, repoName, tag))
-							// Save cache after clearing the failed entry
-							saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
-						} else {
-							releaseNotes = aiNotes
-							aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
-							// Save cache immediately after successful generation
-							if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
-								fmt.Printf("  Warning: Failed to save cache: %v\n", err)
-							}
-							fmt.Printf("  AI release notes generated successfully and cached\n")
-						}
-					}
-				} else {
-					releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-				}
-
-				// Print release notes to stdout
-				fmt.Printf("\n%s\n", strings.Repeat("=", 70))
-				fmt.Printf("Release Notes for %s/%s tag %s:\n", githubOrg.Name, repoName, tag)
-				fmt.Printf("%s\n", strings.Repeat("-", 70))
-				fmt.Println(releaseNotes)
-				fmt.Printf("%s\n\n", strings.Repeat("=", 70))
-
-				msg := fmt.Sprintf("Create GitHub release for %s/%s tag %s?", githubOrg.Name, repoName, tag)
-
-				// Check if auto-create is enabled
-				createRelease := false
-				if flags.AutoCreateReleases {
-					fmt.Printf("  Auto-creating GitHub release for %s/%s tag %s\n", githubOrg.Name, repoName, tag)
-					createRelease = true
-				} else {
-					createRelease = release.PromptConfirmation(msg)
-				}
-
-				if createRelease {
-					if err := releaseManager.CreateGitHubRelease(githubOrg.Name, repoName, tag, releaseNotes); err != nil {
-						fmt.Printf("  Error creating GitHub release: %v\n", err)
-					} else {
-						fmt.Printf("  Created GitHub release for tag %s\n", tag)
-					}
-				}
-			}
-		}
-
-		if len(missingCodeberg) > 0 && codebergOrg != nil {
-			// Ensure Releases feature is enabled on Codeberg before creating releases
-			if err := releaseManager.EnsureCodebergReleasesEnabled(codebergOrg.Name, repoName); err != nil {
-				fmt.Printf("  Warning: Could not ensure Codeberg releases are enabled: %v\n", err)
-			}
-			for _, tag := range missingCodeberg {
-				// Skip if configured to skip this repo/tag
-				if cfg.ShouldSkipRelease(repoName, tag) {
-					fmt.Printf("  Skipping Codeberg release for %s:%s per config skip_releases\n", repoName, tag)
-					continue
-				}
-				// Get commits for this tag
-				commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
-				if err != nil {
-					commits = []string{}
-				}
-
-				// Generate release notes
-				var releaseNotes string
-				if flags.AIReleaseNotes {
-					// Check cache first (unless --force is used)
-					cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
-					if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists && !flags.Force {
-						fmt.Printf("  Using cached AI release notes for %s\n", tag)
-						releaseNotes = cachedNotes
-					} else {
-						if flags.Force && aiReleaseNotesCache[cacheKey] != "" {
-							fmt.Printf("  Force regenerating AI release notes for %s (ignoring cache)\n", tag)
-						} else {
-							fmt.Printf("  Generating AI release notes for %s...\n", tag)
-						}
-						aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-						if err != nil {
-							fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-							fmt.Printf("  Falling back to standard release notes\n")
-							releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-							// Clear cache on failure and track
-							delete(aiReleaseNotesCache, cacheKey)
-							failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", githubOrg.Name, repoName, tag))
-							// Save cache after clearing the failed entry
-							saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
-						} else {
-							releaseNotes = aiNotes
-							aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
-							// Save cache immediately after successful generation
-							if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
-								fmt.Printf("  Warning: Failed to save cache: %v\n", err)
-							}
-							fmt.Printf("  AI release notes generated successfully and cached\n")
-						}
-					}
-				} else {
-					releaseNotes = releaseManager.GenerateReleaseNotes(repoPath, tag, localTags)
-				}
-
-				// Print release notes to stdout
-				fmt.Printf("\n%s\n", strings.Repeat("=", 70))
-				fmt.Printf("Release Notes for %s/%s tag %s:\n", codebergOrg.Name, repoName, tag)
-				fmt.Printf("%s\n", strings.Repeat("-", 70))
-				fmt.Println(releaseNotes)
-				fmt.Printf("%s\n\n", strings.Repeat("=", 70))
-
-				msg := fmt.Sprintf("Create Codeberg release for %s/%s tag %s?", codebergOrg.Name, repoName, tag)
-
-				// Check if auto-create is enabled
-				createRelease := false
-				if flags.AutoCreateReleases {
-					fmt.Printf("  Auto-creating Codeberg release for %s/%s tag %s\n", codebergOrg.Name, repoName, tag)
-					createRelease = true
-				} else {
-					createRelease = release.PromptConfirmation(msg)
-				}
-
-				if createRelease {
-					if err := releaseManager.CreateCodebergRelease(codebergOrg.Name, repoName, tag, releaseNotes); err != nil {
-						fmt.Printf("  Error creating Codeberg release: %v\n", err)
-					} else {
-						fmt.Printf("  Created Codeberg release for tag %s\n", tag)
-					}
-				}
-			}
+		for _, target := range releaseTargets {
+			missingReleases := getMissingReleasesForTarget(cfg, releaseManager, target, repoName, localTags)
+			processCreateReleasesForTarget(
+				cfg,
+				flags,
+				releaseManager,
+				target,
+				repoName,
+				repoPath,
+				localTags,
+				missingReleases,
+				cacheFile,
+				aiReleaseNotesCache,
+				&failedAIGenerations,
+			)
 		}
 
 		// Update existing releases if requested
 		if flags.UpdateReleases {
-			// Update GitHub releases
-			if githubOrg != nil && githubOrg.Name != "" {
-				githubReleases, err := releaseManager.GetGitHubReleases(githubOrg.Name, repoName)
-				if err == nil && len(githubReleases) > 0 {
-					fmt.Printf("\n  Updating existing GitHub releases...\n")
-					for _, tag := range githubReleases {
-						// Check if this is a version tag
-						if !isVersionTag(tag) {
-							continue
-						}
-
-						// Get commits for this tag
-						commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
-						if err != nil {
-							commits = []string{}
-						}
-
-						// Generate AI release notes
-						if flags.AIReleaseNotes {
-							// Check cache first (unless --force is used)
-							cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
-							var aiNotes string
-							if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists && !flags.Force {
-								fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
-								aiNotes = cachedNotes
-							} else {
-								if flags.Force && aiReleaseNotesCache[cacheKey] != "" {
-									fmt.Printf("  Force regenerating AI release notes for existing release %s (ignoring cache)\n", tag)
-								} else {
-									fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
-								}
-								var err error
-								aiNotes, err = releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-								if err != nil {
-									fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-									// Clear cache on failure and track
-									delete(aiReleaseNotesCache, cacheKey)
-									// Determine which org we're updating for the failure message
-									orgName := ""
-									if githubOrg != nil && githubOrg.Name != "" {
-										orgName = githubOrg.Name
-									} else if codebergOrg != nil && codebergOrg.Name != "" {
-										orgName = codebergOrg.Name
-									}
-									failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", orgName, repoName, tag))
-									// Save cache after clearing the failed entry
-									saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
-									continue
-								}
-								aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
-								// Save cache immediately after successful generation
-								if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
-									fmt.Printf("  Warning: Failed to save cache: %v\n", err)
-								}
-							}
-
-							// Print release notes to stdout
-							fmt.Printf("\n%s\n", strings.Repeat("=", 70))
-							fmt.Printf("Updated Release Notes for %s/%s tag %s:\n", githubOrg.Name, repoName, tag)
-							fmt.Printf("%s\n", strings.Repeat("-", 70))
-							fmt.Println(aiNotes)
-							fmt.Printf("%s\n\n", strings.Repeat("=", 70))
-
-							msg := fmt.Sprintf("Update GitHub release for %s/%s tag %s?", githubOrg.Name, repoName, tag)
-
-							updateRelease := false
-							if flags.AutoCreateReleases {
-								fmt.Printf("  Auto-updating GitHub release for %s/%s tag %s\n", githubOrg.Name, repoName, tag)
-								updateRelease = true
-							} else {
-								updateRelease = release.PromptConfirmation(msg)
-							}
-
-							if updateRelease {
-								if err := releaseManager.UpdateGitHubRelease(githubOrg.Name, repoName, tag, aiNotes); err != nil {
-									fmt.Printf("  Error updating GitHub release: %v\n", err)
-								} else {
-									fmt.Printf("  Updated GitHub release for tag %s\n", tag)
-								}
-							}
-						}
-					}
-				}
-			}
-
-			// Update Codeberg releases
-			if codebergOrg != nil && codebergOrg.Name != "" {
-				codebergReleases, err := releaseManager.GetCodebergReleases(codebergOrg.Name, repoName)
-				if err == nil && len(codebergReleases) > 0 {
-					fmt.Printf("\n  Updating existing Codeberg releases...\n")
-					for _, tag := range codebergReleases {
-						// Check if this is a version tag
-						if !isVersionTag(tag) {
-							continue
-						}
-
-						// Get commits for this tag
-						commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
-						if err != nil {
-							commits = []string{}
-						}
-
-						// Generate AI release notes
-						if flags.AIReleaseNotes {
-							// Check cache first (unless --force is used)
-							cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
-							var aiNotes string
-							if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists && !flags.Force {
-								fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
-								aiNotes = cachedNotes
-							} else {
-								if flags.Force && aiReleaseNotesCache[cacheKey] != "" {
-									fmt.Printf("  Force regenerating AI release notes for existing release %s (ignoring cache)\n", tag)
-								} else {
-									fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
-								}
-								var err error
-								aiNotes, err = releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
-								if err != nil {
-									fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
-									// Clear cache on failure and track
-									delete(aiReleaseNotesCache, cacheKey)
-									// Determine which org we're updating for the failure message
-									orgName := ""
-									if githubOrg != nil && githubOrg.Name != "" {
-										orgName = githubOrg.Name
-									} else if codebergOrg != nil && codebergOrg.Name != "" {
-										orgName = codebergOrg.Name
-									}
-									failedAIGenerations = append(failedAIGenerations, fmt.Sprintf("%s/%s:%s", orgName, repoName, tag))
-									// Save cache after clearing the failed entry
-									saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache)
-									continue
-								}
-								aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
-								// Save cache immediately after successful generation
-								if err := saveAIReleaseNotesCache(cacheFile, aiReleaseNotesCache); err != nil {
-									fmt.Printf("  Warning: Failed to save cache: %v\n", err)
-								}
-							}
-
-							// Print release notes to stdout
-							fmt.Printf("\n%s\n", strings.Repeat("=", 70))
-							fmt.Printf("Updated Release Notes for %s/%s tag %s:\n", codebergOrg.Name, repoName, tag)
-							fmt.Printf("%s\n", strings.Repeat("-", 70))
-							fmt.Println(aiNotes)
-							fmt.Printf("%s\n\n", strings.Repeat("=", 70))
-
-							msg := fmt.Sprintf("Update Codeberg release for %s/%s tag %s?", codebergOrg.Name, repoName, tag)
-
-							updateRelease := false
-							if flags.AutoCreateReleases {
-								fmt.Printf("  Auto-updating Codeberg release for %s/%s tag %s\n", codebergOrg.Name, repoName, tag)
-								updateRelease = true
-							} else {
-								updateRelease = release.PromptConfirmation(msg)
-							}
-
-							if updateRelease {
-								if err := releaseManager.UpdateCodebergRelease(codebergOrg.Name, repoName, tag, aiNotes); err != nil {
-									fmt.Printf("  Error updating Codeberg release: %v\n", err)
-								} else {
-									fmt.Printf("  Updated Codeberg release for tag %s\n", tag)
-								}
-							}
-						}
-					}
-				}
+			for _, target := range releaseTargets {
+				processUpdateReleasesForTarget(
+					flags,
+					releaseManager,
+					target,
+					repoName,
+					repoPath,
+					localTags,
+					cacheFile,
+					aiReleaseNotesCache,
+					&failedAIGenerations,
+				)
 			}
 		}
 	}
 
 	return 0
+}
+
+func getMissingReleasesForTarget(cfg *config.Config, releaseManager *release.Manager, target releaseTarget, repoName string, localTags []string) []string {
+	releases, err := target.getReleases(target.owner, repoName)
+	if err != nil {
+		fmt.Printf("  Error checking %s releases: %v\n", target.name, err)
+		return nil
+	}
+
+	missingReleases := releaseManager.FindMissingReleases(localTags, releases)
+	if len(missingReleases) == 0 {
+		return missingReleases
+	}
+
+	var filtered []string
+	var skipped []string
+	for _, tag := range missingReleases {
+		if cfg.ShouldSkipRelease(repoName, tag) {
+			skipped = append(skipped, tag)
+		} else {
+			filtered = append(filtered, tag)
+		}
+	}
+	if len(skipped) > 0 {
+		fmt.Printf("  Skipping %s releases per config for tags: %s\n", target.name, strings.Join(skipped, ", "))
+	}
+	if len(filtered) > 0 {
+		fmt.Printf("  Missing %s releases: %s\n", target.name, strings.Join(filtered, ", "))
+	}
+
+	return filtered
+}
+
+func processCreateReleasesForTarget(
+	cfg *config.Config,
+	flags *Flags,
+	releaseManager *release.Manager,
+	target releaseTarget,
+	repoName, repoPath string,
+	localTags, missingReleases []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	if len(missingReleases) == 0 {
+		return
+	}
+
+	if target.ensureReleasesEnabled != nil {
+		if err := target.ensureReleasesEnabled(target.owner, repoName); err != nil {
+			fmt.Printf("  Warning: Could not ensure %s releases are enabled: %v\n", target.name, err)
+		}
+	}
+
+	for _, tag := range missingReleases {
+		if cfg.ShouldSkipRelease(repoName, tag) {
+			fmt.Printf("  Skipping %s release for %s:%s per config skip_releases\n", target.name, repoName, tag)
+			continue
+		}
+
+		commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
+		if err != nil {
+			commits = []string{}
+		}
+
+		releaseNotes, ok := resolveReleaseNotes(
+			releaseManager,
+			flags,
+			repoPath,
+			repoName,
+			tag,
+			localTags,
+			commits,
+			cacheFile,
+			aiReleaseNotesCache,
+			failedAIGenerations,
+			fmt.Sprintf("%s/%s:%s", target.owner, repoName, tag),
+			releaseNotesModeCreate,
+			saveAIReleaseNotesCache,
+		)
+		if !ok {
+			continue
+		}
+
+		fmt.Printf("\n%s\n", strings.Repeat("=", 70))
+		fmt.Printf("Release Notes for %s/%s tag %s:\n", target.owner, repoName, tag)
+		fmt.Printf("%s\n", strings.Repeat("-", 70))
+		fmt.Println(releaseNotes)
+		fmt.Printf("%s\n\n", strings.Repeat("=", 70))
+
+		msg := fmt.Sprintf("Create %s release for %s/%s tag %s?", target.name, target.owner, repoName, tag)
+
+		createRelease := false
+		if flags.AutoCreateReleases {
+			fmt.Printf("  Auto-creating %s release for %s/%s tag %s\n", target.name, target.owner, repoName, tag)
+			createRelease = true
+		} else {
+			createRelease = release.PromptConfirmation(msg)
+		}
+
+		if createRelease {
+			if err := target.createRelease(target.owner, repoName, tag, releaseNotes); err != nil {
+				fmt.Printf("  Error creating %s release: %v\n", target.name, err)
+			} else {
+				fmt.Printf("  Created %s release for tag %s\n", target.name, tag)
+			}
+		}
+	}
+}
+
+func processUpdateReleasesForTarget(
+	flags *Flags,
+	releaseManager *release.Manager,
+	target releaseTarget,
+	repoName, repoPath string,
+	localTags []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	if !flags.AIReleaseNotes {
+		return
+	}
+
+	existingReleases, err := target.getReleases(target.owner, repoName)
+	if err != nil || len(existingReleases) == 0 {
+		return
+	}
+
+	fmt.Printf("\n  Updating existing %s releases...\n", target.name)
+	for _, tag := range existingReleases {
+		if !isVersionTag(tag) {
+			continue
+		}
+
+		commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
+		if err != nil {
+			commits = []string{}
+		}
+
+		releaseNotes, ok := resolveReleaseNotes(
+			releaseManager,
+			flags,
+			repoPath,
+			repoName,
+			tag,
+			localTags,
+			commits,
+			cacheFile,
+			aiReleaseNotesCache,
+			failedAIGenerations,
+			fmt.Sprintf("%s/%s:%s", target.owner, repoName, tag),
+			releaseNotesModeUpdate,
+			saveAIReleaseNotesCache,
+		)
+		if !ok {
+			continue
+		}
+
+		fmt.Printf("\n%s\n", strings.Repeat("=", 70))
+		fmt.Printf("Updated Release Notes for %s/%s tag %s:\n", target.owner, repoName, tag)
+		fmt.Printf("%s\n", strings.Repeat("-", 70))
+		fmt.Println(releaseNotes)
+		fmt.Printf("%s\n\n", strings.Repeat("=", 70))
+
+		msg := fmt.Sprintf("Update %s release for %s/%s tag %s?", target.name, target.owner, repoName, tag)
+
+		updateRelease := false
+		if flags.AutoCreateReleases {
+			fmt.Printf("  Auto-updating %s release for %s/%s tag %s\n", target.name, target.owner, repoName, tag)
+			updateRelease = true
+		} else {
+			updateRelease = release.PromptConfirmation(msg)
+		}
+
+		if updateRelease {
+			if err := target.updateRelease(target.owner, repoName, tag, releaseNotes); err != nil {
+				fmt.Printf("  Error updating %s release: %v\n", target.name, err)
+			} else {
+				fmt.Printf("  Updated %s release for tag %s\n", target.name, tag)
+			}
+		}
+	}
+}
+
+func resolveReleaseNotes(
+	releaseManager releaseNotesGenerator,
+	flags *Flags,
+	repoPath, repoName, tag string,
+	localTags, commits []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+	failedTarget string,
+	mode releaseNotesMode,
+	saveCache func(string, map[string]string) error,
+) (string, bool) {
+	if !flags.AIReleaseNotes {
+		if mode == releaseNotesModeUpdate {
+			return "", false
+		}
+		return releaseManager.GenerateReleaseNotes(repoPath, tag, localTags), true
+	}
+
+	cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
+	if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists && !flags.Force {
+		if mode == releaseNotesModeUpdate {
+			fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
+		} else {
+			fmt.Printf("  Using cached AI release notes for %s\n", tag)
+		}
+		return cachedNotes, true
+	}
+
+	if flags.Force && aiReleaseNotesCache[cacheKey] != "" {
+		if mode == releaseNotesModeUpdate {
+			fmt.Printf("  Force regenerating AI release notes for existing release %s (ignoring cache)\n", tag)
+		} else {
+			fmt.Printf("  Force regenerating AI release notes for %s (ignoring cache)\n", tag)
+		}
+	} else {
+		if mode == releaseNotesModeUpdate {
+			fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
+		} else {
+			fmt.Printf("  Generating AI release notes for %s...\n", tag)
+		}
+	}
+
+	aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
+	if err != nil {
+		fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
+		delete(aiReleaseNotesCache, cacheKey)
+		*failedAIGenerations = append(*failedAIGenerations, failedTarget)
+		_ = saveCache(cacheFile, aiReleaseNotesCache)
+
+		if mode == releaseNotesModeCreate {
+			fmt.Printf("  Falling back to standard release notes\n")
+			return releaseManager.GenerateReleaseNotes(repoPath, tag, localTags), true
+		}
+		return "", false
+	}
+
+	aiReleaseNotesCache[cacheKey] = aiNotes // Cache only on success
+	if err := saveCache(cacheFile, aiReleaseNotesCache); err != nil {
+		fmt.Printf("  Warning: Failed to save cache: %v\n", err)
+	}
+	if mode == releaseNotesModeCreate {
+		fmt.Printf("  AI release notes generated successfully and cached\n")
+	}
+
+	return aiNotes, true
 }
 
 // loadAIReleaseNotesCache loads the AI release notes cache from disk
