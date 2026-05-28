@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strings"
 
+	"codeberg.org/snonux/gitsyncer/internal/aitool"
 	"codeberg.org/snonux/gitsyncer/internal/httpclient"
 	"codeberg.org/snonux/gitsyncer/internal/version"
 )
@@ -411,38 +412,29 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
 	fmt.Printf("  Total prompt length: %d characters\n", len(instr.String())+len(input.String()))
 
-	// Determine which AI tool to use (default to opencode if not set)
-	aiTool := m.aiTool
-	if aiTool == "" {
-		aiTool = "opencode"
-	}
-
 	// Build a full prompt string for tools that read a single argument
 	fullPrompt := instr.String() + "\n\n" + input.String()
 
 	var releaseNotes string
 
-	// 0) Try opencode first (glm-5.1:cloud via ollama launch)
-	if _, err := exec.LookPath("ollama"); err == nil {
-		fmt.Println("  Running ollama launch opencode ...")
-		cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.1:cloud", "-y", "--", "run", fullPrompt)
-		cmd.Stderr = os.Stderr
-		out, err := cmd.Output()
-		if err != nil {
-			fmt.Printf("opencode ollama failed: %v\n", err)
-		} else {
+	for _, tool := range aitool.AvailableChain("opencode", nil) {
+		switch tool {
+		case aitool.ToolOpencode:
+			fmt.Println("  Running ollama launch opencode ...")
+			cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.1:cloud", "-y", "--", "run", fullPrompt)
+			cmd.Stderr = os.Stderr
+			out, err := cmd.Output()
+			if err != nil {
+				fmt.Printf("opencode ollama failed: %v\n", err)
+				continue
+			}
 			notes := strings.TrimSpace(string(out))
 			if notes == "" {
 				fmt.Println("  ollama opencode returned empty output; will try fallbacks...")
-			} else {
-				releaseNotes = notes
+				continue
 			}
-		}
-	}
-
-	// 1) Try hexai as fallback
-	if releaseNotes == "" {
-		if _, err := exec.LookPath("hexai"); err == nil {
+			releaseNotes = notes
+		case aitool.ToolHexAI:
 			fmt.Println("  Running hexai CLI command (stdin payload)...")
 			cmd := exec.Command("hexai", instr.String())
 			cmd.Stdin = strings.NewReader(input.String())
@@ -450,36 +442,26 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 			out, err := cmd.Output()
 			if err != nil {
 				fmt.Printf("  hexai CLI failed: %v\n", err)
-			} else {
-				notes := strings.TrimSpace(string(out))
-				if notes == "" {
-					fmt.Println("  hexai returned empty output; will try fallbacks...")
-				} else {
-					releaseNotes = notes
-				}
+				continue
 			}
-		}
-	}
-
-	// 2) Try claude as fallback
-	if releaseNotes == "" {
-		if _, err := exec.LookPath("claude"); err == nil {
+			notes := strings.TrimSpace(string(out))
+			if notes == "" {
+				fmt.Println("  hexai returned empty output; will try fallbacks...")
+				continue
+			}
+			releaseNotes = notes
+		case aitool.ToolClaude:
 			fmt.Println("  Running claude CLI command...")
 			cmd := exec.Command("claude", "--model", "sonnet", fullPrompt)
 			cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
-			notes, err := m.executeAICommand(cmd, "claude")
+			notes, err := m.executeAICommand(cmd, string(tool))
 			if err != nil {
 				fmt.Printf("  Claude CLI failed: %v\n", err)
-			} else {
-				releaseNotes = notes
+				continue
 			}
-		}
-	}
-
-	// 3) Try amp as fallback: echo input to stdin and pass instructions as argument
-	// Note: print stderr to console, but only use stdout for notes
-	if releaseNotes == "" {
-		if _, err := exec.LookPath("amp"); err == nil {
+			releaseNotes = notes
+		case aitool.ToolAmp:
+			// Note: print stderr to console, but only use stdout for notes
 			fmt.Println("  Running amp CLI command (stdin payload)...")
 			cmd := exec.Command("amp", "--execute", instr.String())
 			cmd.Stdin = strings.NewReader(input.String())
@@ -487,14 +469,18 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 			out, err := cmd.Output()
 			if err != nil {
 				fmt.Printf("  amp CLI failed: %v\n", err)
-			} else {
-				notes := strings.TrimSpace(string(out))
-				if notes == "" {
-					fmt.Println("  amp returned empty output; will try fallbacks...")
-				} else {
-					releaseNotes = notes
-				}
+				continue
 			}
+			notes := strings.TrimSpace(string(out))
+			if notes == "" {
+				fmt.Println("  amp returned empty output; will try fallbacks...")
+				continue
+			}
+			releaseNotes = notes
+		}
+
+		if releaseNotes != "" {
+			break
 		}
 	}
 

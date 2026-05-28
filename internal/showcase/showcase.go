@@ -11,6 +11,7 @@ import (
 	"strings"
 	"time"
 
+	"codeberg.org/snonux/gitsyncer/internal/aitool"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
@@ -230,47 +231,7 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 }
 
 func selectSummaryTool(aiTool string) string {
-	switch aiTool {
-	case "opencode", "":
-		// Default chain: opencode (via ollama launch) → hexai → claude → amp
-		if _, err := exec.LookPath("ollama"); err == nil {
-			return "opencode"
-		}
-		if _, err := exec.LookPath("hexai"); err == nil {
-			return "hexai"
-		}
-		if _, err := exec.LookPath("claude"); err == nil {
-			return "claude"
-		}
-		if _, err := exec.LookPath("amp"); err == nil {
-			return "amp"
-		}
-	case "hexai":
-		// Explicit hexai: hexai → claude → amp
-		if _, err := exec.LookPath("hexai"); err == nil {
-			return "hexai"
-		}
-		if _, err := exec.LookPath("claude"); err == nil {
-			return "claude"
-		}
-		if _, err := exec.LookPath("amp"); err == nil {
-			return "amp"
-		}
-	case "claude", "claude-code":
-		// Explicit claude: claude → amp
-		if _, err := exec.LookPath("claude"); err == nil {
-			return "claude"
-		}
-		if _, err := exec.LookPath("amp"); err == nil {
-			return "amp"
-		}
-	case "amp":
-		if _, err := exec.LookPath(aiTool); err == nil {
-			return aiTool
-		}
-	}
-
-	return ""
+	return string(aitool.FirstAvailable(aiTool, nil))
 }
 
 func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeContent []byte, readmeFound bool) string {
