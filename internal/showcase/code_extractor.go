@@ -7,12 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"time"
 )
-
-func init() {
-	rand.Seed(time.Now().UnixNano())
-}
 
 // extractCodeSnippet extracts a random code snippet from the repository
 func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, string, error) {

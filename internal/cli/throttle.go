@@ -162,8 +162,7 @@ func recordRepoSync(repoName string, st *state.State, throttle bool) {
 }
 
 func randomThrottleDuration() time.Duration {
-	rng := rand.New(rand.NewSource(time.Now().UnixNano()))
-	days := throttleMinDays + rng.Intn(throttleMaxDays-throttleMinDays+1)
+	days := throttleMinDays + rand.Intn(throttleMaxDays-throttleMinDays+1)
 	return time.Duration(days) * 24 * time.Hour
 }
 

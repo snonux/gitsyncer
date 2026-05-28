@@ -106,3 +106,26 @@ func TestRecordRepoSync_SetsThrottleWindowWhenThrottleEnabled(t *testing.T) {
 		t.Fatalf("expected throttle window between %s and %s, got %s", minAllowed, maxAllowed, nextAllowed)
 	}
 }
+
+func TestRandomThrottleDuration_WithinBoundsAndNotDegenerate(t *testing.T) {
+	const draws = 200
+
+	seen := map[time.Duration]struct{}{}
+	minDuration := time.Duration(throttleMinDays) * 24 * time.Hour
+	maxDuration := time.Duration(throttleMaxDays) * 24 * time.Hour
+
+	for i := 0; i < draws; i++ {
+		d := randomThrottleDuration()
+		if d < minDuration || d > maxDuration {
+			t.Fatalf("expected duration between %s and %s, got %s", minDuration, maxDuration, d)
+		}
+		if d%(24*time.Hour) != 0 {
+			t.Fatalf("expected whole-day duration, got %s", d)
+		}
+		seen[d] = struct{}{}
+	}
+
+	if len(seen) < 2 {
+		t.Fatalf("expected at least 2 distinct durations across %d draws, got %d", draws, len(seen))
+	}
+}
