@@ -23,8 +23,8 @@ type Client struct {
 var _ forge.RepoClient = (*Client)(nil)
 
 // NewClient creates a new GitHub API client
-func NewClient(token, org string) Client {
-	return Client{
+func NewClient(token, org string) *Client {
+	return &Client{
 		token: loadToken(token),
 		org:   org,
 	}

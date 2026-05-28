@@ -96,7 +96,7 @@ func getAllRepositories(cfg *config.Config) ([]string, error) {
 	// Add Codeberg public repos if configured
 	if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
 		fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
-		client := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
+		client := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
 
 		repos, err := client.ListPublicRepos()
 		if err != nil {

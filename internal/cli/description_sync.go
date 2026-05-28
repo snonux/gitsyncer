@@ -24,12 +24,10 @@ func syncRepoDescriptions(cfg *config.Config, dryRun bool, repoName, knownCBDesc
 	var ghClient *github.Client
 	var cbClient *codeberg.Client
 	if ghOrg != nil {
-		c := github.NewClient(ghOrg.GitHubToken, ghOrg.Name)
-		ghClient = &c
+		ghClient = github.NewClient(ghOrg.GitHubToken, ghOrg.Name)
 	}
 	if cbOrg != nil {
-		c := codeberg.NewClient(cbOrg.Name, cbOrg.CodebergToken)
-		cbClient = &c
+		cbClient = codeberg.NewClient(cbOrg.CodebergToken, cbOrg.Name)
 	}
 
 	// Get current descriptions (use known if provided)

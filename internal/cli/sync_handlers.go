@@ -95,23 +95,15 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 
 	// Initialize GitHub client if needed
-	var githubClient github.Client
-	var hasGithubClient bool
+	var githubClient *github.Client
 	if flags.CreateGitHubRepos {
-		if client := initGitHubClient(cfg); client != nil {
-			githubClient = *client
-			hasGithubClient = true
-		}
+		githubClient = initGitHubClient(cfg)
 	}
 
 	// Initialize Codeberg client if needed
-	var codebergClient codeberg.Client
-	var hasCodebergClient bool
+	var codebergClient *codeberg.Client
 	if flags.CreateCodebergRepos {
-		if client := initCodebergClient(cfg); client != nil {
-			codebergClient = *client
-			hasCodebergClient = true
-		}
+		codebergClient = initCodebergClient(cfg)
 	}
 
 	syncer := sync.New(cfg, flags.WorkDir)
@@ -138,8 +130,8 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		}
 
 		// Create GitHub repo if needed
-		if hasGithubClient {
-			if err := createRepoWithClient(&githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
+		if githubClient != nil {
+			if err := createRepoWithClient(githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
 				fmt.Printf("ERROR: Failed to create GitHub repo %s: %v\n", repo, err)
 				fmt.Printf("Stopping sync due to error.\n")
 				return 1
@@ -147,7 +139,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		}
 
 		// Create Codeberg repo if needed
-		if hasCodebergClient {
+		if codebergClient != nil {
 			fmt.Printf("Checking/creating Codeberg repository %s...\n", repo)
 			if err := codebergClient.CreateRepo(repo, fmt.Sprintf("Mirror of %s", repo), false); err != nil {
 				fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repo, err)
@@ -196,7 +188,7 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 
 	fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
 
-	client := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
+	client := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
 
 	// Try fetching as organization first, then as user
 	repos, err := client.ListPublicRepos()
@@ -324,7 +316,7 @@ func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
 	}
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
-	codebergClient := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
+	codebergClient := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
 	if !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repository.")
 		return nil
@@ -349,7 +341,7 @@ func initGitHubClient(cfg *config.Config) *github.Client {
 	}
 
 	fmt.Println("GitHub client initialized successfully with token")
-	return &githubClient
+	return githubClient
 }
 
 func createRepoWithClient(client *github.Client, repoName, description string) error {
@@ -365,14 +357,14 @@ func initCodebergClient(cfg *config.Config) *codeberg.Client {
 	}
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
-	codebergClient := codeberg.NewClient(codebergOrg.Name, codebergOrg.CodebergToken)
+	codebergClient := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
 	if !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repositories.")
 		return nil
 	}
 
 	fmt.Println("Codeberg client initialized successfully with token")
-	return &codebergClient
+	return codebergClient
 }
 
 func showReposToSync(repoNames []string) {

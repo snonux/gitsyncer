@@ -11,10 +11,10 @@ func newRepoClientForOrg(org config.Organization) (forge.RepoClient, bool) {
 	switch org.Host {
 	case "git@github.com":
 		client := github.NewClient(org.GitHubToken, org.Name)
-		return &client, true
+		return client, true
 	case "git@codeberg.org":
-		client := codeberg.NewClient(org.Name, org.CodebergToken)
-		return &client, true
+		client := codeberg.NewClient(org.CodebergToken, org.Name)
+		return client, true
 	default:
 		return nil, false
 	}

@@ -41,8 +41,8 @@ type Client struct {
 var _ forge.RepoClient = (*Client)(nil)
 
 // NewClient creates a new Codeberg API client
-func NewClient(org, token string) Client {
-	c := Client{
+func NewClient(token, org string) *Client {
+	c := &Client{
 		baseURL: "https://codeberg.org/api/v1",
 		org:     org,
 	}
