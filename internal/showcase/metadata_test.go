@@ -80,6 +80,42 @@ func TestGetLatestTag_ReturnsTotalTagCount(t *testing.T) {
 	}
 }
 
+func TestGetLatestTag_OnlyNonVersionTags(t *testing.T) {
+	t.Parallel()
+
+	repoPath := t.TempDir()
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	writeAndCommit := func(name, content, message string) {
+		path := filepath.Join(repoPath, name)
+		if err := os.WriteFile(path, []byte(content), 0644); err != nil {
+			t.Fatalf("write file %s: %v", name, err)
+		}
+		runGit(t, repoPath, "add", name)
+		runGit(t, repoPath, "commit", "-m", message)
+	}
+
+	writeAndCommit("README.md", "first", "first")
+	runGit(t, repoPath, "tag", "latest")
+	runGit(t, repoPath, "tag", "1-beta")
+
+	latestTag, _, hasReleases, tagCount, err := getLatestTag(repoPath)
+	if err != nil {
+		t.Fatalf("getLatestTag() error = %v", err)
+	}
+	if latestTag != "" {
+		t.Fatalf("latestTag = %q, want empty", latestTag)
+	}
+	if hasReleases {
+		t.Fatal("expected hasReleases to be false when only non-version tags exist")
+	}
+	if tagCount != 2 {
+		t.Fatalf("tagCount = %d, want %d", tagCount, 2)
+	}
+}
+
 func TestExtractRepoMetadata_UsesCurrentBranchState(t *testing.T) {
 	t.Parallel()
 
