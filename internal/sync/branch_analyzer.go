@@ -1,13 +1,30 @@
 package sync
 
 import (
+	_ "embed"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 )
+
+//go:embed delete_script.tmpl
+var deleteScriptTemplateText string
+
+var deleteScriptTemplate = template.Must(template.New("deleteScript").Parse(deleteScriptTemplateText))
+
+type deleteScriptTemplateData struct {
+	GeneratedAt     string
+	TotalAbandoned  int
+	TotalIgnored    int
+	TotalBranches   int
+	RepositoryCount int
+	ScriptBaseName  string
+}
 
 // BranchInfo holds information about a branch
 type BranchInfo struct {
@@ -409,6 +426,98 @@ func (s *Syncer) GenerateDeleteCommands(report *AbandonedBranchReport, repoName 
 	return sb.String()
 }
 
+func writeDeleteScriptTemplate(writer io.Writer, templateName string, data deleteScriptTemplateData) error {
+	if err := deleteScriptTemplate.ExecuteTemplate(writer, templateName, data); err != nil {
+		return fmt.Errorf("failed to execute %s template: %w", templateName, err)
+	}
+
+	return nil
+}
+
+func writeBranchDeletionBlock(writer io.Writer, branches []BranchInfo, reviewBranchType, deleteMessagePrefix string) error {
+	for _, branch := range branches {
+		if _, err := fmt.Fprintf(writer, "if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n"); err != nil {
+			return fmt.Errorf("failed to write review mode condition for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    if [[ -n \"$main_branch\" ]]; then\n"); err != nil {
+			return fmt.Errorf("failed to write main branch check for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        review_branch \"%s\" \"$main_branch\" \"%s\" \"%s\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"), reviewBranchType); err != nil {
+			return fmt.Errorf("failed to write review command for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    fi\n"); err != nil {
+			return fmt.Errorf("failed to write review branch end for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "else\n"); err != nil {
+			return fmt.Errorf("failed to write delete branch condition for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    echo \"  %s%s (last commit: %s)\"\n", deleteMessagePrefix, branch.Name, branch.LastCommit.Format("2006-01-02")); err != nil {
+			return fmt.Errorf("failed to write delete message for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    # Check if we're on the branch to be deleted\n"); err != nil {
+			return fmt.Errorf("failed to write current branch comment for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    current_branch=$(git branch --show-current)\n"); err != nil {
+			return fmt.Errorf("failed to write current branch command for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    if [[ \"$current_branch\" == \"%s\" ]]; then\n", branch.Name); err != nil {
+			return fmt.Errorf("failed to write current branch condition for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        echo \"    Switching from %s to main/master branch before deletion...\"\n", branch.Name); err != nil {
+			return fmt.Errorf("failed to write branch switch message for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        main_branch=$(find_main_branch)\n"); err != nil {
+			return fmt.Errorf("failed to write find main branch command for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        if [[ -n \"$main_branch\" ]]; then\n"); err != nil {
+			return fmt.Errorf("failed to write branch switch check for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "            execute_cmd git checkout \"$main_branch\"\n"); err != nil {
+			return fmt.Errorf("failed to write checkout command for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        else\n"); err != nil {
+			return fmt.Errorf("failed to write missing main branch else block for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "            echo \"    ⚠️  No main/master branch found to switch to!\"\n"); err != nil {
+			return fmt.Errorf("failed to write missing main branch message for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "            echo \"    Skipping deletion of %s\"\n", branch.Name); err != nil {
+			return fmt.Errorf("failed to write skip branch message for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        fi\n"); err != nil {
+			return fmt.Errorf("failed to write main branch switch end for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    fi\n"); err != nil {
+			return fmt.Errorf("failed to write current branch condition end for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    # Skip to next branch if we couldn't switch\n"); err != nil {
+			return fmt.Errorf("failed to write skip comment for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name); err != nil {
+			return fmt.Errorf("failed to write skip condition for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "        continue\n"); err != nil {
+			return fmt.Errorf("failed to write continue for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "    fi\n"); err != nil {
+			return fmt.Errorf("failed to write skip condition end for branch %s: %w", branch.Name, err)
+		}
+		for _, remote := range branch.RemotesWithBranch {
+			if _, err := fmt.Fprintf(writer, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name); err != nil {
+				return fmt.Errorf("failed to write remote delete command for branch %s: %w", branch.Name, err)
+			}
+		}
+		if _, err := fmt.Fprintf(writer, "    execute_cmd git branch -D \"%s\"\n", branch.Name); err != nil {
+			return fmt.Errorf("failed to write local delete command for branch %s: %w", branch.Name, err)
+		}
+		if _, err := fmt.Fprintf(writer, "fi\n\n"); err != nil {
+			return fmt.Errorf("failed to write branch block end for branch %s: %w", branch.Name, err)
+		}
+	}
+
+	return nil
+}
+
 // GenerateDeleteScript generates a shell script file to delete all abandoned branches
 func (s *Syncer) GenerateDeleteScript() (string, error) {
 	if len(s.abandonedReports) == 0 {
@@ -431,6 +540,7 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 	// Generate script filename with timestamp
 	timestamp := time.Now().Format("20060102_150405")
 	scriptPath := filepath.Join(s.workDir, fmt.Sprintf("delete_abandoned_branches_%s.sh", timestamp))
+	scriptBaseName := filepath.Base(scriptPath)
 
 	// Create the script file
 	file, err := os.Create(scriptPath)
@@ -439,123 +549,16 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 	}
 	defer file.Close()
 
-	// Write script header
-	fmt.Fprintf(file, "#!/bin/bash\n")
-	fmt.Fprintf(file, "# Gitsyncer - Delete Abandoned Branches Script\n")
-	fmt.Fprintf(file, "# Generated on: %s\n", time.Now().Format("2006-01-02 15:04:05"))
-	fmt.Fprintf(file, "# Total branches to delete: %d regular + %d ignored = %d total\n", totalAbandoned, totalIgnored, totalAbandoned+totalIgnored)
-	fmt.Fprintf(file, "#\n")
-	fmt.Fprintf(file, "# ⚠️  WARNING: This script will permanently delete branches!\n")
-	fmt.Fprintf(file, "# Review carefully before executing.\n")
-	fmt.Fprintf(file, "#\n")
-	fmt.Fprintf(file, "# Usage:\n")
-	fmt.Fprintf(file, "#   bash %s                # Delete branches (with confirmation)\n", filepath.Base(scriptPath))
-	fmt.Fprintf(file, "#   bash %s --dry-run      # Preview what will be deleted\n", filepath.Base(scriptPath))
-	fmt.Fprintf(file, "#   bash %s --review       # Review diffs before deletion\n", filepath.Base(scriptPath))
-	fmt.Fprintf(file, "#   bash %s --review-full  # Review full diffs\n", filepath.Base(scriptPath))
-	fmt.Fprintf(file, "\n")
-
-	// Add mode detection
-	fmt.Fprintf(file, "# Parse command line arguments\n")
-	fmt.Fprintf(file, "MODE=\"delete\"\n")
-	fmt.Fprintf(file, "if [[ \"$1\" == \"--dry-run\" ]]; then\n")
-	fmt.Fprintf(file, "    MODE=\"dry-run\"\n")
-	fmt.Fprintf(file, "elif [[ \"$1\" == \"--review\" ]]; then\n")
-	fmt.Fprintf(file, "    MODE=\"review\"\n")
-	fmt.Fprintf(file, "elif [[ \"$1\" == \"--review-full\" ]]; then\n")
-	fmt.Fprintf(file, "    MODE=\"review-full\"\n")
-	fmt.Fprintf(file, "fi\n\n")
-
-	// Add color support for review mode
-	fmt.Fprintf(file, "# Color codes for better readability\n")
-	fmt.Fprintf(file, "RED='\\033[0;31m'\n")
-	fmt.Fprintf(file, "GREEN='\\033[0;32m'\n")
-	fmt.Fprintf(file, "YELLOW='\\033[0;33m'\n")
-	fmt.Fprintf(file, "BLUE='\\033[0;34m'\n")
-	fmt.Fprintf(file, "PURPLE='\\033[0;35m'\n")
-	fmt.Fprintf(file, "CYAN='\\033[0;36m'\n")
-	fmt.Fprintf(file, "NC='\\033[0m' # No Color\n\n")
-
-	// Add helper functions
-	fmt.Fprintf(file, "# Helper function to execute or print commands\n")
-	fmt.Fprintf(file, "execute_cmd() {\n")
-	fmt.Fprintf(file, "    if [[ \"$MODE\" == \"dry-run\" ]]; then\n")
-	fmt.Fprintf(file, "        echo \"  [DRY RUN] $@\"\n")
-	fmt.Fprintf(file, "    else\n")
-	fmt.Fprintf(file, "        echo \"  Executing: $@\"\n")
-	fmt.Fprintf(file, "        \"$@\"\n")
-	fmt.Fprintf(file, "    fi\n")
-	fmt.Fprintf(file, "}\n\n")
-
-	// Add function to find main branch
-	fmt.Fprintf(file, "# Function to find main/master branch\n")
-	fmt.Fprintf(file, "find_main_branch() {\n")
-	fmt.Fprintf(file, "    if git rev-parse --verify main >/dev/null 2>&1; then\n")
-	fmt.Fprintf(file, "        echo \"main\"\n")
-	fmt.Fprintf(file, "    elif git rev-parse --verify master >/dev/null 2>&1; then\n")
-	fmt.Fprintf(file, "        echo \"master\"\n")
-	fmt.Fprintf(file, "    else\n")
-	fmt.Fprintf(file, "        echo \"\"\n")
-	fmt.Fprintf(file, "    fi\n")
-	fmt.Fprintf(file, "}\n\n")
-
-	// Add review function
-	fmt.Fprintf(file, "# Function to review branch diff\n")
-	fmt.Fprintf(file, "review_branch() {\n")
-	fmt.Fprintf(file, "    local branch=\"$1\"\n")
-	fmt.Fprintf(file, "    local main_branch=\"$2\"\n")
-	fmt.Fprintf(file, "    local last_commit=\"$3\"\n")
-	fmt.Fprintf(file, "    local branch_type=\"$4\"\n")
-	fmt.Fprintf(file, "    \n")
-	fmt.Fprintf(file, "    echo -e \"${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\"\n")
-	fmt.Fprintf(file, "    echo -e \"${YELLOW}Branch:${NC} $branch ${PURPLE}[$branch_type]${NC}\"\n")
-	fmt.Fprintf(file, "    echo -e \"${YELLOW}Last commit:${NC} $last_commit\"\n")
-	fmt.Fprintf(file, "    echo -e \"${YELLOW}Comparing against:${NC} $main_branch\"\n")
-	fmt.Fprintf(file, "    echo -e \"${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\"\n")
-	fmt.Fprintf(file, "    \n")
-	fmt.Fprintf(file, "    # Check if branch exists locally\n")
-	fmt.Fprintf(file, "    if ! git rev-parse --verify \"$branch\" >/dev/null 2>&1; then\n")
-	fmt.Fprintf(file, "        echo -e \"${RED}⚠️  Branch '$branch' not found locally${NC}\"\n")
-	fmt.Fprintf(file, "        return\n")
-	fmt.Fprintf(file, "    fi\n")
-	fmt.Fprintf(file, "    \n")
-	fmt.Fprintf(file, "    echo -e \"${GREEN}📊 Diff statistics:${NC}\"\n")
-	fmt.Fprintf(file, "    git diff --stat \"$main_branch\"...\"$branch\"\n")
-	fmt.Fprintf(file, "    echo\n")
-	fmt.Fprintf(file, "    echo -e \"${GREEN}📝 Commits in this branch:${NC}\"\n")
-	fmt.Fprintf(file, "    git log --oneline --graph \"$main_branch\"..\"$branch\" | head -20\n")
-	fmt.Fprintf(file, "    \n")
-	fmt.Fprintf(file, "    if [[ \"$MODE\" == \"review-full\" ]]; then\n")
-	fmt.Fprintf(file, "        echo\n")
-	fmt.Fprintf(file, "        echo -e \"${GREEN}🔍 Full diff:${NC}\"\n")
-	fmt.Fprintf(file, "        git diff \"$main_branch\"...\"$branch\"\n")
-	fmt.Fprintf(file, "    fi\n")
-	fmt.Fprintf(file, "    echo\n")
-	fmt.Fprintf(file, "}\n\n")
-
-	// Start main logic
-	fmt.Fprintf(file, "# Main script logic\n")
-	fmt.Fprintf(file, "case \"$MODE\" in\n")
-	fmt.Fprintf(file, "    \"dry-run\")\n")
-	fmt.Fprintf(file, "        echo \"🔍 DRY RUN MODE - No branches will be deleted\"\n")
-	fmt.Fprintf(file, "        echo\n")
-	fmt.Fprintf(file, "        ;;\n")
-	fmt.Fprintf(file, "    \"review\"|\"review-full\")\n")
-	fmt.Fprintf(file, "        echo -e \"${CYAN}🔍 Gitsyncer - Abandoned Branch Review${NC}\"\n")
-	fmt.Fprintf(file, "        echo -e \"${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}\"\n")
-	fmt.Fprintf(file, "        echo -e \"Found ${YELLOW}%d${NC} abandoned branches to review\"\n", totalAbandoned+totalIgnored)
-	fmt.Fprintf(file, "        echo\n")
-	fmt.Fprintf(file, "        ;;\n")
-	fmt.Fprintf(file, "    \"delete\")\n")
-	fmt.Fprintf(file, "        echo \"⚠️  This script will delete %d abandoned branches across %d repositories.\"\n", totalAbandoned+totalIgnored, len(s.abandonedReports))
-	fmt.Fprintf(file, "        read -p \"Are you sure you want to continue? (yes/no): \" confirm\n")
-	fmt.Fprintf(file, "        if [[ \"$confirm\" != \"yes\" ]]; then\n")
-	fmt.Fprintf(file, "            echo \"Aborted.\"\n")
-	fmt.Fprintf(file, "            exit 0\n")
-	fmt.Fprintf(file, "        fi\n")
-	fmt.Fprintf(file, "        echo\n")
-	fmt.Fprintf(file, "        ;;\n")
-	fmt.Fprintf(file, "esac\n\n")
+	if err := writeDeleteScriptTemplate(file, "deleteScriptPreamble", deleteScriptTemplateData{
+		GeneratedAt:     time.Now().Format("2006-01-02 15:04:05"),
+		TotalAbandoned:  totalAbandoned,
+		TotalIgnored:    totalIgnored,
+		TotalBranches:   totalAbandoned + totalIgnored,
+		RepositoryCount: len(s.abandonedReports),
+		ScriptBaseName:  scriptBaseName,
+	}); err != nil {
+		return scriptPath, err
+	}
 
 	// Process each repository
 	for repoName, report := range s.abandonedReports {
@@ -582,100 +585,25 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 		// Process regular abandoned branches
 		if len(report.AbandonedBranches) > 0 {
 			fmt.Fprintf(file, "# Regular abandoned branches\n")
-			for _, branch := range report.AbandonedBranches {
-				fmt.Fprintf(file, "if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n")
-				fmt.Fprintf(file, "    if [[ -n \"$main_branch\" ]]; then\n")
-				fmt.Fprintf(file, "        review_branch \"%s\" \"$main_branch\" \"%s\" \"regular\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
-				fmt.Fprintf(file, "    fi\n")
-				fmt.Fprintf(file, "else\n")
-				fmt.Fprintf(file, "    echo \"  🔸 Deleting branch: %s (last commit: %s)\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
-
-				// Check if we're on the branch to be deleted, and switch to main/master if so
-				fmt.Fprintf(file, "    # Check if we're on the branch to be deleted\n")
-				fmt.Fprintf(file, "    current_branch=$(git branch --show-current)\n")
-				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]]; then\n", branch.Name)
-				fmt.Fprintf(file, "        echo \"    Switching from %s to main/master branch before deletion...\"\n", branch.Name)
-				fmt.Fprintf(file, "        main_branch=$(find_main_branch)\n")
-				fmt.Fprintf(file, "        if [[ -n \"$main_branch\" ]]; then\n")
-				fmt.Fprintf(file, "            execute_cmd git checkout \"$main_branch\"\n")
-				fmt.Fprintf(file, "        else\n")
-				fmt.Fprintf(file, "            echo \"    ⚠️  No main/master branch found to switch to!\"\n")
-				fmt.Fprintf(file, "            echo \"    Skipping deletion of %s\"\n", branch.Name)
-				fmt.Fprintf(file, "        fi\n")
-				fmt.Fprintf(file, "    fi\n")
-				fmt.Fprintf(file, "    # Skip to next branch if we couldn't switch\n")
-				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name)
-				fmt.Fprintf(file, "        continue\n")
-				fmt.Fprintf(file, "    fi\n")
-
-				// Delete from remotes
-				for _, remote := range branch.RemotesWithBranch {
-					fmt.Fprintf(file, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name)
-				}
-
-				// Delete local branch
-				fmt.Fprintf(file, "    execute_cmd git branch -D \"%s\"\n", branch.Name)
-				fmt.Fprintf(file, "fi\n\n")
+			if err := writeBranchDeletionBlock(file, report.AbandonedBranches, "regular", "🔸 Deleting branch: "); err != nil {
+				return scriptPath, err
 			}
 		}
 
 		// Process ignored abandoned branches
 		if len(report.AbandonedIgnoredBranches) > 0 {
 			fmt.Fprintf(file, "# Ignored abandoned branches\n")
-			for _, branch := range report.AbandonedIgnoredBranches {
-				fmt.Fprintf(file, "if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n")
-				fmt.Fprintf(file, "    if [[ -n \"$main_branch\" ]]; then\n")
-				fmt.Fprintf(file, "        review_branch \"%s\" \"$main_branch\" \"%s\" \"ignored\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
-				fmt.Fprintf(file, "    fi\n")
-				fmt.Fprintf(file, "else\n")
-				fmt.Fprintf(file, "    echo \"  🔹 Deleting ignored branch: %s (last commit: %s)\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"))
-
-				// Check if we're on the branch to be deleted, and switch to main/master if so
-				fmt.Fprintf(file, "    # Check if we're on the branch to be deleted\n")
-				fmt.Fprintf(file, "    current_branch=$(git branch --show-current)\n")
-				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]]; then\n", branch.Name)
-				fmt.Fprintf(file, "        echo \"    Switching from %s to main/master branch before deletion...\"\n", branch.Name)
-				fmt.Fprintf(file, "        main_branch=$(find_main_branch)\n")
-				fmt.Fprintf(file, "        if [[ -n \"$main_branch\" ]]; then\n")
-				fmt.Fprintf(file, "            execute_cmd git checkout \"$main_branch\"\n")
-				fmt.Fprintf(file, "        else\n")
-				fmt.Fprintf(file, "            echo \"    ⚠️  No main/master branch found to switch to!\"\n")
-				fmt.Fprintf(file, "            echo \"    Skipping deletion of %s\"\n", branch.Name)
-				fmt.Fprintf(file, "        fi\n")
-				fmt.Fprintf(file, "    fi\n")
-				fmt.Fprintf(file, "    # Skip to next branch if we couldn't switch\n")
-				fmt.Fprintf(file, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name)
-				fmt.Fprintf(file, "        continue\n")
-				fmt.Fprintf(file, "    fi\n")
-
-				// Delete from remotes
-				for _, remote := range branch.RemotesWithBranch {
-					fmt.Fprintf(file, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name)
-				}
-
-				// Delete local branch
-				fmt.Fprintf(file, "    execute_cmd git branch -D \"%s\"\n", branch.Name)
-				fmt.Fprintf(file, "fi\n\n")
+			if err := writeBranchDeletionBlock(file, report.AbandonedIgnoredBranches, "ignored", "🔹 Deleting ignored branch: "); err != nil {
+				return scriptPath, err
 			}
 		}
 	}
 
-	// Add completion message
-	fmt.Fprintf(file, "echo\n")
-	fmt.Fprintf(file, "echo \"✅ Script completed!\"\n")
-	fmt.Fprintf(file, "case \"$MODE\" in\n")
-	fmt.Fprintf(file, "    \"dry-run\")\n")
-	fmt.Fprintf(file, "        echo \"This was a dry run. No branches were deleted.\"\n")
-	fmt.Fprintf(file, "        echo \"To actually delete branches, run: bash %s\"\n", filepath.Base(scriptPath))
-	fmt.Fprintf(file, "        ;;\n")
-	fmt.Fprintf(file, "    \"review\"|\"review-full\")\n")
-	fmt.Fprintf(file, "        echo \"Review completed. No branches were deleted.\"\n")
-	fmt.Fprintf(file, "        echo \"To delete branches, run: bash %s\"\n", filepath.Base(scriptPath))
-	fmt.Fprintf(file, "        ;;\n")
-	fmt.Fprintf(file, "    \"delete\")\n")
-	fmt.Fprintf(file, "        echo \"All abandoned branches have been deleted.\"\n")
-	fmt.Fprintf(file, "        ;;\n")
-	fmt.Fprintf(file, "esac\n")
+	if err := writeDeleteScriptTemplate(file, "deleteScriptFooter", deleteScriptTemplateData{
+		ScriptBaseName: scriptBaseName,
+	}); err != nil {
+		return scriptPath, err
+	}
 
 	// Make the script executable
 	if err := os.Chmod(scriptPath, 0755); err != nil {

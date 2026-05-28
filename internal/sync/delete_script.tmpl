@@ -1,0 +1,127 @@
+{{define "deleteScriptPreamble"}}#!/bin/bash
+# Gitsyncer - Delete Abandoned Branches Script
+# Generated on: {{.GeneratedAt}}
+# Total branches to delete: {{.TotalAbandoned}} regular + {{.TotalIgnored}} ignored = {{.TotalBranches}} total
+#
+# ⚠️  WARNING: This script will permanently delete branches!
+# Review carefully before executing.
+#
+# Usage:
+#   bash {{.ScriptBaseName}}                # Delete branches (with confirmation)
+#   bash {{.ScriptBaseName}} --dry-run      # Preview what will be deleted
+#   bash {{.ScriptBaseName}} --review       # Review diffs before deletion
+#   bash {{.ScriptBaseName}} --review-full  # Review full diffs
+
+# Parse command line arguments
+MODE="delete"
+if [[ "$1" == "--dry-run" ]]; then
+    MODE="dry-run"
+elif [[ "$1" == "--review" ]]; then
+    MODE="review"
+elif [[ "$1" == "--review-full" ]]; then
+    MODE="review-full"
+fi
+
+# Color codes for better readability
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[0;33m'
+BLUE='\033[0;34m'
+PURPLE='\033[0;35m'
+CYAN='\033[0;36m'
+NC='\033[0m' # No Color
+
+# Helper function to execute or print commands
+execute_cmd() {
+    if [[ "$MODE" == "dry-run" ]]; then
+        echo "  [DRY RUN] $@"
+    else
+        echo "  Executing: $@"
+        "$@"
+    fi
+}
+
+# Function to find main/master branch
+find_main_branch() {
+    if git rev-parse --verify main >/dev/null 2>&1; then
+        echo "main"
+    elif git rev-parse --verify master >/dev/null 2>&1; then
+        echo "master"
+    else
+        echo ""
+    fi
+}
+
+# Function to review branch diff
+review_branch() {
+    local branch="$1"
+    local main_branch="$2"
+    local last_commit="$3"
+    local branch_type="$4"
+
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+    echo -e "${YELLOW}Branch:${NC} $branch ${PURPLE}[$branch_type]${NC}"
+    echo -e "${YELLOW}Last commit:${NC} $last_commit"
+    echo -e "${YELLOW}Comparing against:${NC} $main_branch"
+    echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+
+    # Check if branch exists locally
+    if ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
+        echo -e "${RED}⚠️  Branch '$branch' not found locally${NC}"
+        return
+    fi
+
+    echo -e "${GREEN}📊 Diff statistics:${NC}"
+    git diff --stat "$main_branch"..."$branch"
+    echo
+    echo -e "${GREEN}📝 Commits in this branch:${NC}"
+    git log --oneline --graph "$main_branch".."$branch" | head -20
+
+    if [[ "$MODE" == "review-full" ]]; then
+        echo
+        echo -e "${GREEN}🔍 Full diff:${NC}"
+        git diff "$main_branch"..."$branch"
+    fi
+    echo
+}
+
+# Main script logic
+case "$MODE" in
+    "dry-run")
+        echo "🔍 DRY RUN MODE - No branches will be deleted"
+        echo
+        ;;
+    "review"|"review-full")
+        echo -e "${CYAN}🔍 Gitsyncer - Abandoned Branch Review${NC}"
+        echo -e "${CYAN}━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━${NC}"
+        echo -e "Found ${YELLOW}{{.TotalBranches}}${NC} abandoned branches to review"
+        echo
+        ;;
+    "delete")
+        echo "⚠️  This script will delete {{.TotalBranches}} abandoned branches across {{.RepositoryCount}} repositories."
+        read -p "Are you sure you want to continue? (yes/no): " confirm
+        if [[ "$confirm" != "yes" ]]; then
+            echo "Aborted."
+            exit 0
+        fi
+        echo
+        ;;
+esac
+
+{{end}}
+{{define "deleteScriptFooter"}}echo
+echo "✅ Script completed!"
+case "$MODE" in
+    "dry-run")
+        echo "This was a dry run. No branches were deleted."
+        echo "To actually delete branches, run: bash {{.ScriptBaseName}}"
+        ;;
+    "review"|"review-full")
+        echo "Review completed. No branches were deleted."
+        echo "To delete branches, run: bash {{.ScriptBaseName}}"
+        ;;
+    "delete")
+        echo "All abandoned branches have been deleted."
+        ;;
+esac
+{{end}}
