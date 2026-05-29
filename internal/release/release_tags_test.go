@@ -49,6 +49,25 @@ func TestParseVersionPart_NonNumericReturnsZero(t *testing.T) {
 	}
 }
 
+func TestParseVersionPart_MixedNumericPrefix(t *testing.T) {
+	t.Parallel()
+
+	testCases := []struct {
+		in   string
+		want int
+	}{
+		{in: "1beta", want: 1},
+		{in: "-2x", want: -2},
+		{in: "+12rc1", want: 12},
+	}
+
+	for _, tc := range testCases {
+		if got := parseVersionPart(tc.in); got != tc.want {
+			t.Fatalf("parseVersionPart(%q) = %d, want %d", tc.in, got, tc.want)
+		}
+	}
+}
+
 func TestCompareVersions_NonNumericSegmentsFollowZeroFallback(t *testing.T) {
 	t.Parallel()
 
@@ -58,6 +77,10 @@ func TestCompareVersions_NonNumericSegmentsFollowZeroFallback(t *testing.T) {
 
 	if got := compareVersions("v2.beta", "v2.0"); got != 0 {
 		t.Fatalf("compareVersions(v2.beta, v2.0) = %d, want 0", got)
+	}
+
+	if got := compareVersions("v1beta.2", "v1.1"); got != 1 {
+		t.Fatalf("compareVersions(v1beta.2, v1.1) = %d, want 1", got)
 	}
 }
 

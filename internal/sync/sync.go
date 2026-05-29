@@ -367,10 +367,11 @@ func (s *Syncer) handleWorkingDirectoryState() (bool, error) {
 	}
 
 	// If we have uncommitted changes but no conflicts, try to stash them
-	if err := stashChanges(repoPath); err != nil {
+	stashed, err := stashChanges(repoPath)
+	if err != nil {
 		return false, fmt.Errorf("failed to stash changes: %w", err)
 	}
-	return true, nil
+	return stashed, nil
 }
 
 // checkoutBranch checks out a branch, creating it if necessary

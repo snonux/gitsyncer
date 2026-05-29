@@ -11,6 +11,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"codeberg.org/snonux/gitsyncer/internal/aitool"
 	"codeberg.org/snonux/gitsyncer/internal/httpclient"
@@ -182,9 +183,21 @@ func compareVersions(v1, v2 string) int {
 }
 
 func parseVersionPart(part string) int {
-	n, err := strconv.Atoi(part)
+	start := 0
+	if part != "" && (part[0] == '+' || part[0] == '-') {
+		start = 1
+	}
+
+	end := start
+	for end < len(part) && unicode.IsDigit(rune(part[end])) {
+		end++
+	}
+	if end == start {
+		return 0
+	}
+
+	n, err := strconv.Atoi(part[:end])
 	if err != nil {
-		// Keep current behavior for non-numeric segments.
 		return 0
 	}
 

@@ -36,10 +36,20 @@ func checkForMergeConflicts(repoPath string) (bool, string, error) {
 	return hasConflicts, statusStr, nil
 }
 
-// stashChanges stashes uncommitted changes
-func stashChanges(repoPath string) error {
+// stashChanges stashes uncommitted changes.
+// Returns true only when a stash entry was created.
+func stashChanges(repoPath string) (bool, error) {
 	fmt.Println("  Stashing uncommitted changes...")
-	return gitCommand(repoPath, "stash", "push", "-m", "gitsyncer-auto-stash").Run()
+	output, err := gitCommand(repoPath, "stash", "push", "-m", "gitsyncer-auto-stash").CombinedOutput()
+	if err != nil {
+		return false, err
+	}
+
+	if strings.Contains(string(output), "No local changes to save") {
+		return false, nil
+	}
+
+	return true, nil
 }
 
 // popStash attempts to pop the stash (used in defer)

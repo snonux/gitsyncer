@@ -120,6 +120,73 @@ func TestPopStash_RestoresStashedChanges(t *testing.T) {
 	}
 }
 
+func TestStashChanges_NoStashEntryReturnsFalse(t *testing.T) {
+	repoPath := t.TempDir()
+
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	trackedFile := filepath.Join(repoPath, "tracked.txt")
+	if err := os.WriteFile(trackedFile, []byte("committed\n"), 0o644); err != nil {
+		t.Fatalf("write tracked file: %v", err)
+	}
+	runGit(t, repoPath, "add", "tracked.txt")
+	runGit(t, repoPath, "commit", "-m", "initial")
+
+	untrackedFile := filepath.Join(repoPath, "untracked.txt")
+	if err := os.WriteFile(untrackedFile, []byte("new\n"), 0o644); err != nil {
+		t.Fatalf("write untracked file: %v", err)
+	}
+
+	stashed, err := stashChanges(repoPath)
+	if err != nil {
+		t.Fatalf("stashChanges() unexpected error: %v", err)
+	}
+	if stashed {
+		t.Fatal("stashChanges() = true, want false when no stash entry is created")
+	}
+
+	if stashList := runGit(t, repoPath, "stash", "list"); stashList != "" {
+		t.Fatalf("expected no stash entries, got %q", stashList)
+	}
+}
+
+func TestHandleWorkingDirectoryState_NoStashEntryReturnsNotStashed(t *testing.T) {
+	workDir := t.TempDir()
+	repoName := "repo"
+	repoPath := filepath.Join(workDir, repoName)
+
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("mkdir repo path: %v", err)
+	}
+
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	trackedFile := filepath.Join(repoPath, "tracked.txt")
+	if err := os.WriteFile(trackedFile, []byte("committed\n"), 0o644); err != nil {
+		t.Fatalf("write tracked file: %v", err)
+	}
+	runGit(t, repoPath, "add", "tracked.txt")
+	runGit(t, repoPath, "commit", "-m", "initial")
+
+	untrackedFile := filepath.Join(repoPath, "untracked.txt")
+	if err := os.WriteFile(untrackedFile, []byte("new\n"), 0o644); err != nil {
+		t.Fatalf("write untracked file: %v", err)
+	}
+
+	s := &Syncer{workDir: workDir, repoName: repoName}
+	stashed, err := s.handleWorkingDirectoryState()
+	if err != nil {
+		t.Fatalf("handleWorkingDirectoryState() unexpected error: %v", err)
+	}
+	if stashed {
+		t.Fatal("handleWorkingDirectoryState() = true, want false when stash push creates no entry")
+	}
+}
+
 func runGit(t *testing.T, repoPath string, args ...string) string {
 	t.Helper()
 
