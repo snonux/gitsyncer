@@ -32,7 +32,7 @@ It has been vibe coded mainly using AI tools (Claude Code CLI and amp).
 - Default once-daily sync limit with --force override
 - Opt-in sync throttling with --throttle based on local activity
 - AI-powered project showcase generation for documentation
-- Weekly batch run mode with --batch-run for automated synchronization
+- Weekly batch run mode with `manage batch-run` for automated synchronization
 
 ## Installation
 
