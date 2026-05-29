@@ -24,7 +24,7 @@ The main package provides the application entry point.
 
 #### func main()
 Application entry point that:
-- Parses command-line flags
+- Initializes Cobra commands
 - Routes to appropriate handlers
 - Manages exit codes
 
@@ -60,35 +60,17 @@ type Flags struct {
 
 ### Functions
 
-#### func ParseFlags() *Flags
-Parses command-line arguments and returns a Flags struct with all options.
-
-#### func HandleVersion() int
-Displays version information and returns exit code 0.
-
 #### func HandleTestGitHubToken() int
 Tests GitHub token authentication:
 - Loads token from config/env/file
 - Validates token with API call
 - Returns 0 on success, 1 on failure
 
-#### func LoadConfig(configPath string) (*config.Config, error)
-Loads configuration from specified path or default locations:
-- `./gitsyncer.json`
-- `~/.config/gitsyncer/config.json`
-- `~/.gitsyncer.json`
-
-#### func ShowConfigHelp()
-Displays help for creating configuration files with example.
-
 #### func HandleListOrgs(cfg *config.Config) int
 Lists all configured organizations from config.
 
 #### func HandleListRepos(cfg *config.Config) int
 Lists all configured repositories from config.
-
-#### func ShowUsage(cfg *config.Config)
-Displays comprehensive usage information.
 
 #### func HandleSync(cfg *config.Config, flags *Flags) int
 Synchronizes a single repository specified by `--sync` flag.
@@ -101,9 +83,6 @@ Discovers and syncs all public Codeberg repositories to other platforms.
 
 #### func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int
 Discovers and syncs all public GitHub repositories to other platforms.
-
-#### func ShowFullSyncMessage()
-Displays information about full sync mode.
 
 ### Helper Functions (sync_handlers.go)
 

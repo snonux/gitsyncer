@@ -300,28 +300,22 @@ test: add integration tests for branch filtering
 
 ### Adding a New Command Flag
 
-1. Add flag in `internal/cli/flags.go`:
+1. Add a Cobra flag on the relevant command in `internal/cmd/*.go`:
    ```go
-   type Flags struct {
-       // ... existing flags
-       NewFeature bool  // Add new flag
-   }
-   
-   func ParseFlags() *Flags {
-       flags := &Flags{}
-       // ... existing flags
-       flag.BoolVar(&flags.NewFeature, "new-feature", false, "Enable new feature")
+   myCmd.Flags().BoolVar(&newFeature, "new-feature", false, "enable new feature")
+   ```
+
+2. Pass it through `buildFlags()` when a `cli.Flags` value is required:
+   ```go
+   func buildFlags() *cli.Flags {
+       return &cli.Flags{
+           // ... existing fields
+           NewFeature: newFeature,
+       }
    }
    ```
 
-2. Handle flag in `cmd/gitsyncer/main.go`:
-   ```go
-   if flags.NewFeature {
-       os.Exit(cli.HandleNewFeature(cfg, flags))
-   }
-   ```
-
-3. Implement handler in `internal/cli/handlers.go`
+3. Wire behavior in the command `Run` function and/or `internal/cli` handler.
 
 ### Adding a New Configuration Option
 

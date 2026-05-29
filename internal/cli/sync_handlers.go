@@ -637,13 +637,3 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 
 	return 0
 }
-
-// ShowFullSyncMessage displays the full sync mode message
-func ShowFullSyncMessage() {
-	fmt.Println("Full sync mode enabled:")
-	fmt.Println("  - Sync all public Codeberg repos to GitHub")
-	fmt.Println("  - Sync all public GitHub repos to Codeberg")
-	fmt.Println("  - Create missing GitHub repositories")
-	fmt.Println("  - Create missing Codeberg repositories (when implemented)")
-	fmt.Println()
-}
