@@ -73,16 +73,16 @@ Lists all configured organizations from config.
 Lists all configured repositories from config.
 
 #### func HandleSync(cfg *config.Config, flags *Flags) int
-Synchronizes a single repository specified by `--sync` flag.
+Synchronizes a single repository, used by `gitsyncer sync repo [name]`.
 
 #### func HandleSyncAll(cfg *config.Config, flags *Flags) int
-Synchronizes all repositories listed in configuration.
+Synchronizes all repositories listed in configuration, used by `gitsyncer sync all`.
 
 #### func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int
-Discovers and syncs all public Codeberg repositories to other platforms.
+Discovers and syncs all public Codeberg repositories to other platforms, used by `gitsyncer sync codeberg-to-github`.
 
 #### func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int
-Discovers and syncs all public GitHub repositories to other platforms.
+Discovers and syncs all public GitHub repositories to other platforms, used by `gitsyncer sync github-to-codeberg`.
 
 ### Helper Functions (sync_handlers.go)
 

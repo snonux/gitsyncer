@@ -29,6 +29,6 @@ GitSyncer is a tool for synchronizing Git repositories across multiple platforms
 
 1. Install GitSyncer
 2. Create a configuration file
-3. Run `gitsyncer --sync-all` to sync all configured repositories
+3. Run `gitsyncer sync all` to sync all configured repositories
 
 See the [Configuration Guide](configuration.md) for detailed setup instructions.

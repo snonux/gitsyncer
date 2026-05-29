@@ -16,36 +16,36 @@ This guide provides practical examples of using GitSyncer for various scenarios.
 
 ```bash
 # Sync a specific repository
-gitsyncer --sync my-project
+gitsyncer sync repo my-project
 
 # Sync with custom working directory
-gitsyncer --sync my-project --work-dir /tmp/gitsyncer-work
+gitsyncer sync repo my-project --work-dir /tmp/gitsyncer-work
 
 # Dry run to preview changes
-gitsyncer --sync my-project --dry-run
+gitsyncer sync repo my-project --dry-run
 ```
 
 ### Sync All Configured Repositories
 
 ```bash
 # Sync all repositories in config
-gitsyncer --sync-all
+gitsyncer sync all
 
-# Create missing GitHub repos automatically
-gitsyncer --sync-all --create-github-repos
+# Create missing repositories automatically
+gitsyncer sync all --create-repos
 ```
 
 ### List Operations
 
 ```bash
 # List configured organizations
-gitsyncer --list-orgs
+gitsyncer list orgs
 
 # List configured repositories
-gitsyncer --list-repos
+gitsyncer list repos
 
 # Show version
-gitsyncer --version
+gitsyncer version
 ```
 
 ## Repository Discovery
@@ -54,33 +54,34 @@ gitsyncer --version
 
 ```bash
 # Discover and sync all public repos from Codeberg
-gitsyncer --sync-codeberg-public
+gitsyncer sync codeberg-to-github
 
 # Also create repos on GitHub if they don't exist
-gitsyncer --sync-codeberg-public --create-github-repos
+gitsyncer sync codeberg-to-github --create-repos
 
 # Dry run to see what would be synced
-gitsyncer --sync-codeberg-public --dry-run
+gitsyncer sync codeberg-to-github --dry-run
 ```
 
 ### Sync All Public GitHub Repositories to Codeberg
 
 ```bash
 # Discover and sync all public repos from GitHub
-gitsyncer --sync-github-public
+gitsyncer sync github-to-codeberg
 
-# Note: Codeberg repos must already exist
-gitsyncer --sync-github-public
+# Also create missing repositories automatically
+gitsyncer sync github-to-codeberg --create-repos
 ```
 
 ### Full Bidirectional Sync
 
 ```bash
 # Sync all public repos in both directions
-gitsyncer --full
+gitsyncer sync bidirectional
 
 # Equivalent to:
-# gitsyncer --sync-codeberg-public --sync-github-public --create-github-repos
+# gitsyncer sync codeberg-to-github --create-repos
+# gitsyncer sync github-to-codeberg --create-repos
 ```
 
 ## Advanced Synchronization
@@ -105,7 +106,7 @@ Configuration with branch exclusions:
 
 Output shows excluded branches:
 ```bash
-$ gitsyncer --sync my-project
+$ gitsyncer sync repo my-project
 
 🚫 Excluded 3 branches based on patterns:
    Patterns: '^temp-', '^feature/experimental-', '-wip$'
@@ -119,7 +120,7 @@ $ gitsyncer --sync my-project
 
 When conflicts occur:
 ```bash
-$ gitsyncer --sync my-project
+$ gitsyncer sync repo my-project
 
 ERROR: repository has unresolved merge conflicts
 Please resolve conflicts in: /home/user/.gitsyncer-work/my-project
@@ -135,18 +136,18 @@ git status
 git add .
 git commit -m "Resolved conflicts"
 cd -
-gitsyncer --sync my-project
+gitsyncer sync repo my-project
 
 # Option 2: Start fresh
 rm -rf /home/user/.gitsyncer-work/my-project
-gitsyncer --sync my-project
+gitsyncer sync repo my-project
 ```
 
 ### Abandoned Branch Detection
 
 GitSyncer detects branches inactive for 6+ months:
 ```bash
-$ gitsyncer --sync-all
+$ gitsyncer sync all
 
 [1/3] Syncing project1...
 Repository project1 synchronized successfully!
@@ -172,10 +173,10 @@ Repository: project1
 ```bash
 # Add to crontab (crontab -e)
 # Sync all repos every 6 hours
-0 */6 * * * /usr/local/bin/gitsyncer --sync-all --config /home/user/.gitsyncer.json >> /var/log/gitsyncer.log 2>&1
+0 */6 * * * /usr/local/bin/gitsyncer sync all --config /home/user/.gitsyncer.json >> /var/log/gitsyncer.log 2>&1
 
 # Sync public repos daily at 2 AM
-0 2 * * * /usr/local/bin/gitsyncer --full >> /var/log/gitsyncer-public.log 2>&1
+0 2 * * * /usr/local/bin/gitsyncer sync bidirectional >> /var/log/gitsyncer-public.log 2>&1
 ```
 
 ### Shell Script Wrapper
@@ -192,13 +193,13 @@ LOG_FILE="$HOME/.gitsyncer/sync.log"
 echo "Starting sync at $(date)" >> "$LOG_FILE"
 
 # Test GitHub token first
-if ! gitsyncer --test-github-token; then
+if ! gitsyncer test github-token; then
     echo "GitHub token test failed" >> "$LOG_FILE"
     exit 1
 fi
 
 # Sync all repos
-if gitsyncer --sync-all --config "$CONFIG_FILE" >> "$LOG_FILE" 2>&1; then
+if gitsyncer sync all --config "$CONFIG_FILE" >> "$LOG_FILE" 2>&1; then
     echo "Sync completed successfully at $(date)" >> "$LOG_FILE"
 else
     echo "Sync failed at $(date)" >> "$LOG_FILE"
@@ -243,7 +244,7 @@ jobs:
       - name: Sync repositories
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gitsyncer --sync-all --create-github-repos
+        run: gitsyncer sync all --create-repos
 ```
 
 ## Troubleshooting Scenarios
@@ -252,7 +253,7 @@ jobs:
 
 ```bash
 # Test token is valid
-$ gitsyncer --test-github-token
+$ gitsyncer test github-token
 Testing GitHub token authentication...
   Loaded token from env var (length: 40)
   Checking URL: https://api.github.com/repos/myorg/gitsyncer
@@ -279,7 +280,7 @@ git reflog
 ### Repository Not Found
 
 ```bash
-$ gitsyncer --sync nonexistent-repo
+$ gitsyncer sync repo nonexistent-repo
 ERROR: Failed to clone from any organization
 ```
 
@@ -292,34 +293,34 @@ Solutions:
 
 ```bash
 # Permission denied
-$ gitsyncer --sync my-project --work-dir /root/work
+$ gitsyncer sync repo my-project --work-dir /root/work
 ERROR: failed to create work directory: permission denied
 
 # Solution: Use accessible directory
-gitsyncer --sync my-project --work-dir ~/gitsyncer-work
+gitsyncer sync repo my-project --work-dir ~/gitsyncer-work
 
 # Disk space issues
-$ gitsyncer --sync large-repo
+$ gitsyncer sync repo large-repo
 ERROR: write error: no space left on device
 
 # Solution: Clean up or use different disk
 df -h
 rm -rf ~/.gitsyncer-work/old-repo
-gitsyncer --sync large-repo --work-dir /mnt/storage/gitsyncer
+gitsyncer sync repo large-repo --work-dir /mnt/storage/gitsyncer
 ```
 
 ### Network and Connectivity
 
 ```bash
 # SSH key issues
-$ gitsyncer --sync my-project
+$ gitsyncer sync repo my-project
 ERROR: git@github.com: Permission denied (publickey)
 
 # Solution: Add SSH key to agent
 ssh-add ~/.ssh/id_rsa
 
 # Firewall/proxy issues
-$ gitsyncer --sync my-project
+$ gitsyncer sync repo my-project
 ERROR: Failed to connect to github.com port 22: Connection timed out
 
 # Solution: Use HTTPS URLs in config
@@ -336,20 +337,20 @@ ERROR: Failed to connect to github.com port 22: Connection timed out
 ### 1. Start with Dry Run
 Always test with `--dry-run` first:
 ```bash
-gitsyncer --sync-all --dry-run
+gitsyncer sync all --dry-run
 ```
 
 ### 2. Use Specific Working Directories
 Organize syncs by project or purpose:
 ```bash
-gitsyncer --sync personal-projects --work-dir ~/sync/personal
-gitsyncer --sync work-projects --work-dir ~/sync/work
+gitsyncer sync repo personal-projects --work-dir ~/sync/personal
+gitsyncer sync repo work-projects --work-dir ~/sync/work
 ```
 
 ### 3. Monitor Sync Operations
 Keep logs for troubleshooting:
 ```bash
-gitsyncer --sync-all 2>&1 | tee -a ~/gitsyncer.log
+gitsyncer sync all 2>&1 | tee -a ~/gitsyncer.log
 ```
 
 ### 4. Regular Maintenance
@@ -369,5 +370,5 @@ gitsyncer --config config-with-token.json
 
 # Good
 export GITHUB_TOKEN="$(pass show github/token)"
-gitsyncer --sync-all
+gitsyncer sync all
 ```

@@ -63,7 +63,7 @@ Array of organization objects. At least one organization must be configured.
   - Can also be set via environment variable or file
 
 #### repositories (optional)
-Array of repository names to sync. If empty, use `--sync-codeberg-public` or `--sync-github-public` to discover repositories.
+Array of repository names to sync. If empty, use `gitsyncer sync codeberg-to-github` or `gitsyncer sync github-to-codeberg` to discover repositories.
 
 #### exclude_branches (optional)
 Array of regex patterns for branches to exclude from synchronization.
@@ -174,7 +174,7 @@ Sync between GitHub and Codeberg:
 ## GitHub Token Configuration
 
 GitHub tokens are required for:
-- Creating repositories (`--create-github-repos`)
+- Creating repositories (`sync ... --create-repos`)
 - Listing private repositories
 - Higher API rate limits
 
@@ -211,7 +211,7 @@ GitHub tokens are required for:
 #### Method 2: Environment Variable
 ```bash
 export GITHUB_TOKEN="ghp_xxxxxxxxxxxx"
-gitsyncer --sync-all
+gitsyncer sync all
 ```
 
 #### Method 3: Token File
@@ -223,13 +223,13 @@ chmod 600 ~/.gitsyncer_github_token
 ### Testing Token
 
 ```bash
-gitsyncer --test-github-token
+gitsyncer test github-token
 ```
 
 ## Codeberg Token Configuration
 
 Codeberg tokens are required for:
-- Creating repositories (`--create-codeberg-repos`)
+- Creating repositories (`sync ... --create-repos`)
 - Listing private repositories
 
 ### Token Sources (in order of precedence)
@@ -264,7 +264,7 @@ Codeberg tokens are required for:
 #### Method 2: Environment Variable
 ```bash
 export CODEBERG_TOKEN="xxxxxxxxxxxx"
-gitsyncer --sync-all
+gitsyncer sync all
 ```
 
 #### Method 3: Token File
@@ -289,7 +289,7 @@ The `exclude_branches` field accepts regular expressions to filter out branches 
 
 To see which branches are excluded:
 ```bash
-gitsyncer --sync repo-name
+gitsyncer sync repo repo-name
 # Output will show excluded branches and patterns
 ```
 
@@ -301,7 +301,7 @@ Begin with a minimal configuration and add complexity as needed.
 ### 2. Use Dry Run
 Test your configuration with `--dry-run` before actual synchronization:
 ```bash
-gitsyncer --sync-all --dry-run
+gitsyncer sync all --dry-run
 ```
 
 ### 3. Secure Your Tokens
@@ -322,7 +322,7 @@ gitsyncer --sync-all --dry-run
 
 ### Configuration Not Found
 ```bash
-$ gitsyncer --sync myrepo
+$ gitsyncer sync repo myrepo
 No configuration file found. Please create one of:
   - ./gitsyncer.json
   - /home/user/.config/gitsyncer/config.json
@@ -333,7 +333,7 @@ No configuration file found. Please create one of:
 
 ### Invalid JSON
 ```bash
-$ gitsyncer --list-orgs
+$ gitsyncer list orgs
 Failed to load configuration: invalid character '}' looking for beginning of object key string
 ```
 
@@ -341,7 +341,7 @@ Failed to load configuration: invalid character '}' looking for beginning of obj
 
 ### No Organizations Configured
 ```bash
-$ gitsyncer --sync myrepo
+$ gitsyncer sync repo myrepo
 Configuration must have at least one organization
 ```
 
@@ -349,7 +349,7 @@ Configuration must have at least one organization
 
 ### Token Issues
 ```bash
-$ gitsyncer --test-github-token
+$ gitsyncer test github-token
 ERROR: Token test failed: authentication failed (401)
 ```
 

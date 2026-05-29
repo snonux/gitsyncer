@@ -351,7 +351,7 @@ test: add integration tests for branch filtering
    cd test && ./run_integration_tests.sh
    
    # Test manually
-   ./gitsyncer --sync test-repo
+   ./gitsyncer sync repo test-repo
    ```
 
 2. **Format code**:
@@ -414,7 +414,7 @@ func (s *Syncer) debugOperation() {
 
 Use:
 ```bash
-GITSYNCER_DEBUG=1 gitsyncer --sync test-repo
+GITSYNCER_DEBUG=1 gitsyncer sync repo test-repo
 ```
 
 ### Common Issues
