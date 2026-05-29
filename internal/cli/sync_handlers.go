@@ -181,6 +181,10 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 
 // HandleSyncCodebergPublic handles syncing all public Codeberg repositories
 func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
+	return handleSyncCodebergPublicWithFactory(cfg, flags, cliRepoClientFactory)
+}
+
+func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg == nil {
 		fmt.Println("No Codeberg organization found in configuration")
@@ -189,7 +193,11 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 
 	fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
 
-	client := cliRepoClientFactory.NewCodebergPublicRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	client := factory.NewCodebergPublicRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	if client == nil {
+		fmt.Println("ERROR: Failed to initialize Codeberg public repository client")
+		return 1
+	}
 
 	// Try fetching as organization first, then as user
 	repos, err := client.ListPublicRepos()
@@ -238,6 +246,10 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 
 // HandleSyncGitHubPublic handles syncing all public GitHub repositories
 func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
+	return handleSyncGitHubPublicWithFactory(cfg, flags, cliRepoClientFactory)
+}
+
+func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg == nil {
 		fmt.Println("No GitHub organization found in configuration")
@@ -246,7 +258,11 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 
 	fmt.Printf("Fetching public repositories from GitHub user/org: %s...\n", githubOrg.Name)
 
-	client := cliRepoClientFactory.NewGitHubPublicRepoClient(githubOrg.GitHubToken, githubOrg.Name)
+	client := factory.NewGitHubPublicRepoClient(githubOrg.GitHubToken, githubOrg.Name)
+	if client == nil {
+		fmt.Println("ERROR: Failed to initialize GitHub public repository client")
+		return 1
+	}
 	if !client.HasToken() {
 		fmt.Println("ERROR: GitHub token required to list repositories")
 		fmt.Println("Set GITHUB_TOKEN env var or create ~/.gitsyncer_github_token file")

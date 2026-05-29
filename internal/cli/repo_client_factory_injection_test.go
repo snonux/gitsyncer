@@ -270,9 +270,6 @@ func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
 func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 	t.Parallel()
 
-	oldFactory := cliRepoClientFactory
-	t.Cleanup(func() { cliRepoClientFactory = oldFactory })
-
 	factory := &stubRepoClientFactory{
 		githubPublicClient: &stubGitHubPublicRepoClient{
 			hasToken: true,
@@ -281,7 +278,6 @@ func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 			},
 		},
 	}
-	cliRepoClientFactory = factory
 
 	cfg := &config.Config{
 		Organizations: []config.Organization{
@@ -293,8 +289,8 @@ func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 		WorkDir: t.TempDir(),
 	}
 
-	if got := HandleSyncGitHubPublic(cfg, flags); got != 0 {
-		t.Fatalf("HandleSyncGitHubPublic() = %d, want 0", got)
+	if got := handleSyncGitHubPublicWithFactory(cfg, flags, factory); got != 0 {
+		t.Fatalf("handleSyncGitHubPublicWithFactory() = %d, want 0", got)
 	}
 	if factory.githubPublicRepoCalls != 1 {
 		t.Fatalf("expected exactly one injected GitHub public client creation, got %d", factory.githubPublicRepoCalls)
@@ -307,9 +303,6 @@ func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 	t.Parallel()
 
-	oldFactory := cliRepoClientFactory
-	t.Cleanup(func() { cliRepoClientFactory = oldFactory })
-
 	factory := &stubRepoClientFactory{
 		codebergPublicClient: &stubCodebergPublicRepoClient{
 			orgErr: errors.New("org lookup failed"),
@@ -318,7 +311,6 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 			},
 		},
 	}
-	cliRepoClientFactory = factory
 
 	cfg := &config.Config{
 		Organizations: []config.Organization{
@@ -331,14 +323,59 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 		WorkDir:          t.TempDir(),
 	}
 
-	if got := HandleSyncCodebergPublic(cfg, flags); got != 0 {
-		t.Fatalf("HandleSyncCodebergPublic() = %d, want 0", got)
+	if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
+		t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0", got)
 	}
 	if factory.codebergPublicCalls != 1 {
 		t.Fatalf("expected exactly one injected Codeberg public client creation, got %d", factory.codebergPublicCalls)
 	}
 	if factory.codebergPublicToken != "cb-token" || factory.codebergPublicOrg != "acme" {
 		t.Fatalf("codeberg public client init args = (%q, %q), want (%q, %q)", factory.codebergPublicToken, factory.codebergPublicOrg, "cb-token", "acme")
+	}
+}
+
+func TestHandleSyncGitHubPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilClient(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{githubPublicClient: nil}
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@github.com", Name: "acme", GitHubToken: "gh-token"},
+		},
+	}
+	flags := &Flags{
+		DryRun:  true,
+		WorkDir: t.TempDir(),
+	}
+
+	if got := handleSyncGitHubPublicWithFactory(cfg, flags, factory); got != 1 {
+		t.Fatalf("handleSyncGitHubPublicWithFactory() = %d, want 1", got)
+	}
+	if factory.githubPublicRepoCalls != 1 {
+		t.Fatalf("expected one GitHub public client factory call, got %d", factory.githubPublicRepoCalls)
+	}
+}
+
+func TestHandleSyncCodebergPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilClient(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{codebergPublicClient: nil}
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
+		},
+	}
+	flags := &Flags{
+		DryRun:           true,
+		SyncGitHubPublic: false,
+		WorkDir:          t.TempDir(),
+	}
+
+	if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 1 {
+		t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 1", got)
+	}
+	if factory.codebergPublicCalls != 1 {
+		t.Fatalf("expected one Codeberg public client factory call, got %d", factory.codebergPublicCalls)
 	}
 }
 
