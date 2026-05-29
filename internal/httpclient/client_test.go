@@ -49,16 +49,17 @@ func TestDo_UsesConfiguredTransportSettings(t *testing.T) {
 		t.Fatalf("expected *http.Transport, got %T", defaultClient.Transport)
 	}
 
-	if transport.TLSHandshakeTimeout != defaultTLSHandshakeTimeout {
-		t.Fatalf("expected TLS handshake timeout %v, got %v", defaultTLSHandshakeTimeout, transport.TLSHandshakeTimeout)
+	// Use explicit values so this test catches accidental policy drift in transport defaults.
+	if transport.TLSHandshakeTimeout != 10*time.Second {
+		t.Fatalf("expected TLS handshake timeout %v, got %v", 10*time.Second, transport.TLSHandshakeTimeout)
 	}
-	if transport.ResponseHeaderTimeout != defaultResponseHeaderTimeout {
-		t.Fatalf("expected response header timeout %v, got %v", defaultResponseHeaderTimeout, transport.ResponseHeaderTimeout)
+	if transport.ResponseHeaderTimeout != 15*time.Second {
+		t.Fatalf("expected response header timeout %v, got %v", 15*time.Second, transport.ResponseHeaderTimeout)
 	}
-	if transport.IdleConnTimeout != defaultIdleConnTimeout {
-		t.Fatalf("expected idle connection timeout %v, got %v", defaultIdleConnTimeout, transport.IdleConnTimeout)
+	if transport.IdleConnTimeout != 90*time.Second {
+		t.Fatalf("expected idle connection timeout %v, got %v", 90*time.Second, transport.IdleConnTimeout)
 	}
-	if transport.MaxIdleConnsPerHost != defaultMaxIdleConnsPerHost {
-		t.Fatalf("expected max idle conns per host %d, got %d", defaultMaxIdleConnsPerHost, transport.MaxIdleConnsPerHost)
+	if transport.MaxIdleConnsPerHost != 10 {
+		t.Fatalf("expected max idle conns per host %d, got %d", 10, transport.MaxIdleConnsPerHost)
 	}
 }
