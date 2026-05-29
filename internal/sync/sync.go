@@ -17,8 +17,6 @@ type backupSessionState struct {
 	reason   string
 }
 
-var currentBackupSession backupSessionState
-
 // Syncer handles repository synchronization between organizations
 type Syncer struct {
 	config           *config.Config
@@ -27,6 +25,7 @@ type Syncer struct {
 	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
 	branchFilter     *BranchFilter                     // Filter for excluding branches
 	backupEnabled    bool                              // Whether to sync to backup locations
+	backupSession    backupSessionState
 }
 
 // CLAUDE: Is there a reason, we return a pointer to Syncer?
@@ -59,7 +58,7 @@ func (s *Syncer) backupActive() bool {
 		return false
 	}
 
-	disabled, _ := currentBackupSession.status()
+	disabled, _ := s.backupSession.status()
 	return !disabled
 }
 
@@ -69,7 +68,7 @@ func (s *Syncer) disableBackupForSession(remoteName string, err error) {
 	}
 
 	reason := fmt.Sprintf("%s: %v", remoteName, err)
-	if currentBackupSession.disable(reason) {
+	if s.backupSession.disable(reason) {
 		fmt.Printf("Warning: Backup sync to %s failed: %v\n", remoteName, err)
 		fmt.Println("Warning: Disabling backup sync for the remainder of this session.")
 	}
@@ -93,14 +92,6 @@ func (b *backupSessionState) status() (bool, string) {
 	defer b.mu.Unlock()
 
 	return b.disabled, b.reason
-}
-
-func resetBackupSessionState() {
-	currentBackupSession.mu.Lock()
-	defer currentBackupSession.mu.Unlock()
-
-	currentBackupSession.disabled = false
-	currentBackupSession.reason = ""
 }
 
 // SyncRepository synchronizes a repository across all configured organizations
