@@ -138,7 +138,7 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return nil
 	}
 
-	url := fmt.Sprintf("https://api.github.com/user/repos")
+	url := "https://api.github.com/user/repos"
 
 	reqBody := CreateRepoRequest{
 		Name:        repoName,

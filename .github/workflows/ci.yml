@@ -1,0 +1,33 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Install tooling
+        run: |
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          go install github.com/magefile/mage@v1.15.0
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+
+      - name: Gate vet
+        run: mage vet
+
+      - name: Gate lint
+        run: mage lint
+
+      - name: Gate tests
+        run: mage test
