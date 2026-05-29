@@ -66,6 +66,8 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
     "repo1",
     "repo2"
   ],
+  "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
+  "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   }
@@ -453,7 +455,9 @@ Weekly rank snapshots are written on full showcase runs (all repositories), incl
 
 ### Configuration
 
-The showcase output is written to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl` by default (currently hardcoded).
+The showcase output defaults to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl`. You can override the output directory with `showcase_output_dir`.
+
+cgit links in project sections default to `https://cgit.f3s.buetow.org/<repo>/`. You can override the cgit host with `showcase_cgit_host`.
 
 You can override the branch used for showcase stats and cached code snippets on a per-repository basis with `showcase_stats_branches`. For example, `foo.zone` can use `content-gemtext` while the rest of the repos continue to use their current checkout branch.
 

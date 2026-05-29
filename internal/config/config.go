@@ -8,6 +8,10 @@ import (
 	"strings"
 )
 
+const (
+	defaultShowcaseCgitHost = "https://cgit.f3s.buetow.org"
+)
+
 // Organization represents a git organization with its host and name
 type Organization struct {
 	Host                string `json:"host"`
@@ -27,6 +31,8 @@ type Config struct {
 	WorkDir               string            `json:"work_dir,omitempty"`                // Working directory for cloning repositories
 	ExcludeFromShowcase   []string          `json:"exclude_from_showcase,omitempty"`   // Repository names to exclude from showcase
 	ShowcaseStatsBranches map[string]string `json:"showcase_stats_branches,omitempty"` // Repository names mapped to the branch used for showcase stats/code snippets
+	ShowcaseOutputDir     string            `json:"showcase_output_dir,omitempty"`     // Directory where showcase files and assets are written
+	ShowcaseCgitHost      string            `json:"showcase_cgit_host,omitempty"`      // Base URL for cgit links in showcase output
 	// SkipReleases maps a repository name to a list of tag names for which
 	// releases should NOT be created on any platform (GitHub/Codeberg)
 	SkipReleases map[string][]string `json:"skip_releases,omitempty"`
@@ -77,13 +83,20 @@ func Load(path string) (*Config, error) {
 		cfg.WorkDir = filepath.Join(home, "git", "gitsyncer-workdir")
 	}
 
-	// Expand home directory in WorkDir if needed
-	if strings.HasPrefix(cfg.WorkDir, "~/") {
-		home, err := os.UserHomeDir()
+	// Expand home directory in WorkDir if needed.
+	expandedWorkDir, err := expandHomePath(cfg.WorkDir)
+	if err != nil {
+		return nil, err
+	}
+	cfg.WorkDir = expandedWorkDir
+
+	// Expand home directory in showcase output directory if configured.
+	if strings.TrimSpace(cfg.ShowcaseOutputDir) != "" {
+		expandedShowcaseOutputDir, err := expandHomePath(cfg.ShowcaseOutputDir)
 		if err != nil {
-			return nil, fmt.Errorf("failed to get home directory: %w", err)
+			return nil, err
 		}
-		cfg.WorkDir = filepath.Join(home, cfg.WorkDir[2:])
+		cfg.ShowcaseOutputDir = expandedShowcaseOutputDir
 	}
 
 	return &cfg, nil
@@ -194,4 +207,41 @@ func (o *Organization) IsSSH() bool {
 	// Check if it's not a known git hosting service and contains SSH-like syntax
 	return !o.IsGitHub() && !o.IsCodeberg() && !strings.HasPrefix(o.Host, "file://") &&
 		(strings.Contains(o.Host, "@") || strings.Contains(o.Host, ":"))
+}
+
+// GetShowcaseOutputDir returns the configured showcase output directory when
+// present, otherwise the default output location.
+func (c *Config) GetShowcaseOutputDir() (string, error) {
+	if c != nil && strings.TrimSpace(c.ShowcaseOutputDir) != "" {
+		return expandHomePath(c.ShowcaseOutputDir)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return "", fmt.Errorf("failed to get home directory: %w", err)
+	}
+	return filepath.Join(home, "git", "foo.zone-content", "gemtext", "about"), nil
+}
+
+// GetShowcaseCgitHost returns the configured cgit host, or the default host.
+func (c *Config) GetShowcaseCgitHost() string {
+	if c != nil {
+		host := strings.TrimSpace(c.ShowcaseCgitHost)
+		if host != "" {
+			return strings.TrimRight(host, "/")
+		}
+	}
+	return defaultShowcaseCgitHost
+}
+
+func expandHomePath(path string) (string, error) {
+	if strings.HasPrefix(path, "~/") {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return "", fmt.Errorf("failed to get home directory: %w", err)
+		}
+		return filepath.Join(home, path[2:]), nil
+	}
+
+	return path, nil
 }

@@ -167,6 +167,32 @@ func TestFormatGemtext_IncludesCgitLink(t *testing.T) {
 	}
 }
 
+func TestBuildProjectLinks_DefaultCgitHost(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{config: &config.Config{}}
+	_, _, cgitURL := g.buildProjectLinks("cpuinfo")
+
+	if cgitURL != "https://cgit.f3s.buetow.org/cpuinfo/" {
+		t.Fatalf("buildProjectLinks() cgit URL = %q, want %q", cgitURL, "https://cgit.f3s.buetow.org/cpuinfo/")
+	}
+}
+
+func TestBuildProjectLinks_ConfiguredCgitHost(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{
+		config: &config.Config{
+			ShowcaseCgitHost: "https://cgit.example.net/git/",
+		},
+	}
+	_, _, cgitURL := g.buildProjectLinks("cpuinfo")
+
+	if cgitURL != "https://cgit.example.net/git/cpuinfo/" {
+		t.Fatalf("buildProjectLinks() cgit URL = %q, want %q", cgitURL, "https://cgit.example.net/git/cpuinfo/")
+	}
+}
+
 func TestFormatGemtext_ZeroProjectsReleasePercentagesAreZero(t *testing.T) {
 	t.Parallel()
 
@@ -363,6 +389,44 @@ func TestCollectAssets_ContinuesWhenSnippetExtractionFails(t *testing.T) {
 	}
 	if snippet != "" || language != "" {
 		t.Fatalf("collectAssets() snippet/language = %q/%q, want empty after extraction error", snippet, language)
+	}
+}
+
+func TestCollectAssets_UsesConfiguredShowcaseOutputDir(t *testing.T) {
+	repoName := "demo"
+	repoPath := filepath.Join(t.TempDir(), repoName)
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("![screenshot](shot.png)"), 0644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoPath, "shot.png"), []byte("png"), 0644); err != nil {
+		t.Fatalf("write shot.png: %v", err)
+	}
+
+	customOutputDir := filepath.Join(t.TempDir(), "custom-showcase-output")
+	g := &Generator{
+		config: &config.Config{
+			ShowcaseOutputDir: customOutputDir,
+		},
+	}
+
+	images, snippet, language, err := g.collectAssets(repoName, repoPath, repoPath, nil)
+	if err != nil {
+		t.Fatalf("collectAssets() error = %v", err)
+	}
+	if len(images) != 1 || images[0] != filepath.Join("showcase", repoName, "image-1.png") {
+		t.Fatalf("collectAssets() images = %#v", images)
+	}
+	if snippet != "" || language != "" {
+		t.Fatalf("collectAssets() snippet/language = %q/%q, want empty", snippet, language)
+	}
+
+	copiedPath := filepath.Join(customOutputDir, images[0])
+	if _, err := os.Stat(copiedPath); err != nil {
+		t.Fatalf("expected copied image at %s: %v", copiedPath, err)
 	}
 }
 

@@ -38,6 +38,8 @@ GitSyncer looks for configuration files in the following order:
     "^temp-",
     "-wip$"
   ],
+  "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
+  "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   }
@@ -93,6 +95,30 @@ Example:
 }
 ```
 
+#### showcase_output_dir (optional)
+Directory where showcase files are written (`showcase.gmi.tpl`, `showcase-rank-history.svg`, and extracted images).
+
+Default: `~/git/foo.zone-content/gemtext/about`
+
+Example:
+```json
+{
+  "showcase_output_dir": "~/git/foo.zone-content/gemtext/about"
+}
+```
+
+#### showcase_cgit_host (optional)
+Base URL used to generate cgit links in showcase project sections.
+
+Default: `https://cgit.f3s.buetow.org`
+
+Example:
+```json
+{
+  "showcase_cgit_host": "https://cgit.example.net/git"
+}
+```
+
 ## Examples
 
 ### Minimal Configuration
@@ -139,6 +165,8 @@ Sync between GitHub and Codeberg:
     "-wip$",
     "^old-"
   ],
+  "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
+  "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   }

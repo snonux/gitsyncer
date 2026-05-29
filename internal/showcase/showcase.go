@@ -302,15 +302,20 @@ func (g *Generator) getRepositories() ([]string, error) {
 }
 
 func (g *Generator) buildProjectLinks(repoName string) (string, string, string) {
+	cfg := g.config
+	if cfg == nil {
+		cfg = &config.Config{}
+	}
+
 	codebergURL := ""
 	githubURL := ""
-	cgitURL := fmt.Sprintf("https://cgit.f3s.buetow.org/%s/", repoName)
+	cgitURL := fmt.Sprintf("%s/%s/", cfg.GetShowcaseCgitHost(), repoName)
 
-	if codebergOrg := g.config.FindCodebergOrg(); codebergOrg != nil {
+	if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
 		codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
 	}
 
-	if githubOrg := g.config.FindGitHubOrg(); githubOrg != nil {
+	if githubOrg := cfg.FindGitHubOrg(); githubOrg != nil {
 		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
 	}
 
@@ -519,7 +524,7 @@ func (g *Generator) resolveSummary(
 func (g *Generator) collectAssets(repoName, repoPath, statsRepoPath string, metadata *RepoMetadata) ([]string, string, string, error) {
 	// Always extract images from README (not cached)
 	fmt.Printf("Extracting images from README...\n")
-	showcaseDir, err := showcaseOutputDir()
+	showcaseDir, err := g.showcaseOutputDir()
 	if err != nil {
 		return nil, "", "", err
 	}
@@ -545,20 +550,18 @@ func (g *Generator) collectAssets(repoName, repoPath, statsRepoPath string, meta
 	return images, codeSnippet, codeLanguage, nil
 }
 
-// showcaseOutputDir returns the canonical directory where showcase output files
-// (Gemtext, SVG, images) are written. Centralised here so all writers agree on
-// the path and a future change only needs to touch one place.
-func showcaseOutputDir() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", fmt.Errorf("failed to get home directory: %w", err)
+// showcaseOutputDir returns the configured showcase output directory,
+// falling back to defaults when not configured.
+func (g *Generator) showcaseOutputDir() (string, error) {
+	if g.config == nil {
+		return (&config.Config{}).GetShowcaseOutputDir()
 	}
-	return filepath.Join(home, "git", "foo.zone-content", "gemtext", "about"), nil
+	return g.config.GetShowcaseOutputDir()
 }
 
 // writeShowcaseFile writes the showcase content to the target file
 func (g *Generator) writeShowcaseFile(content string) error {
-	targetDir, err := showcaseOutputDir()
+	targetDir, err := g.showcaseOutputDir()
 	if err != nil {
 		return err
 	}
@@ -582,7 +585,7 @@ func (g *Generator) writeShowcaseFile(content string) error {
 // writeRankHistorySVGFile generates an interactive SVG rank history graph and
 // writes it to the same directory as the showcase Gemtext file.
 func (g *Generator) writeRankHistorySVGFile(summaries []ProjectSummary) error {
-	targetDir, err := showcaseOutputDir()
+	targetDir, err := g.showcaseOutputDir()
 	if err != nil {
 		return err
 	}
@@ -706,7 +709,7 @@ func (g *Generator) verifyImages(summary *ProjectSummary) error {
 		return nil
 	}
 
-	showcaseDir, err := showcaseOutputDir()
+	showcaseDir, err := g.showcaseOutputDir()
 	if err != nil {
 		return err
 	}

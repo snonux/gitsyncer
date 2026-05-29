@@ -1,6 +1,7 @@
 package config
 
 import (
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -66,5 +67,53 @@ func TestFindOrganization_ReturnsPointerToStoredElement(t *testing.T) {
 
 	if cfg.Organizations[0].Name != "after" {
 		t.Fatalf("Organizations[0].Name = %q, want %q", cfg.Organizations[0].Name, "after")
+	}
+}
+
+func TestGetShowcaseOutputDir_Default(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	cfg := &Config{}
+	got, err := cfg.GetShowcaseOutputDir()
+	if err != nil {
+		t.Fatalf("GetShowcaseOutputDir() error = %v", err)
+	}
+
+	want := filepath.Join(homeDir, "git", "foo.zone-content", "gemtext", "about")
+	if got != want {
+		t.Fatalf("GetShowcaseOutputDir() = %q, want %q", got, want)
+	}
+}
+
+func TestGetShowcaseOutputDir_OverrideAndExpandHome(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	cfg := &Config{
+		ShowcaseOutputDir: "~/custom/showcase",
+	}
+	got, err := cfg.GetShowcaseOutputDir()
+	if err != nil {
+		t.Fatalf("GetShowcaseOutputDir() error = %v", err)
+	}
+
+	want := filepath.Join(homeDir, "custom", "showcase")
+	if got != want {
+		t.Fatalf("GetShowcaseOutputDir() = %q, want %q", got, want)
+	}
+}
+
+func TestGetShowcaseCgitHost_DefaultAndOverride(t *testing.T) {
+	t.Parallel()
+
+	defaultCfg := &Config{}
+	if got := defaultCfg.GetShowcaseCgitHost(); got != "https://cgit.f3s.buetow.org" {
+		t.Fatalf("GetShowcaseCgitHost() default = %q, want %q", got, "https://cgit.f3s.buetow.org")
+	}
+
+	customCfg := &Config{ShowcaseCgitHost: "https://example.test/cgit/"}
+	if got := customCfg.GetShowcaseCgitHost(); got != "https://example.test/cgit" {
+		t.Fatalf("GetShowcaseCgitHost() override = %q, want %q", got, "https://example.test/cgit")
 	}
 }
