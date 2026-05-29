@@ -323,10 +323,10 @@ gitsyncer sync all --dry-run
 ### Configuration Not Found
 ```bash
 $ gitsyncer sync repo myrepo
-No configuration file found. Please create one of:
-  - ./gitsyncer.json
-  - /home/user/.config/gitsyncer/config.json
-  - /home/user/.gitsyncer.json
+Error loading configuration: failed to read config file: open /home/user/.config/gitsyncer/config.json: no such file or directory
+
+Please create a configuration file with your organizations and repositories.
+See 'gitsyncer help' for more information.
 ```
 
 **Solution**: Create a configuration file in one of the suggested locations.
@@ -334,7 +334,10 @@ No configuration file found. Please create one of:
 ### Invalid JSON
 ```bash
 $ gitsyncer list orgs
-Failed to load configuration: invalid character '}' looking for beginning of object key string
+Error loading configuration: failed to parse config: invalid character '}' looking for beginning of value
+
+Please create a configuration file with your organizations and repositories.
+See 'gitsyncer help' for more information.
 ```
 
 **Solution**: Validate your JSON syntax using a JSON validator.
@@ -342,7 +345,10 @@ Failed to load configuration: invalid character '}' looking for beginning of obj
 ### No Organizations Configured
 ```bash
 $ gitsyncer sync repo myrepo
-Configuration must have at least one organization
+Error loading configuration: invalid configuration: no organizations configured
+
+Please create a configuration file with your organizations and repositories.
+See 'gitsyncer help' for more information.
 ```
 
 **Solution**: Add at least one organization to the `organizations` array.
