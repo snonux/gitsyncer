@@ -8,26 +8,29 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/github"
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
 // syncRepoDescriptions ensures both platforms have the canonical description
 // Precedence: Codeberg > GitHub; if Codeberg empty and GitHub has one, use GitHub.
 // knownCBDesc and knownGHDesc can be empty; the function fetches as needed.
 func syncRepoDescriptions(cfg *config.Config, dryRun bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
+	syncRepoDescriptionsWithFactory(cfg, dryRun, repoName, knownCBDesc, knownGHDesc, cache, cliRepoClientFactory)
+}
+
+func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string, factory repoClientFactory) {
 	// Load orgs
 	ghOrg := cfg.FindGitHubOrg()
 	cbOrg := cfg.FindCodebergOrg()
 
-	var ghClient *github.Client
-	var cbClient *codeberg.Client
+	var ghClient forge.RepoDescriptionClient
+	var cbClient forge.RepoDescriptionClient
 	if ghOrg != nil {
-		ghClient = github.NewClient(ghOrg.GitHubToken, ghOrg.Name)
+		ghClient = factory.NewGitHubDescriptionClient(ghOrg.GitHubToken, ghOrg.Name)
 	}
 	if cbOrg != nil {
-		cbClient = codeberg.NewClient(cbOrg.CodebergToken, cbOrg.Name)
+		cbClient = factory.NewCodebergDescriptionClient(cbOrg.CodebergToken, cbOrg.Name)
 	}
 
 	// Get current descriptions (use known if provided)
@@ -36,10 +39,10 @@ func syncRepoDescriptions(cfg *config.Config, dryRun bool, repoName, knownCBDesc
 	var cbExists, ghExists bool
 
 	if cbDesc == "" && cbClient != nil {
-		if repo, exists, err := cbClient.GetRepo(repoName); err == nil {
+		if description, exists, err := cbClient.GetRepoDescription(repoName); err == nil {
 			cbExists = exists
 			if exists {
-				cbDesc = strings.TrimSpace(repo.Description)
+				cbDesc = strings.TrimSpace(description)
 			}
 		} else {
 			fmt.Printf("  Warning: Codeberg repo lookup failed: %v\n", err)
@@ -50,10 +53,10 @@ func syncRepoDescriptions(cfg *config.Config, dryRun bool, repoName, knownCBDesc
 
 	if ghClient != nil {
 		if ghDesc == "" || !ghExists {
-			if repo, exists, err := ghClient.GetRepo(repoName); err == nil {
+			if description, exists, err := ghClient.GetRepoDescription(repoName); err == nil {
 				ghExists = exists
 				if exists {
-					ghDesc = strings.TrimSpace(repo.Description)
+					ghDesc = strings.TrimSpace(description)
 				}
 			} else {
 				fmt.Printf("  Warning: GitHub repo lookup failed: %v\n", err)

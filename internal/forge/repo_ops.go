@@ -10,6 +10,13 @@ type RepoClient interface {
 	DeleteRepo(repoName string) error
 }
 
+// RepoDescriptionClient defines shared description operations across forges.
+type RepoDescriptionClient interface {
+	RepoClient
+	GetRepoDescription(repoName string) (string, bool, error)
+	UpdateRepoDescription(repoName, description string) error
+}
+
 // RepoExistsFunc checks if a repository exists.
 type RepoExistsFunc func(repoName string) (bool, error)
 

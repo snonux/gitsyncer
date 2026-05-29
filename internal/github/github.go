@@ -21,6 +21,7 @@ type Client struct {
 }
 
 var _ forge.RepoClient = (*Client)(nil)
+var _ forge.RepoDescriptionClient = (*Client)(nil)
 
 // NewClient creates a new GitHub API client
 func NewClient(token, org string) *Client {
@@ -229,6 +230,15 @@ func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 		return repo, false, fmt.Errorf("failed to decode repo: %w", err)
 	}
 	return repo, true, nil
+}
+
+// GetRepoDescription fetches a repository description.
+func (c *Client) GetRepoDescription(repoName string) (string, bool, error) {
+	repo, exists, err := c.GetRepo(repoName)
+	if err != nil || !exists {
+		return "", exists, err
+	}
+	return strings.TrimSpace(repo.Description), true, nil
 }
 
 // UpdateRepoDescription updates the repository description

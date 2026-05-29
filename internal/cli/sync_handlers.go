@@ -7,6 +7,7 @@ import (
 
 	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 	"codeberg.org/snonux/gitsyncer/internal/github"
 	"codeberg.org/snonux/gitsyncer/internal/state"
 	"codeberg.org/snonux/gitsyncer/internal/sync"
@@ -95,13 +96,13 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 
 	// Initialize GitHub client if needed
-	var githubClient *github.Client
+	var githubClient forge.RepoClient
 	if flags.CreateGitHubRepos {
 		githubClient = initGitHubClient(cfg)
 	}
 
 	// Initialize Codeberg client if needed
-	var codebergClient *codeberg.Client
+	var codebergClient forge.RepoClient
 	if flags.CreateCodebergRepos {
 		codebergClient = initCodebergClient(cfg)
 	}
@@ -188,7 +189,7 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 
 	fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
 
-	client := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	client := cliRepoClientFactory.NewCodebergPublicRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
 
 	// Try fetching as organization first, then as user
 	repos, err := client.ListPublicRepos()
@@ -245,7 +246,7 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 
 	fmt.Printf("Fetching public repositories from GitHub user/org: %s...\n", githubOrg.Name)
 
-	client := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
+	client := cliRepoClientFactory.NewGitHubPublicRepoClient(githubOrg.GitHubToken, githubOrg.Name)
 	if !client.HasToken() {
 		fmt.Println("ERROR: GitHub token required to list repositories")
 		fmt.Println("Set GITHUB_TOKEN env var or create ~/.gitsyncer_github_token file")
@@ -293,13 +294,17 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 // Helper functions
 
 func createGitHubRepoIfNeeded(cfg *config.Config, repoName string) error {
+	return createGitHubRepoIfNeededWithFactory(cfg, repoName, cliRepoClientFactory)
+}
+
+func createGitHubRepoIfNeededWithFactory(cfg *config.Config, repoName string, factory repoClientFactory) error {
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg == nil {
 		return nil
 	}
 
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
-	githubClient := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
+	githubClient := factory.NewGitHubRepoClient(githubOrg.GitHubToken, githubOrg.Name)
 	if !githubClient.HasToken() {
 		fmt.Println("Warning: No GitHub token found. Cannot create repository.")
 		return nil
@@ -310,13 +315,17 @@ func createGitHubRepoIfNeeded(cfg *config.Config, repoName string) error {
 }
 
 func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
+	return createCodebergRepoIfNeededWithFactory(cfg, repoName, cliRepoClientFactory)
+}
+
+func createCodebergRepoIfNeededWithFactory(cfg *config.Config, repoName string, factory repoClientFactory) error {
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg == nil {
 		return nil
 	}
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
-	codebergClient := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	codebergClient := factory.NewCodebergRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
 	if !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repository.")
 		return nil
@@ -326,7 +335,11 @@ func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
 	return codebergClient.CreateRepo(repoName, fmt.Sprintf("Mirror of %s", repoName), false)
 }
 
-func initGitHubClient(cfg *config.Config) *github.Client {
+func initGitHubClient(cfg *config.Config) forge.RepoClient {
+	return initGitHubClientWithFactory(cfg, cliRepoClientFactory)
+}
+
+func initGitHubClientWithFactory(cfg *config.Config, factory repoClientFactory) forge.RepoClient {
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg == nil {
 		fmt.Println("Warning: --create-github-repos specified but no GitHub organization found in config")
@@ -334,7 +347,7 @@ func initGitHubClient(cfg *config.Config) *github.Client {
 	}
 
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
-	githubClient := github.NewClient(githubOrg.GitHubToken, githubOrg.Name)
+	githubClient := factory.NewGitHubRepoClient(githubOrg.GitHubToken, githubOrg.Name)
 	if !githubClient.HasToken() {
 		fmt.Println("Warning: No GitHub token found. Cannot create repositories.")
 		return nil
@@ -344,12 +357,16 @@ func initGitHubClient(cfg *config.Config) *github.Client {
 	return githubClient
 }
 
-func createRepoWithClient(client *github.Client, repoName, description string) error {
+func createRepoWithClient(client forge.RepoClient, repoName, description string) error {
 	fmt.Printf("Checking/creating GitHub repository %s...\n", repoName)
 	return client.CreateRepo(repoName, description, false)
 }
 
-func initCodebergClient(cfg *config.Config) *codeberg.Client {
+func initCodebergClient(cfg *config.Config) forge.RepoClient {
+	return initCodebergClientWithFactory(cfg, cliRepoClientFactory)
+}
+
+func initCodebergClientWithFactory(cfg *config.Config, factory repoClientFactory) forge.RepoClient {
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg == nil {
 		fmt.Println("Warning: --create-codeberg-repos specified but no Codeberg organization found in config")
@@ -357,7 +374,7 @@ func initCodebergClient(cfg *config.Config) *codeberg.Client {
 	}
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
-	codebergClient := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	codebergClient := factory.NewCodebergRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
 	if !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repositories.")
 		return nil
@@ -504,13 +521,9 @@ func printDeleteScript(syncer *sync.Syncer) {
 
 func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string) int {
 	// Initialize GitHub client if needed
-	var githubClient github.Client
-	var hasGithubClient bool
+	var githubClient forge.RepoClient
 	if flags.CreateGitHubRepos {
-		if client := initGitHubClient(cfg); client != nil {
-			githubClient = *client
-			hasGithubClient = true
-		}
+		githubClient = initGitHubClient(cfg)
 	}
 
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
@@ -532,7 +545,7 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		}
 
 		// Create GitHub repo if needed
-		if hasGithubClient && flags.CreateGitHubRepos {
+		if githubClient != nil && flags.CreateGitHubRepos {
 			codebergRepo := repoMap[repoName]
 			description := codebergRepo.Description
 			if description == "" {
@@ -575,13 +588,9 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 
 func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string) int {
 	// Initialize Codeberg client if needed
-	var codebergClient codeberg.Client
-	var hasCodebergClient bool
+	var codebergClient forge.RepoClient
 	if flags.CreateCodebergRepos {
-		if client := initCodebergClient(cfg); client != nil {
-			codebergClient = *client
-			hasCodebergClient = true
-		}
+		codebergClient = initCodebergClient(cfg)
 	}
 
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
@@ -603,7 +612,7 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		}
 
 		// Create Codeberg repo if needed
-		if hasCodebergClient && flags.CreateCodebergRepos {
+		if codebergClient != nil && flags.CreateCodebergRepos {
 			githubRepo := repoMap[repoName]
 			description := githubRepo.Description
 			if description == "" {
