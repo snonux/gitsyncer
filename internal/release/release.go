@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"sort"
+	"strconv"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/aitool"
@@ -164,10 +165,10 @@ func compareVersions(v1, v2 string) int {
 		var n1, n2 int
 
 		if i < len(parts1) {
-			fmt.Sscanf(parts1[i], "%d", &n1)
+			n1 = parseVersionPart(parts1[i])
 		}
 		if i < len(parts2) {
-			fmt.Sscanf(parts2[i], "%d", &n2)
+			n2 = parseVersionPart(parts2[i])
 		}
 
 		if n1 < n2 {
@@ -178,6 +179,16 @@ func compareVersions(v1, v2 string) int {
 	}
 
 	return 0
+}
+
+func parseVersionPart(part string) int {
+	n, err := strconv.Atoi(part)
+	if err != nil {
+		// Keep current behavior for non-numeric segments.
+		return 0
+	}
+
+	return n
 }
 
 // GetCommitsSinceTag gets all commits since a specific tag

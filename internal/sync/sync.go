@@ -324,7 +324,11 @@ func (s *Syncer) syncBranch(branch string, remotes map[string]*config.Organizati
 		return err
 	}
 	if stashed {
-		defer popStash(repoPath)
+		defer func() {
+			if err := popStash(repoPath); err != nil {
+				fmt.Printf("  Warning: %v\n", err)
+			}
+		}()
 	}
 
 	// Create or checkout the branch

@@ -43,8 +43,13 @@ func stashChanges(repoPath string) error {
 }
 
 // popStash attempts to pop the stash (used in defer)
-func popStash(repoPath string) {
-	gitCommand(repoPath, "stash", "pop").Run()
+func popStash(repoPath string) error {
+	output, err := gitCommand(repoPath, "stash", "pop").CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to restore stashed changes: %w\n%s", err, strings.TrimSpace(string(output)))
+	}
+
+	return nil
 }
 
 // mergeBranch merges a branch from a remote

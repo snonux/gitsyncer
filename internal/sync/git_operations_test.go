@@ -1,7 +1,9 @@
 package sync
 
 import (
+	"os"
 	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -74,6 +76,47 @@ func TestGetTagCommitHash_LocalTagMissingReturnsError(t *testing.T) {
 	}
 	if tagHash != "" {
 		t.Fatalf("expected empty hash for missing local tag, got %q", tagHash)
+	}
+}
+
+func TestPopStash_NoStashReturnsError(t *testing.T) {
+	repoPath := t.TempDir()
+	runGit(t, repoPath, "init")
+
+	if err := popStash(repoPath); err == nil {
+		t.Fatal("expected error when popping stash with no entries")
+	}
+}
+
+func TestPopStash_RestoresStashedChanges(t *testing.T) {
+	repoPath := t.TempDir()
+
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	trackedFile := filepath.Join(repoPath, "tracked.txt")
+	if err := os.WriteFile(trackedFile, []byte("first\n"), 0o644); err != nil {
+		t.Fatalf("write tracked file: %v", err)
+	}
+	runGit(t, repoPath, "add", "tracked.txt")
+	runGit(t, repoPath, "commit", "-m", "initial")
+
+	if err := os.WriteFile(trackedFile, []byte("second\n"), 0o644); err != nil {
+		t.Fatalf("update tracked file: %v", err)
+	}
+	runGit(t, repoPath, "stash", "push", "-m", "test-stash")
+
+	if err := popStash(repoPath); err != nil {
+		t.Fatalf("expected popStash to succeed, got error: %v", err)
+	}
+
+	content, err := os.ReadFile(trackedFile)
+	if err != nil {
+		t.Fatalf("read tracked file: %v", err)
+	}
+	if string(content) != "second\n" {
+		t.Fatalf("expected stashed content to be restored, got %q", string(content))
 	}
 }
 

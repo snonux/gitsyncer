@@ -41,6 +41,26 @@ func TestGetLocalTags_FiltersToStrictVersionTags(t *testing.T) {
 	}
 }
 
+func TestParseVersionPart_NonNumericReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	if got := parseVersionPart("abc"); got != 0 {
+		t.Fatalf("parseVersionPart(non-numeric) = %d, want 0", got)
+	}
+}
+
+func TestCompareVersions_NonNumericSegmentsFollowZeroFallback(t *testing.T) {
+	t.Parallel()
+
+	if got := compareVersions("v1.alpha.1", "v1.0.2"); got != -1 {
+		t.Fatalf("compareVersions(v1.alpha.1, v1.0.2) = %d, want -1", got)
+	}
+
+	if got := compareVersions("v2.beta", "v2.0"); got != 0 {
+		t.Fatalf("compareVersions(v2.beta, v2.0) = %d, want 0", got)
+	}
+}
+
 func runGit(t *testing.T, repoPath string, args ...string) string {
 	t.Helper()
 
