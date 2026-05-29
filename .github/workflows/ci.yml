@@ -10,6 +10,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -21,13 +23,28 @@ jobs:
         run: |
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
           go install github.com/magefile/mage@v1.15.0
-          go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
+          go install github.com/golangci/golangci-lint/cmd/golangci-lint@v1.64.8
 
       - name: Gate vet
         run: mage vet
 
       - name: Gate lint
-        run: mage lint
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          PUSH_BEFORE_SHA: ${{ github.event.before }}
+        run: |
+          BASE_SHA="${PR_BASE_SHA:-$PUSH_BEFORE_SHA}"
+
+          if [ -z "$BASE_SHA" ] || [ "$BASE_SHA" = "0000000000000000000000000000000000000000" ]; then
+            if git rev-parse HEAD^ >/dev/null 2>&1; then
+              BASE_SHA="$(git rev-parse HEAD^)"
+            else
+              BASE_SHA="$(git rev-list --max-parents=0 HEAD)"
+            fi
+          fi
+
+          echo "Lint baseline: $BASE_SHA"
+          golangci-lint run --new-from-rev="$BASE_SHA"
 
       - name: Gate tests
         run: mage test
