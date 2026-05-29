@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/localrepos"
 	"codeberg.org/snonux/gitsyncer/internal/release"
 	"codeberg.org/snonux/gitsyncer/internal/version"
 )
@@ -15,21 +16,10 @@ import (
 // HandleCheckReleases checks for version tags without releases and creates them with confirmation
 func HandleCheckReleases(cfg *config.Config, flags *Flags) int {
 	// Get all repositories from work directory
-	entries, err := os.ReadDir(flags.WorkDir)
+	repositories, err := localrepos.ListLocalRepos(flags.WorkDir)
 	if err != nil {
 		fmt.Printf("Error reading work directory %s: %v\n", flags.WorkDir, err)
 		return 1
-	}
-
-	var repositories []string
-	for _, entry := range entries {
-		if entry.IsDir() {
-			// Check if it's a git repository
-			gitPath := filepath.Join(flags.WorkDir, entry.Name(), ".git")
-			if _, err := os.Stat(gitPath); err == nil {
-				repositories = append(repositories, entry.Name())
-			}
-		}
 	}
 
 	if len(repositories) == 0 {

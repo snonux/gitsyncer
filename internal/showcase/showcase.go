@@ -13,6 +13,7 @@ import (
 
 	"codeberg.org/snonux/gitsyncer/internal/aitool"
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/localrepos"
 )
 
 // Generator handles showcase generation for repositories
@@ -624,27 +625,7 @@ func isSetextUnderline(line string) bool {
 
 // getRepositories returns a list of repository directories in the work directory
 func (g *Generator) getRepositories() ([]string, error) {
-	entries, err := os.ReadDir(g.workDir)
-	if err != nil {
-		return nil, err
-	}
-
-	var repos []string
-	for _, entry := range entries {
-		if !entry.IsDir() {
-			continue
-		}
-
-		// Check if it's a git repository
-		gitDir := filepath.Join(g.workDir, entry.Name(), ".git")
-		if info, err := os.Stat(gitDir); err == nil && info.IsDir() {
-			repos = append(repos, entry.Name())
-		}
-	}
-
-	// Sort repositories alphabetically
-	sort.Strings(repos)
-	return repos, nil
+	return localrepos.ListLocalReposWithGitDir(g.workDir)
 }
 
 func (g *Generator) buildProjectLinks(repoName string) (string, string, string) {
