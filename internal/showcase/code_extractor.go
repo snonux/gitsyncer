@@ -482,10 +482,7 @@ func stripComments(code string) string {
 		if trimmed == "" {
 			// Keep empty lines for readability
 			result = append(result, line)
-		} else if strings.HasPrefix(trimmed, "//") ||
-			strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "#include") && !strings.HasPrefix(trimmed, "#define") ||
-			strings.HasPrefix(trimmed, "<!--") ||
-			strings.HasPrefix(trimmed, "*") && len(trimmed) > 1 && trimmed[1] == ' ' {
+		} else if isCommentLine(trimmed) {
 			// Skip comment lines
 			continue
 		} else if strings.HasPrefix(trimmed, "\"\"\"") || strings.HasPrefix(trimmed, "'''") {
@@ -520,6 +517,13 @@ func stripComments(code string) string {
 	result = breakLongLines(result, 80)
 
 	return strings.Join(result, "\n")
+}
+
+func isCommentLine(trimmed string) bool {
+	return strings.HasPrefix(trimmed, "//") ||
+		(strings.HasPrefix(trimmed, "#") && !strings.HasPrefix(trimmed, "#include") && !strings.HasPrefix(trimmed, "#define")) ||
+		strings.HasPrefix(trimmed, "<!--") ||
+		(strings.HasPrefix(trimmed, "*") && len(trimmed) > 1 && trimmed[1] == ' ')
 }
 
 // removeCommonIndentation removes common leading whitespace from all lines
