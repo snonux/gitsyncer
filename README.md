@@ -217,14 +217,11 @@ gitsyncer showcase
 # Force regeneration of all summaries
 gitsyncer showcase --force
 
-# Custom output path
-gitsyncer showcase --output ~/my-showcase.md
+# Generate showcase for one repository
+gitsyncer showcase --repo gitsyncer
 
-# Different output format
-gitsyncer showcase --format markdown
-
-# Exclude certain repositories
-gitsyncer showcase --exclude "test-.*"
+# Use a specific AI tool
+gitsyncer showcase --ai-tool opencode
 ```
 
 ### Repository Management
@@ -429,8 +426,11 @@ gitsyncer showcase
 # Force regeneration of all summaries
 gitsyncer showcase --force
 
-# Custom output path and format
-gitsyncer showcase --output ~/showcase.md --format markdown
+# Generate showcase for one repository
+gitsyncer showcase --repo gitsyncer
+
+# Use a specific AI tool
+gitsyncer showcase --ai-tool opencode
 ```
 
 ### Output
