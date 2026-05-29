@@ -348,6 +348,10 @@ func initGitHubClientWithFactory(cfg *config.Config, factory repoClientFactory) 
 
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
 	githubClient := factory.NewGitHubRepoClient(githubOrg.GitHubToken, githubOrg.Name)
+	if githubClient == nil {
+		fmt.Println("Warning: GitHub client initialization returned nil")
+		return nil
+	}
 	if !githubClient.HasToken() {
 		fmt.Println("Warning: No GitHub token found. Cannot create repositories.")
 		return nil
@@ -375,6 +379,10 @@ func initCodebergClientWithFactory(cfg *config.Config, factory repoClientFactory
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
 	codebergClient := factory.NewCodebergRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	if codebergClient == nil {
+		fmt.Println("Warning: Codeberg client initialization returned nil")
+		return nil
+	}
 	if !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repositories.")
 		return nil
