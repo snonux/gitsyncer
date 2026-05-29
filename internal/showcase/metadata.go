@@ -162,36 +162,6 @@ func getCommitCount(repoPath string) (int, error) {
 	return count, nil
 }
 
-// countLinesOfCode counts lines of code (excluding binary files and common non-code files)
-func countLinesOfCode(repoPath string) (int, error) {
-	// Use git ls-files to get tracked files, then count lines
-	// Exclude binary files and common non-code files
-	cmd := exec.Command("bash", "-c", fmt.Sprintf(
-		`cd "%s" && git ls-files | grep -E '\.(go|py|js|ts|java|c|cpp|h|hpp|cs|rb|php|swift|kt|rs|scala|r|sh|bash|zsh|pl|lua|vim|el|clj|hs|ml|ex|exs|dart|jl|nim|v|zig|html|css|scss|sass|json|xml|yaml|yml|toml|ini|conf|cfg)$' | xargs wc -l 2>/dev/null | tail -n 1 | awk '{print $1}'`,
-		repoPath,
-	))
-
-	output, err := cmd.Output()
-	if err != nil {
-		// Fallback: try a simpler approach
-		cmd = exec.Command("bash", "-c", fmt.Sprintf(
-			`find "%s" -type f -name "*.go" -o -name "*.py" -o -name "*.js" -o -name "*.java" -o -name "*.c" -o -name "*.cpp" -o -name "*.rs" | xargs wc -l 2>/dev/null | tail -n 1 | awk '{print $1}'`,
-			repoPath,
-		))
-		output, err = cmd.Output()
-		if err != nil {
-			return 0, err
-		}
-	}
-
-	loc, err := strconv.Atoi(strings.TrimSpace(string(output)))
-	if err != nil {
-		return 0, err
-	}
-
-	return loc, nil
-}
-
 // getFirstCommitDate returns the date of the first commit
 func getFirstCommitDate(repoPath string) (string, error) {
 	cmd := exec.Command("git", "-C", repoPath, "log", "--reverse", "--pretty=format:%ai", "--date=short", "HEAD")
