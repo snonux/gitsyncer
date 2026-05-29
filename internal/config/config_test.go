@@ -47,3 +47,24 @@ func TestValidate_DescriptionSyncFieldsMustBePaired(t *testing.T) {
 		t.Fatalf("Validate() error = %q, want descriptionSyncHost context", err)
 	}
 }
+
+func TestFindOrganization_ReturnsPointerToStoredElement(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Organizations: []Organization{
+			{Host: "git@github.com", Name: "before"},
+		},
+	}
+
+	org := cfg.FindOrganization("git@github.com")
+	if org == nil {
+		t.Fatal("FindOrganization() returned nil, want organization")
+	}
+
+	org.Name = "after"
+
+	if cfg.Organizations[0].Name != "after" {
+		t.Fatalf("Organizations[0].Name = %q, want %q", cfg.Organizations[0].Name, "after")
+	}
+}

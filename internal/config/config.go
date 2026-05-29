@@ -151,9 +151,9 @@ func (o *Organization) GetGitURL() string {
 
 // FindOrganization finds an organization by host
 func (c *Config) FindOrganization(host string) *Organization {
-	for _, org := range c.Organizations {
-		if org.Host == host {
-			return &org
+	for i := range c.Organizations {
+		if c.Organizations[i].Host == host {
+			return &c.Organizations[i]
 		}
 	}
 	return nil
