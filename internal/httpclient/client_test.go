@@ -42,3 +42,23 @@ func TestDo_UsesSharedTimeout(t *testing.T) {
 		t.Fatalf("expected shared timeout %v, got %v", DefaultTimeout, defaultClient.Timeout)
 	}
 }
+
+func TestDo_UsesConfiguredTransportSettings(t *testing.T) {
+	transport, ok := defaultClient.Transport.(*http.Transport)
+	if !ok {
+		t.Fatalf("expected *http.Transport, got %T", defaultClient.Transport)
+	}
+
+	if transport.TLSHandshakeTimeout != defaultTLSHandshakeTimeout {
+		t.Fatalf("expected TLS handshake timeout %v, got %v", defaultTLSHandshakeTimeout, transport.TLSHandshakeTimeout)
+	}
+	if transport.ResponseHeaderTimeout != defaultResponseHeaderTimeout {
+		t.Fatalf("expected response header timeout %v, got %v", defaultResponseHeaderTimeout, transport.ResponseHeaderTimeout)
+	}
+	if transport.IdleConnTimeout != defaultIdleConnTimeout {
+		t.Fatalf("expected idle connection timeout %v, got %v", defaultIdleConnTimeout, transport.IdleConnTimeout)
+	}
+	if transport.MaxIdleConnsPerHost != defaultMaxIdleConnsPerHost {
+		t.Fatalf("expected max idle conns per host %d, got %d", defaultMaxIdleConnsPerHost, transport.MaxIdleConnsPerHost)
+	}
+}
