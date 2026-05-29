@@ -254,6 +254,118 @@ func TestFallbackSummary_SkipsHeadingOnlyParagraphs(t *testing.T) {
 	}
 }
 
+func TestResolveSummary_CachedSummaryFallsBackToReadmeWhenNoUsefulParagraph(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{}
+	readmeContent := []byte("useful README summary paragraph")
+
+	got := g.resolveSummary(
+		"repo",
+		t.TempDir(),
+		"opencode",
+		"README.md",
+		readmeContent,
+		true,
+		"* item one\n* item two",
+		true,
+	)
+
+	if got != "useful README summary paragraph" {
+		t.Fatalf("resolveSummary() = %q, want README fallback", got)
+	}
+}
+
+func TestResolveSummary_NoCacheAndNoReadmeUsesGenericFallback(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{}
+
+	got := g.resolveSummary(
+		"repo",
+		t.TempDir(),
+		"opencode",
+		"",
+		nil,
+		false,
+		"",
+		false,
+	)
+
+	if got != "repo: source code repository." {
+		t.Fatalf("resolveSummary() = %q, want generic fallback", got)
+	}
+}
+
+func TestCollectAssets_ReturnsImagesAndSkipsSnippetWithoutLanguages(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	repoName := "demo"
+	repoPath := filepath.Join(t.TempDir(), repoName)
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("![screenshot](shot.png)"), 0644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(repoPath, "shot.png"), []byte("png"), 0644); err != nil {
+		t.Fatalf("write shot.png: %v", err)
+	}
+
+	g := &Generator{}
+	images, snippet, language, err := g.collectAssets(repoName, repoPath, repoPath, nil)
+	if err != nil {
+		t.Fatalf("collectAssets() error = %v", err)
+	}
+
+	if len(images) != 1 || images[0] != filepath.Join("showcase", repoName, "image-1.png") {
+		t.Fatalf("collectAssets() images = %#v", images)
+	}
+	if snippet != "" || language != "" {
+		t.Fatalf("collectAssets() snippet/language = %q/%q, want empty", snippet, language)
+	}
+
+	copiedPath := filepath.Join(homeDir, "git", "foo.zone-content", "gemtext", "about", images[0])
+	if _, err := os.Stat(copiedPath); err != nil {
+		t.Fatalf("expected copied image at %s: %v", copiedPath, err)
+	}
+}
+
+func TestCollectAssets_ContinuesWhenSnippetExtractionFails(t *testing.T) {
+	homeDir := t.TempDir()
+	t.Setenv("HOME", homeDir)
+
+	repoName := "demo"
+	repoPath := filepath.Join(t.TempDir(), repoName)
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("mkdir repo: %v", err)
+	}
+
+	if err := os.WriteFile(filepath.Join(repoPath, "README.md"), []byte("![missing](missing.png)"), 0644); err != nil {
+		t.Fatalf("write README.md: %v", err)
+	}
+
+	g := &Generator{}
+	metadata := &RepoMetadata{
+		Languages: []LanguageStats{
+			{Name: "Go", Lines: 10, Percentage: 100},
+		},
+	}
+
+	images, snippet, language, err := g.collectAssets(repoName, repoPath, repoPath, metadata)
+	if err != nil {
+		t.Fatalf("collectAssets() error = %v", err)
+	}
+	if len(images) != 0 {
+		t.Fatalf("collectAssets() images = %#v, want no images", images)
+	}
+	if snippet != "" || language != "" {
+		t.Fatalf("collectAssets() snippet/language = %q/%q, want empty after extraction error", snippet, language)
+	}
+}
+
 func TestSelectSummaryTool_DefaultPrefersOpencode(t *testing.T) {
 	t.Parallel()
 

@@ -445,51 +445,23 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		// Continue anyway with partial metadata
 	}
 
-	// Get the summary - either from cache or by running AI tool
-	var summary string
-	if haveCachedSummary {
-		summary = cachedSummary
-		fmt.Printf("Using cached AI summary\n")
-	} else {
-		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
-		summary = runSummaryTool(selectedTool, prompt, repoPath, readmeFile, readmeContent, readmeFound)
-
-		// Fallback: create a minimal summary from README if AI unavailable/failed
-		if summary == "" {
-			summary = fallbackSummary(repoName, readmeContent, readmeFound)
-		}
-	}
-	summary = extractUsefulSummary(summary, 2)
-	if summary == "" {
-		summary = fallbackSummary(repoName, readmeContent, readmeFound)
-	}
-	summary = sanitizeSummaryForGemtext(summary)
+	summary := g.resolveSummary(
+		repoName,
+		repoPath,
+		selectedTool,
+		readmeFile,
+		readmeContent,
+		readmeFound,
+		cachedSummary,
+		haveCachedSummary,
+	)
 
 	// Build URLs
 	codebergURL, githubURL, cgitURL := g.buildProjectLinks(repoName)
 
-	// Always extract images from README (not cached)
-	fmt.Printf("Extracting images from README...\n")
-	showcaseDir, err := showcaseOutputDir()
+	images, codeSnippet, codeLanguage, err := g.collectAssets(repoName, repoPath, statsRepoPath, metadata)
 	if err != nil {
 		return nil, err
-	}
-	images, err := extractImagesFromRepo(repoPath, repoName, showcaseDir)
-	if err != nil {
-		fmt.Printf("Warning: Failed to extract images: %v\n", err)
-		// Continue without images
-	}
-
-	// Extract code snippet for all projects
-	var codeSnippet, codeLanguage string
-	if metadata != nil && len(metadata.Languages) > 0 {
-		snippet, lang, err := extractCodeSnippet(statsRepoPath, metadata.Languages)
-		if err != nil {
-			fmt.Printf("Warning: Failed to extract code snippet: %v\n", err)
-		} else {
-			codeSnippet = snippet
-			codeLanguage = lang
-		}
 	}
 
 	projectSummary := &ProjectSummary{
@@ -512,6 +484,65 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	}
 
 	return projectSummary, nil
+}
+
+func (g *Generator) resolveSummary(
+	repoName, repoPath, selectedTool, readmeFile string,
+	readmeContent []byte,
+	readmeFound bool,
+	cachedSummary string,
+	haveCachedSummary bool,
+) string {
+	// Get the summary - either from cache or by running AI tool
+	var summary string
+	if haveCachedSummary {
+		summary = cachedSummary
+		fmt.Printf("Using cached AI summary\n")
+	} else {
+		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
+		summary = runSummaryTool(selectedTool, prompt, repoPath, readmeFile, readmeContent, readmeFound)
+
+		// Fallback: create a minimal summary from README if AI unavailable/failed
+		if summary == "" {
+			summary = fallbackSummary(repoName, readmeContent, readmeFound)
+		}
+	}
+
+	summary = extractUsefulSummary(summary, 2)
+	if summary == "" {
+		summary = fallbackSummary(repoName, readmeContent, readmeFound)
+	}
+
+	return sanitizeSummaryForGemtext(summary)
+}
+
+func (g *Generator) collectAssets(repoName, repoPath, statsRepoPath string, metadata *RepoMetadata) ([]string, string, string, error) {
+	// Always extract images from README (not cached)
+	fmt.Printf("Extracting images from README...\n")
+	showcaseDir, err := showcaseOutputDir()
+	if err != nil {
+		return nil, "", "", err
+	}
+
+	images, err := extractImagesFromRepo(repoPath, repoName, showcaseDir)
+	if err != nil {
+		fmt.Printf("Warning: Failed to extract images: %v\n", err)
+		// Continue without images
+	}
+
+	// Extract code snippet for all projects
+	var codeSnippet, codeLanguage string
+	if metadata != nil && len(metadata.Languages) > 0 {
+		snippet, lang, err := extractCodeSnippet(statsRepoPath, metadata.Languages)
+		if err != nil {
+			fmt.Printf("Warning: Failed to extract code snippet: %v\n", err)
+		} else {
+			codeSnippet = snippet
+			codeLanguage = lang
+		}
+	}
+
+	return images, codeSnippet, codeLanguage, nil
 }
 
 // showcaseOutputDir returns the canonical directory where showcase output files
