@@ -167,6 +167,46 @@ func TestFormatGemtext_IncludesCgitLink(t *testing.T) {
 	}
 }
 
+func TestFormatGemtext_ZeroProjectsReleasePercentagesAreZero(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{config: &config.Config{}}
+	content := g.formatGemtext(nil)
+
+	if !strings.Contains(content, "* 🚀 Release Status: 0 released, 0 experimental (0.0% with releases, 0.0% experimental)\n") {
+		t.Fatalf("unexpected release status for zero projects: %s", content)
+	}
+	if strings.Contains(content, "NaN") || strings.Contains(content, "Inf") {
+		t.Fatalf("release status should not include NaN/Inf: %s", content)
+	}
+}
+
+func TestFormatGemtext_ReleaseStatusPercentagesForNonEmptySummaries(t *testing.T) {
+	t.Parallel()
+
+	g := &Generator{config: &config.Config{}}
+	content := g.formatGemtext([]ProjectSummary{
+		{
+			Name:    "released",
+			Summary: "released summary",
+			Metadata: &RepoMetadata{
+				HasReleases: true,
+			},
+		},
+		{
+			Name:    "experimental",
+			Summary: "experimental summary",
+			Metadata: &RepoMetadata{
+				HasReleases: false,
+			},
+		},
+	})
+
+	if !strings.Contains(content, "* 🚀 Release Status: 1 released, 1 experimental (50.0% with releases, 50.0% experimental)\n") {
+		t.Fatalf("unexpected release status for non-empty summaries: %s", content)
+	}
+}
+
 func TestFindReadmeContent_UsesRepoPathWithoutChangingCWD(t *testing.T) {
 	t.Parallel()
 
