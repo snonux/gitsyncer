@@ -162,8 +162,8 @@ func TestFormatGemtext_IncludesCgitLink(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(content, "=> https://cgit.f3s.buetow.org/cpuinfo/ View in cgit\n") {
-		t.Fatalf("cgit link was not rendered: %s", content)
+	if !strings.Contains(content, "For cgit access go to c-git dot f3s dot buetow dot org slash cpuinfo\n") {
+		t.Fatalf("cgit hint text was not rendered: %s", content)
 	}
 }
 

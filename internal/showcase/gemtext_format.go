@@ -232,6 +232,6 @@ func writeProjectLinks(builder *strings.Builder, summary ProjectSummary) {
 		builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
 	}
 	if summary.CgitURL != "" {
-		builder.WriteString(fmt.Sprintf("=> %s View in cgit\n", summary.CgitURL))
+		builder.WriteString(fmt.Sprintf("For cgit access go to c-git dot f3s dot buetow dot org slash %s\n", summary.Name))
 	}
 }
