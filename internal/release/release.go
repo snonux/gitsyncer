@@ -449,7 +449,7 @@ func (m *Manager) GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags
 		switch tool {
 		case aitool.ToolOpencode:
 			fmt.Println("  Running ollama launch opencode ...")
-			cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.1:cloud", "-y", "--", "run", fullPrompt)
+			cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", fullPrompt)
 			cmd.Stderr = os.Stderr
 			out, err := cmd.Output()
 			if err != nil {

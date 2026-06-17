@@ -19,7 +19,7 @@ var releaseCmd = &cobra.Command{
 	Use:   "release",
 	Short: "Manage releases across platforms",
 	Long: `Check for version tags without releases and create them across 
-GitHub and Codeberg. Supports AI-generated release notes via opencode (launch run with glm-5.1:cloud),
+GitHub and Codeberg. Supports AI-generated release notes via opencode (launch run with glm-5.2:cloud),
 with fallback to hexai, claude, or amp.`,
 }
 

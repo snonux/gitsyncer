@@ -53,7 +53,7 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
-		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.1:cloud)
+		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.2:cloud)
 	}
 }
 
@@ -247,9 +247,9 @@ func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeCon
 		fmt.Printf("Running ollama launch opencode command\n")
 		if readmeFound {
 			fullPrompt := prompt + "\n\nREADME content:\n" + string(readmeContent)
-			fmt.Printf("  ollama launch opencode --model glm-5.1:cloud -y -- run \"...\"\n")
+			fmt.Printf("  ollama launch opencode --model glm-5.2:cloud -y -- run \"...\"\n")
 			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("ollama", "launch", "opencode", "--model", "glm-5.1:cloud", "-y", "--", "run", fullPrompt)
+			cmd = exec.Command("ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", fullPrompt)
 		}
 	case "hexai":
 		fmt.Printf("Running hexai command (stdin payload)\n")
