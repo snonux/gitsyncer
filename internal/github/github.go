@@ -23,6 +23,15 @@ type Client struct {
 var _ forge.RepoClient = (*Client)(nil)
 var _ forge.RepoDescriptionClient = (*Client)(nil)
 
+// closeResponseBody closes an HTTP response body. By the time this runs the
+// body has already been fully read (or the caller is bailing out on an
+// earlier error), so a close failure here cannot change the outcome that was
+// already determined - the error is intentionally discarded rather than
+// treated as actionable.
+func closeResponseBody(resp *http.Response) {
+	_ = resp.Body.Close()
+}
+
 // NewClient creates a new GitHub API client
 func NewClient(token, org string) *Client {
 	return &Client{
@@ -104,7 +113,7 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode == 200 {
 		return true, nil
@@ -166,7 +175,7 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode == 201 {
 		var createResp CreateRepoResponse
@@ -216,7 +225,7 @@ func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 	if err != nil {
 		return repo, false, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode == 404 {
 		return repo, false, nil
@@ -269,7 +278,7 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != 200 {
 		b, _ := io.ReadAll(resp.Body)
@@ -339,7 +348,7 @@ func (c *Client) listPublicReposPage(url string) ([]Repository, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		body, _ := io.ReadAll(resp.Body)
@@ -388,7 +397,7 @@ func (c *Client) DeleteRepo(repoName string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	body, _ := io.ReadAll(resp.Body)
 	return forge.DeleteStatusError(resp.StatusCode, string(body))

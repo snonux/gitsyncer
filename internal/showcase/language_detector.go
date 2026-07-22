@@ -201,7 +201,7 @@ func detectLanguages(repoPath string) (languages []LanguageStats, documentation 
 						}
 					}
 				}
-				file.Close()
+				closeFile(file)
 			}
 		}
 
@@ -281,7 +281,7 @@ func countFileLines(path string) (int, error) {
 	if err != nil {
 		return 0, err
 	}
-	defer file.Close()
+	defer closeFile(file)
 
 	scanner := bufio.NewScanner(file)
 	lines := 0

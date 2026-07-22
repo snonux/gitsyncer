@@ -42,6 +42,15 @@ type Client struct {
 var _ forge.RepoClient = (*Client)(nil)
 var _ forge.RepoDescriptionClient = (*Client)(nil)
 
+// closeResponseBody closes an HTTP response body. By the time this runs the
+// body has already been fully read (or the caller is bailing out on an
+// earlier error), so a close failure here cannot change the outcome that was
+// already determined - the error is intentionally discarded rather than
+// treated as actionable.
+func closeResponseBody(resp *http.Response) {
+	_ = resp.Body.Close()
+}
+
 // NewClient creates a new Codeberg API client
 func NewClient(token, org string) *Client {
 	c := &Client{
@@ -97,7 +106,7 @@ func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 	if err != nil {
 		return repo, false, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode == 404 {
 		return repo, false, nil
@@ -149,7 +158,7 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		b, _ := io.ReadAll(resp.Body)
@@ -242,7 +251,7 @@ func (c *Client) listReposPage(url string) ([]Repository, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch repositories: %w", err)
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusOK {
 		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
@@ -273,7 +282,7 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	return resp.StatusCode == 200, nil
 }
@@ -316,7 +325,7 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != http.StatusCreated {
 		// Read the response body to get more detailed error information
@@ -365,7 +374,7 @@ func (c *Client) DeleteRepo(repoName string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	body, _ := io.ReadAll(resp.Body)
 	return forge.DeleteStatusError(resp.StatusCode, string(body))

@@ -518,8 +518,11 @@ func writeBranchDeletionBlock(writer io.Writer, branches []BranchInfo, reviewBra
 	return nil
 }
 
-// GenerateDeleteScript generates a shell script file to delete all abandoned branches
-func (s *Syncer) GenerateDeleteScript() (string, error) {
+// GenerateDeleteScript generates a shell script file to delete all abandoned branches.
+// The return value uses named results so that a failure to close the script file
+// (e.g. a delayed flush error on a lagging filesystem) is reported via err instead
+// of being silently discarded, without masking any earlier, more specific error.
+func (s *Syncer) GenerateDeleteScript() (scriptPath string, err error) {
 	if len(s.abandonedReports) == 0 {
 		return "", nil
 	}
@@ -539,7 +542,7 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 
 	// Generate script filename with timestamp
 	timestamp := time.Now().Format("20060102_150405")
-	scriptPath := filepath.Join(s.workDir, fmt.Sprintf("delete_abandoned_branches_%s.sh", timestamp))
+	scriptPath = filepath.Join(s.workDir, fmt.Sprintf("delete_abandoned_branches_%s.sh", timestamp))
 	scriptBaseName := filepath.Base(scriptPath)
 
 	// Create the script file
@@ -547,7 +550,11 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 	if err != nil {
 		return "", fmt.Errorf("failed to create script file: %w", err)
 	}
-	defer file.Close()
+	defer func() {
+		if cerr := file.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close script file %s: %w", scriptPath, cerr)
+		}
+	}()
 
 	if err := writeDeleteScriptTemplate(file, "deleteScriptPreamble", deleteScriptTemplateData{
 		GeneratedAt:     time.Now().Format("2006-01-02 15:04:05"),
@@ -567,24 +574,15 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 			continue
 		}
 
-		fmt.Fprintf(file, "# ======================================\n")
-		fmt.Fprintf(file, "# Repository: %s\n", repoName)
-		fmt.Fprintf(file, "# ======================================\n")
-		fmt.Fprintf(file, "echo\n")
-		fmt.Fprintf(file, "echo \"📁 Processing repository: %s\"\n", repoName)
-		fmt.Fprintf(file, "cd \"%s/%s\" || { echo \"Failed to change to repository directory\"; exit 1; }\n\n", s.workDir, repoName)
-
-		// Find main branch for review mode
-		fmt.Fprintf(file, "if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n")
-		fmt.Fprintf(file, "    main_branch=$(find_main_branch)\n")
-		fmt.Fprintf(file, "    if [[ -z \"$main_branch\" ]]; then\n")
-		fmt.Fprintf(file, "        echo -e \"${RED}⚠️  No main/master branch found in %s${NC}\"\n", repoName)
-		fmt.Fprintf(file, "    fi\n")
-		fmt.Fprintf(file, "fi\n\n")
+		if err := writeDeleteScriptRepoHeader(file, s.workDir, repoName); err != nil {
+			return scriptPath, err
+		}
 
 		// Process regular abandoned branches
 		if len(report.AbandonedBranches) > 0 {
-			fmt.Fprintf(file, "# Regular abandoned branches\n")
+			if _, err := fmt.Fprintf(file, "# Regular abandoned branches\n"); err != nil {
+				return scriptPath, fmt.Errorf("failed to write regular branches header for %s: %w", repoName, err)
+			}
 			if err := writeBranchDeletionBlock(file, report.AbandonedBranches, "regular", "🔸 Deleting branch: "); err != nil {
 				return scriptPath, err
 			}
@@ -592,7 +590,9 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 
 		// Process ignored abandoned branches
 		if len(report.AbandonedIgnoredBranches) > 0 {
-			fmt.Fprintf(file, "# Ignored abandoned branches\n")
+			if _, err := fmt.Fprintf(file, "# Ignored abandoned branches\n"); err != nil {
+				return scriptPath, fmt.Errorf("failed to write ignored branches header for %s: %w", repoName, err)
+			}
 			if err := writeBranchDeletionBlock(file, report.AbandonedIgnoredBranches, "ignored", "🔹 Deleting ignored branch: "); err != nil {
 				return scriptPath, err
 			}
@@ -611,4 +611,30 @@ func (s *Syncer) GenerateDeleteScript() (string, error) {
 	}
 
 	return scriptPath, nil
+}
+
+// writeDeleteScriptRepoHeader writes the per-repository banner and the
+// review-mode main-branch check at the top of each repository's block in
+// the generated delete script.
+func writeDeleteScriptRepoHeader(file *os.File, workDir, repoName string) error {
+	lines := []string{
+		"# ======================================\n",
+		fmt.Sprintf("# Repository: %s\n", repoName),
+		"# ======================================\n",
+		"echo\n",
+		fmt.Sprintf("echo \"📁 Processing repository: %s\"\n", repoName),
+		fmt.Sprintf("cd \"%s/%s\" || { echo \"Failed to change to repository directory\"; exit 1; }\n\n", workDir, repoName),
+		"if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n",
+		"    main_branch=$(find_main_branch)\n",
+		"    if [[ -z \"$main_branch\" ]]; then\n",
+		fmt.Sprintf("        echo -e \"${RED}⚠️  No main/master branch found in %s${NC}\"\n", repoName),
+		"    fi\n",
+		"fi\n\n",
+	}
+	for _, line := range lines {
+		if _, err := fmt.Fprint(file, line); err != nil {
+			return fmt.Errorf("failed to write repository header for %s: %w", repoName, err)
+		}
+	}
+	return nil
 }

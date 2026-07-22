@@ -9,6 +9,16 @@ import (
 	"strings"
 )
 
+// closeFile closes a file opened for reading. These reads are best-effort
+// (shebang sniffing, line counting, snippet extraction) and the file is never
+// written to, so a close failure here cannot affect correctness - the error
+// is intentionally discarded rather than treated as actionable. Shared by
+// the other showcase package files that open read-only files (images.go,
+// language_detector.go).
+func closeFile(file *os.File) {
+	_ = file.Close()
+}
+
 // extractCodeSnippet extracts a random code snippet from the repository
 func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, string, error) {
 	if len(languages) == 0 {
@@ -113,7 +123,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 						matched = true
 					}
 				}
-				file.Close()
+				closeFile(file)
 			}
 		}
 
@@ -185,7 +195,7 @@ func extractSnippetFromFile(filePath string, minLines, maxLines int) (string, er
 	if err != nil {
 		return "", err
 	}
-	defer file.Close()
+	defer closeFile(file)
 
 	// Read all lines
 	var lines []string

@@ -226,19 +226,28 @@ func isGitHostedImage(url string) bool {
 		strings.Contains(url, "codeberg.page")
 }
 
-// copyFile copies a file from src to dst
-func copyFile(src, dst string) error {
+// copyFile copies a file from src to dst. The destination is a write, so
+// unlike the read-only closeFile helper used elsewhere in this package, a
+// failure to close it is reported via the named return: Sync() already
+// covers the common flush-failure case, but a close error on a lagging
+// network filesystem is still real data-loss information worth surfacing,
+// and it must not mask an earlier, more specific error.
+func copyFile(src, dst string) (err error) {
 	sourceFile, err := os.Open(src)
 	if err != nil {
 		return err
 	}
-	defer sourceFile.Close()
+	defer closeFile(sourceFile)
 
 	destFile, err := os.Create(dst)
 	if err != nil {
 		return err
 	}
-	defer destFile.Close()
+	defer func() {
+		if cerr := destFile.Close(); cerr != nil && err == nil {
+			err = fmt.Errorf("failed to close destination file %s: %w", dst, cerr)
+		}
+	}()
 
 	_, err = io.Copy(destFile, sourceFile)
 	if err != nil {

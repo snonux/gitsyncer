@@ -38,6 +38,15 @@ type Manager struct {
 	aiTool        string
 }
 
+// closeResponseBody closes an HTTP response body. By the time this runs the
+// body has already been fully read (or the caller is bailing out on an
+// earlier error), so a close failure here cannot change the outcome that was
+// already determined - the error is intentionally discarded rather than
+// treated as actionable.
+func closeResponseBody(resp *http.Response) {
+	_ = resp.Body.Close()
+}
+
 // NewManager creates a new release manager
 func NewManager(workDir string) *Manager {
 	return &Manager{
@@ -79,7 +88,7 @@ func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
 		return fmt.Errorf("failed to get repo info: %s - %s", resp.Status, string(body))
@@ -112,7 +121,7 @@ func (m *Manager) EnsureCodebergReleasesEnabled(owner, repo string) error {
 	if err != nil {
 		return err
 	}
-	defer patchResp.Body.Close()
+	defer closeResponseBody(patchResp)
 	if patchResp.StatusCode != 200 {
 		pbody, _ := io.ReadAll(patchResp.Body)
 		return fmt.Errorf("failed to enable releases: %s - %s", patchResp.Status, string(pbody))
@@ -544,7 +553,7 @@ func (m *Manager) GetGitHubReleases(owner, repo string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode == 404 {
 		// Repository might not exist on GitHub
@@ -588,7 +597,7 @@ func (m *Manager) GetCodebergReleases(owner, repo string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode == 404 {
 		// Repository might not exist on Codeberg
@@ -669,7 +678,7 @@ func (m *Manager) CreateGitHubRelease(owner, repo, tag, releaseNotes string) err
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != 201 {
 		body, _ := io.ReadAll(resp.Body)
@@ -722,7 +731,7 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != 201 {
 		body, _ := io.ReadAll(resp.Body)
@@ -739,7 +748,7 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 					probeReq.Header.Set("Authorization", "token "+m.codebergToken)
 				}
 				if probeResp, perr2 := httpclient.Do(probeReq); perr2 == nil {
-					defer probeResp.Body.Close()
+					defer closeResponseBody(probeResp)
 					if probeResp.StatusCode == 200 {
 						// Try to detect if releases are disabled
 						var repoInfo struct {
@@ -768,7 +777,7 @@ func (m *Manager) CreateCodebergRelease(owner, repo, tag, releaseNotes string) e
 								if rerr != nil {
 									return rerr
 								}
-								defer retryResp.Body.Close()
+								defer closeResponseBody(retryResp)
 								if retryResp.StatusCode != 201 {
 									rbody, _ := io.ReadAll(retryResp.Body)
 									return fmt.Errorf("failed to create Codeberg release after enabling releases: %s - %s", retryResp.Status, string(rbody))
@@ -812,7 +821,11 @@ func PromptConfirmation(message string) bool {
 	fmt.Printf("%s [y/N]: ", message)
 
 	var response string
-	fmt.Scanln(&response)
+	// Scanln can return an error for empty input (e.g. a bare newline) or if
+	// stdin is closed; either way response stays "" and the check below
+	// already treats that as a decline, so there is nothing extra to do
+	// with the error here.
+	_, _ = fmt.Scanln(&response)
 
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
@@ -828,7 +841,9 @@ func PromptConfirmationWithNotes(message, releaseNotes string) bool {
 	fmt.Printf("%s [y/N]: ", message)
 
 	var response string
-	fmt.Scanln(&response)
+	// See PromptConfirmation: a Scanln error still leaves response == "",
+	// which the check below already treats as a decline.
+	_, _ = fmt.Scanln(&response)
 
 	response = strings.ToLower(strings.TrimSpace(response))
 	return response == "y" || response == "yes"
@@ -856,7 +871,7 @@ func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) err
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -898,7 +913,7 @@ func (m *Manager) UpdateGitHubRelease(owner, repo, tag, releaseNotes string) err
 	if err != nil {
 		return err
 	}
-	defer updateResp.Body.Close()
+	defer closeResponseBody(updateResp)
 
 	if updateResp.StatusCode != 200 {
 		body, _ := io.ReadAll(updateResp.Body)
@@ -929,7 +944,7 @@ func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	if err != nil {
 		return err
 	}
-	defer resp.Body.Close()
+	defer closeResponseBody(resp)
 
 	if resp.StatusCode != 200 {
 		body, _ := io.ReadAll(resp.Body)
@@ -970,7 +985,7 @@ func (m *Manager) UpdateCodebergRelease(owner, repo, tag, releaseNotes string) e
 	if err != nil {
 		return err
 	}
-	defer updateResp.Body.Close()
+	defer closeResponseBody(updateResp)
 
 	if updateResp.StatusCode != 200 {
 		body, _ := io.ReadAll(updateResp.Body)

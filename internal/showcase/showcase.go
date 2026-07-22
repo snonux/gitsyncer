@@ -350,7 +350,11 @@ func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, fun
 	}
 
 	cleanup := func() error {
-		defer os.RemoveAll(tempRoot)
+		// Best-effort cleanup of the temporary worktree root, matching the
+		// discard above for the same call on the worktree-add failure path:
+		// this is scratch space, and by the time we get here the actual
+		// worktree removal below is the operation whose error matters.
+		defer func() { _ = os.RemoveAll(tempRoot) }()
 
 		if _, err := runCommandWithCustomTimeout(45*time.Second, "git", "-C", repoPath, "worktree", "remove", "--force", worktreePath); err != nil {
 			return fmt.Errorf("failed to remove temporary worktree for %s: %w", repoName, err)
