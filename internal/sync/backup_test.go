@@ -116,6 +116,16 @@ func TestParseSSHLocation_SupportsSSHURLWithPort(t *testing.T) {
 	}
 }
 
+func TestBareRepoInitCommand_UsesSharedGroupMode(t *testing.T) {
+	t.Parallel()
+
+	got := bareRepoInitCommand("/data/nfs/k3svolumes/git-server/repos/example.git")
+	want := `mkdir -p "/data/nfs/k3svolumes/git-server/repos/example.git" && cd "/data/nfs/k3svolumes/git-server/repos/example.git" && git init --bare --shared=group`
+	if got != want {
+		t.Fatalf("bareRepoInitCommand() = %q, want %q", got, want)
+	}
+}
+
 func TestRepositoryCreationLocation_UsesDescriptionSyncShellAccess(t *testing.T) {
 	t.Parallel()
 

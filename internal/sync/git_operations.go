@@ -8,8 +8,18 @@ import (
 	"os/exec"
 	"regexp"
 	"strings"
+	"time"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
+)
+
+// sshBackupRepoPushRetries and sshBackupRepoPushBackoff govern how a push is
+// retried immediately after createSSHBareRepository creates a missing
+// backup repository. See createAndPushSSHBackupRepo for why the retry
+// exists.
+const (
+	sshBackupRepoPushRetries = 3
+	sshBackupRepoPushBackoff = 2 * time.Second
 )
 
 func gitCommand(repoPath string, args ...string) *exec.Cmd {
@@ -281,7 +291,7 @@ func createSSHBareRepository(org *config.Organization, repoPath string) error {
 	fmt.Printf("Creating bare repository at %s:%s\n", userHost, fullRepoPath)
 
 	// Create the repository directory and initialize as bare
-	commands := fmt.Sprintf("mkdir -p %q && cd %q && git init --bare", fullRepoPath, fullRepoPath)
+	commands := bareRepoInitCommand(fullRepoPath)
 	cmd := exec.Command("ssh", append(sshArgs, commands)...)
 	output, err := cmd.CombinedOutput()
 
@@ -291,6 +301,28 @@ func createSSHBareRepository(org *config.Organization, repoPath string) error {
 
 	fmt.Printf("Successfully created bare repository at %s:%s\n", userHost, fullRepoPath)
 	return nil
+}
+
+// bareRepoInitCommand builds the remote shell command used to create a bare
+// git repository at fullRepoPath.
+//
+// The repository is initialized with "--shared=group" so the resulting
+// directory tree is group-writable (mode 2775) and git sets
+// core.sharedRepository=group in its config. This matters because
+// repository creation for SSH backup locations (e.g. the r0 git-server,
+// see repositoryCreationLocation/DescriptionSyncHost) runs "git init" over
+// a root SSH session, while pushes into that same repository arrive later
+// through the git-server pod's SSH endpoint as a different, non-root UID
+// (UID 1001, GID 33/www-data - see the git-server helm chart's
+// docker-image/Dockerfile). A plain "git init --bare" creates the directory
+// with the root session's default umask (0755, effectively owner-only
+// writable), so the very next push from the non-root git-server user fails
+// with "unable to create temporary object directory". "--shared=group"
+// makes the freshly created repository writable by any member of its
+// owning group immediately, matching how the already-working repositories
+// on the backup host are provisioned (mode 2775).
+func bareRepoInitCommand(fullRepoPath string) string {
+	return fmt.Sprintf("mkdir -p %q && cd %q && git init --bare --shared=group", fullRepoPath, fullRepoPath)
 }
 
 func repositoryCreationLocation(org *config.Organization) (string, []string, string, error) {
@@ -351,30 +383,7 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 		if isRepositoryMissing(outputStr) {
 			// If it's an SSH backup location, try to create the repository
 			if org.BackupLocation && org.IsSSH() {
-				// Get the repository name from the remote URL
-				remoteURL, err := getRemoteURL(repoPath, remoteName)
-				if err != nil {
-					return fmt.Errorf("failed to get remote URL: %w", err)
-				}
-
-				// Extract repo name from URL
-				repoName := extractRepoName(remoteURL)
-				if repoName == "" {
-					return fmt.Errorf("failed to extract repository name from URL: %s", remoteURL)
-				}
-
-				// Create the bare repository
-				if err := createSSHBareRepository(org, repoName); err != nil {
-					return fmt.Errorf("failed to create SSH repository: %w", err)
-				}
-
-				// Try pushing again
-				cmd = gitCommand(repoPath, pushBranchArgs(remoteName, branch, false, org)...)
-				if err := cmd.Run(); err != nil {
-					return fmt.Errorf("failed to push after creating repository: %w", err)
-				}
-				fmt.Printf("    Successfully pushed to newly created backup repository\n")
-				return nil
+				return createAndPushSSHBackupRepo(repoPath, remoteName, branch, org)
 			}
 
 			fmt.Printf("    Note: Remote repository %s does not exist - must be created manually\n", remoteName)
@@ -385,12 +394,7 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 		// Check if it's because the branch doesn't exist on the remote
 		if isBranchMissing(outputStr) {
 			fmt.Printf("    Creating new branch on %s\n", remoteName)
-			// Try again with -u flag to set upstream
-			cmd = gitCommand(repoPath, pushBranchArgs(remoteName, branch, true, org)...)
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
-			}
-			return nil
+			return pushWithUpstream(repoPath, remoteName, branch, org)
 		}
 
 		return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, outputStr)
@@ -400,6 +404,67 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 		fmt.Printf("    Successfully created branch %s on %s\n", branch, remoteName)
 	}
 
+	return nil
+}
+
+// createAndPushSSHBackupRepo creates a missing bare repository on an SSH
+// backup location, then pushes branch into it.
+//
+// The push is retried a few times with a short backoff because repository
+// creation (createSSHBareRepository) runs over a direct root SSH session
+// against the backup host's filesystem, while the push that follows goes
+// through the git-server's own SSH endpoint (a different process, possibly
+// behind its own NFS mount of the same storage). That second path can take
+// a moment to observe the directory root just created, so the very next
+// push can fail transiently even though the repository now exists and is
+// writable. Without a retry, one such transient failure disables backup
+// syncing for the remainder of the run (see handlePushError /
+// disableBackupForSession), silently skipping every other repository still
+// to be processed. Retrying a few times keeps a single slow-to-propagate
+// creation from taking out the rest of the backup run.
+func createAndPushSSHBackupRepo(repoPath, remoteName, branch string, org *config.Organization) error {
+	remoteURL, err := getRemoteURL(repoPath, remoteName)
+	if err != nil {
+		return fmt.Errorf("failed to get remote URL: %w", err)
+	}
+
+	repoName := extractRepoName(remoteURL)
+	if repoName == "" {
+		return fmt.Errorf("failed to extract repository name from URL: %s", remoteURL)
+	}
+
+	if err := createSSHBareRepository(org, repoName); err != nil {
+		return fmt.Errorf("failed to create SSH repository: %w", err)
+	}
+
+	var lastErr error
+	for attempt := 1; attempt <= sshBackupRepoPushRetries; attempt++ {
+		cmd := gitCommand(repoPath, pushBranchArgs(remoteName, branch, false, org)...)
+		output, err := cmd.CombinedOutput()
+		if err == nil {
+			fmt.Printf("    Successfully pushed to newly created backup repository\n")
+			return nil
+		}
+
+		lastErr = fmt.Errorf("failed to push after creating repository (attempt %d/%d): %w\n%s",
+			attempt, sshBackupRepoPushRetries, err, strings.TrimSpace(string(output)))
+		if attempt < sshBackupRepoPushRetries {
+			fmt.Printf("    %v\n    Retrying in %s (newly created backup repository may not be visible yet)...\n", lastErr, sshBackupRepoPushBackoff)
+			time.Sleep(sshBackupRepoPushBackoff)
+		}
+	}
+
+	return lastErr
+}
+
+// pushWithUpstream pushes a branch to a remote for the first time, setting
+// the local branch to track it (-u).
+func pushWithUpstream(repoPath, remoteName, branch string, org *config.Organization) error {
+	cmd := gitCommand(repoPath, pushBranchArgs(remoteName, branch, true, org)...)
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, strings.TrimSpace(string(output)))
+	}
 	return nil
 }
 
