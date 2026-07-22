@@ -57,7 +57,7 @@ func (s *Syncer) handlePushError(remoteName string, org *config.Organization, er
 // pushToAllRemotes pushes the branch to all configured remotes
 func (s *Syncer) pushToAllRemotes(repoPath, branch string, remotes map[string]*config.Organization, remotesWithBranch map[string]bool) error {
 	for remoteName, org := range remotes {
-		if org.BackupLocation && !s.backupActive() {
+		if org.BackupLocation && !s.backupActive(remoteName) {
 			continue
 		}
 

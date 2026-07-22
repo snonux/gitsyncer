@@ -13,8 +13,7 @@ import (
 
 type backupSessionState struct {
 	mu       stdsync.Mutex
-	disabled bool
-	reason   string
+	disabled map[string]string
 }
 
 // Syncer handles repository synchronization between organizations
@@ -53,12 +52,12 @@ func (s *Syncer) SetBackupEnabled(enabled bool) {
 	s.backupEnabled = enabled
 }
 
-func (s *Syncer) backupActive() bool {
+func (s *Syncer) backupActive(remoteName string) bool {
 	if !s.backupEnabled {
 		return false
 	}
 
-	disabled, _ := s.backupSession.status()
+	disabled, _ := s.backupSession.status(remoteName)
 	return !disabled
 }
 
@@ -67,31 +66,33 @@ func (s *Syncer) disableBackupForSession(remoteName string, err error) {
 		return
 	}
 
-	reason := fmt.Sprintf("%s: %v", remoteName, err)
-	if s.backupSession.disable(reason) {
+	if s.backupSession.disable(remoteName, err.Error()) {
 		fmt.Printf("Warning: Backup sync to %s failed: %v\n", remoteName, err)
-		fmt.Println("Warning: Disabling backup sync for the remainder of this session.")
+		fmt.Printf("Warning: Disabling backup sync to %s for the remainder of this session.\n", remoteName)
 	}
 }
 
-func (b *backupSessionState) disable(reason string) bool {
+func (b *backupSessionState) disable(remoteName, reason string) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	if b.disabled {
+	if _, disabled := b.disabled[remoteName]; disabled {
 		return false
 	}
 
-	b.disabled = true
-	b.reason = reason
+	if b.disabled == nil {
+		b.disabled = make(map[string]string)
+	}
+	b.disabled[remoteName] = reason
 	return true
 }
 
-func (b *backupSessionState) status() (bool, string) {
+func (b *backupSessionState) status(remoteName string) (bool, string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
-	return b.disabled, b.reason
+	reason, disabled := b.disabled[remoteName]
+	return disabled, reason
 }
 
 // SyncRepository synchronizes a repository across all configured organizations
@@ -283,7 +284,7 @@ func (s *Syncer) fetchAll() error {
 	for remote := range remotes {
 		// Check if this remote is a backup location
 		if org, exists := allOrgsMap[remote]; exists && org.BackupLocation {
-			if !s.backupActive() {
+			if !s.backupActive(remote) {
 				// Silently skip - don't even print a message since backup is not enabled
 				continue
 			}

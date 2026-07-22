@@ -19,6 +19,7 @@ type Organization struct {
 	GitHubToken         string `json:"github_token,omitempty"`
 	CodebergToken       string `json:"codeberg_token,omitempty"`
 	BackupLocation      bool   `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
+	ForcePush           bool   `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup destination
 	DescriptionSyncHost string `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
 	DescriptionSyncRoot string `json:"descriptionSyncRoot,omitempty"` // Filesystem path on DescriptionSyncHost where bare repos live
 }
@@ -115,6 +116,9 @@ func (c *Config) Validate() error {
 		// Name can be empty for file:// URLs or SSH backup locations
 		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() {
 			return fmt.Errorf("organization %d: missing name", i)
+		}
+		if org.ForcePush && !org.BackupLocation {
+			return fmt.Errorf("organization %d: forcePush requires backupLocation", i)
 		}
 		hasDescriptionSyncHost := strings.TrimSpace(org.DescriptionSyncHost) != ""
 		hasDescriptionSyncRoot := strings.TrimSpace(org.DescriptionSyncRoot) != ""

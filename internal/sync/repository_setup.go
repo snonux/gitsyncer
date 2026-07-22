@@ -54,14 +54,15 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 			continue // Skip the first org we already cloned from
 		}
 		org := &s.config.Organizations[i]
+		remoteName := s.getRemoteName(org)
 
 		// Skip backup locations unless backup sync is currently active.
-		if org.BackupLocation && !s.backupActive() {
+		if org.BackupLocation && !s.backupActive(remoteName) {
 			continue
 		}
 
 		if err := s.addRemote(repoPath, org); err != nil {
-			return fmt.Errorf("failed to add remote %s: %w", s.getRemoteName(org), err)
+			return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 		}
 	}
 
@@ -75,13 +76,12 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 	// Check and add any missing remotes
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
+		remoteName := s.getRemoteName(org)
 
 		// Skip backup locations unless backup sync is currently active.
-		if org.BackupLocation && !s.backupActive() {
+		if org.BackupLocation && !s.backupActive(remoteName) {
 			continue
 		}
-
-		remoteName := s.getRemoteName(org)
 
 		// Check if remote exists
 		cmd := exec.Command("git", "-C", repoPath, "remote", "get-url", remoteName)
@@ -101,13 +101,13 @@ func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	remotes := make(map[string]*config.Organization)
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
+		remoteName := s.getRemoteName(org)
 
 		// Skip backup locations unless backup sync is currently active.
-		if org.BackupLocation && !s.backupActive() {
+		if org.BackupLocation && !s.backupActive(remoteName) {
 			continue
 		}
 
-		remoteName := s.getRemoteName(org)
 		remotes[remoteName] = org
 	}
 	return remotes

@@ -4,8 +4,11 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
+
+	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
 func TestGitCommand_SetsDir(t *testing.T) {
@@ -21,6 +24,49 @@ func TestGitCommand_LeavesDirEmptyForGlobalCommands(t *testing.T) {
 
 	if cmd.Dir != "" {
 		t.Fatalf("expected empty dir for global command, got %q", cmd.Dir)
+	}
+}
+
+func TestPushBranchArgs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		setUpstream bool
+		org         *config.Organization
+		want        []string
+	}{
+		{
+			name: "regular backup push",
+			org:  &config.Organization{BackupLocation: true},
+			want: []string{"push", "backup", "main", "--tags"},
+		},
+		{
+			name: "forced backup push",
+			org:  &config.Organization{BackupLocation: true, ForcePush: true},
+			want: []string{"push", "backup", "main", "--tags", "--force"},
+		},
+		{
+			name:        "forced backup push with upstream",
+			setUpstream: true,
+			org:         &config.Organization{BackupLocation: true, ForcePush: true},
+			want:        []string{"push", "-u", "backup", "main", "--tags", "--force"},
+		},
+		{
+			name: "force ignored for primary remote",
+			org:  &config.Organization{ForcePush: true},
+			want: []string{"push", "backup", "main", "--tags"},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			got := pushBranchArgs("backup", "main", tt.setUpstream, tt.org)
+			if !reflect.DeepEqual(got, tt.want) {
+				t.Fatalf("pushBranchArgs() = %#v, want %#v", got, tt.want)
+			}
+		})
 	}
 }
 

@@ -72,9 +72,9 @@ func TestResolveReleaseNotes_CreateWithoutAIUsesStandardNotes(t *testing.T) {
 	}
 }
 
-func TestResolveReleaseNotes_CreateUsesCachedAINotes(t *testing.T) {
+func TestResolveReleaseNotes_CreateWithForceStillUsesCachedAINotes(t *testing.T) {
 	gen := &fakeReleaseNotesGenerator{aiNotes: "new ai notes"}
-	flags := &Flags{AIReleaseNotes: true}
+	flags := &Flags{AIReleaseNotes: true, Force: true}
 	cache := map[string]string{"demo:v1.0.0": "cached ai notes"}
 	failed := []string{}
 
@@ -111,7 +111,7 @@ func TestResolveReleaseNotes_CreateAIFailureFallsBackAndClearsCache(t *testing.T
 		standardNotes: "fallback notes",
 	}
 	flags := &Flags{AIReleaseNotes: true, Force: true}
-	cache := map[string]string{"demo:v1.0.0": "stale"}
+	cache := map[string]string{}
 	failed := []string{}
 	saveCalls := 0
 
@@ -157,7 +157,7 @@ func TestResolveReleaseNotes_UpdateAIFailureSkipsUpdate(t *testing.T) {
 		standardNotes: "unused fallback",
 	}
 	flags := &Flags{AIReleaseNotes: true, Force: true}
-	cache := map[string]string{"demo:v1.0.0": "stale"}
+	cache := map[string]string{}
 	failed := []string{}
 	saveCalls := 0
 

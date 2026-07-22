@@ -268,9 +268,9 @@ func getAllUniqueBranches(output []byte) []string {
 	return branches
 }
 
-// createSSHBareRepository creates a bare repository on an SSH server
-func createSSHBareRepository(sshHost, repoPath string) error {
-	userHost, sshArgs, basePath, err := parseSSHLocation(sshHost)
+// createSSHBareRepository creates a bare repository on an SSH server.
+func createSSHBareRepository(org *config.Organization, repoPath string) error {
+	userHost, sshArgs, basePath, err := repositoryCreationLocation(org)
 	if err != nil {
 		return err
 	}
@@ -291,6 +291,18 @@ func createSSHBareRepository(sshHost, repoPath string) error {
 
 	fmt.Printf("Successfully created bare repository at %s:%s\n", userHost, fullRepoPath)
 	return nil
+}
+
+func repositoryCreationLocation(org *config.Organization) (string, []string, string, error) {
+	if org == nil {
+		return "", nil, "", fmt.Errorf("backup organization is required")
+	}
+
+	if org.DescriptionSyncHost != "" && org.DescriptionSyncRoot != "" {
+		return org.DescriptionSyncHost, []string{org.DescriptionSyncHost}, org.DescriptionSyncRoot, nil
+	}
+
+	return parseSSHLocation(org.Host)
 }
 
 func parseSSHLocation(sshHost string) (string, []string, string, error) {
@@ -330,7 +342,7 @@ func parseSSHLocation(sshHost string) (string, []string, string, error) {
 
 // pushBranchWithBackupSupport pushes a branch to a remote, creating SSH repos if needed
 func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasBranch bool, org *config.Organization) error {
-	cmd := gitCommand(repoPath, "push", remoteName, branch, "--tags")
+	cmd := gitCommand(repoPath, pushBranchArgs(remoteName, branch, false, org)...)
 	output, err := cmd.CombinedOutput()
 
 	if err != nil {
@@ -352,12 +364,12 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 				}
 
 				// Create the bare repository
-				if err := createSSHBareRepository(org.Host, repoName); err != nil {
+				if err := createSSHBareRepository(org, repoName); err != nil {
 					return fmt.Errorf("failed to create SSH repository: %w", err)
 				}
 
 				// Try pushing again
-				cmd = gitCommand(repoPath, "push", remoteName, branch, "--tags")
+				cmd = gitCommand(repoPath, pushBranchArgs(remoteName, branch, false, org)...)
 				if err := cmd.Run(); err != nil {
 					return fmt.Errorf("failed to push after creating repository: %w", err)
 				}
@@ -374,7 +386,7 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 		if isBranchMissing(outputStr) {
 			fmt.Printf("    Creating new branch on %s\n", remoteName)
 			// Try again with -u flag to set upstream
-			cmd = gitCommand(repoPath, "push", "-u", remoteName, branch, "--tags")
+			cmd = gitCommand(repoPath, pushBranchArgs(remoteName, branch, true, org)...)
 			if err := cmd.Run(); err != nil {
 				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
 			}
@@ -389,6 +401,18 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 	}
 
 	return nil
+}
+
+func pushBranchArgs(remoteName, branch string, setUpstream bool, org *config.Organization) []string {
+	args := []string{"push"}
+	if setUpstream {
+		args = append(args, "-u")
+	}
+	args = append(args, remoteName, branch, "--tags")
+	if org != nil && org.BackupLocation && org.ForcePush {
+		args = append(args, "--force")
+	}
+	return args
 }
 
 // getRemoteURL gets the URL for a given remote

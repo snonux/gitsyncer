@@ -447,7 +447,8 @@ func resolveReleaseNotes(
 	}
 
 	cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
-	if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists && !flags.Force {
+	// Force controls sync scheduling and must not invalidate release-note cache entries.
+	if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists {
 		if mode == releaseNotesModeUpdate {
 			fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
 		} else {
@@ -456,18 +457,10 @@ func resolveReleaseNotes(
 		return cachedNotes, true
 	}
 
-	if flags.Force && aiReleaseNotesCache[cacheKey] != "" {
-		if mode == releaseNotesModeUpdate {
-			fmt.Printf("  Force regenerating AI release notes for existing release %s (ignoring cache)\n", tag)
-		} else {
-			fmt.Printf("  Force regenerating AI release notes for %s (ignoring cache)\n", tag)
-		}
+	if mode == releaseNotesModeUpdate {
+		fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
 	} else {
-		if mode == releaseNotesModeUpdate {
-			fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
-		} else {
-			fmt.Printf("  Generating AI release notes for %s...\n", tag)
-		}
+		fmt.Printf("  Generating AI release notes for %s...\n", tag)
 	}
 
 	aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)

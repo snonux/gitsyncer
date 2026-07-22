@@ -18,8 +18,11 @@ func TestHandlePushError_DisablesBackupForSession(t *testing.T) {
 	if err != nil {
 		t.Fatalf("expected backup push failure to be downgraded, got %v", err)
 	}
-	if syncer.backupActive() {
+	if syncer.backupActive("backup") {
 		t.Fatal("expected backup sync to be disabled for the remainder of the session")
+	}
+	if !syncer.backupActive("other-backup") {
+		t.Fatal("expected another backup remote to remain active")
 	}
 }
 
@@ -48,10 +51,10 @@ func TestHandlePushError_BackupDisableIsIsolatedPerSyncer(t *testing.T) {
 		t.Fatalf("expected backup push failure to be downgraded, got %v", err)
 	}
 
-	if syncerA.backupActive() {
+	if syncerA.backupActive("backup-a") {
 		t.Fatal("expected syncerA backup sync to be disabled for the remainder of the session")
 	}
-	if !syncerB.backupActive() {
+	if !syncerB.backupActive("backup-a") {
 		t.Fatal("expected syncerB backup session to remain active")
 	}
 }
@@ -67,7 +70,7 @@ func TestBackupSessionState_DisableIsThreadSafe(t *testing.T) {
 	for i := 0; i < workers; i++ {
 		go func(i int) {
 			defer wg.Done()
-			if session.disable(fmt.Sprintf("reason-%d", i)) {
+			if session.disable("backup", fmt.Sprintf("reason-%d", i)) {
 				firstDisableCount.Add(1)
 			}
 		}(i)
@@ -79,7 +82,7 @@ func TestBackupSessionState_DisableIsThreadSafe(t *testing.T) {
 		t.Fatalf("expected exactly one successful disable transition, got %d", got)
 	}
 
-	disabled, reason := session.status()
+	disabled, reason := session.status("backup")
 	if !disabled {
 		t.Fatal("expected backup session to be disabled")
 	}
@@ -110,5 +113,29 @@ func TestParseSSHLocation_SupportsSSHURLWithPort(t *testing.T) {
 		if sshArgs[i] != wantArgs[i] {
 			t.Fatalf("sshArgs = %#v, want %#v", sshArgs, wantArgs)
 		}
+	}
+}
+
+func TestRepositoryCreationLocation_UsesDescriptionSyncShellAccess(t *testing.T) {
+	t.Parallel()
+
+	org := &config.Organization{
+		Host:                "ssh://git@r0:30022/repos",
+		DescriptionSyncHost: "root@r0",
+		DescriptionSyncRoot: "/srv/git/repos",
+	}
+
+	userHost, sshArgs, basePath, err := repositoryCreationLocation(org)
+	if err != nil {
+		t.Fatalf("repositoryCreationLocation() error = %v", err)
+	}
+	if userHost != "root@r0" {
+		t.Fatalf("userHost = %q, want %q", userHost, "root@r0")
+	}
+	if len(sshArgs) != 1 || sshArgs[0] != "root@r0" {
+		t.Fatalf("sshArgs = %#v, want %#v", sshArgs, []string{"root@r0"})
+	}
+	if basePath != "/srv/git/repos" {
+		t.Fatalf("basePath = %q, want %q", basePath, "/srv/git/repos")
 	}
 }

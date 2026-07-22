@@ -49,6 +49,24 @@ func TestValidate_DescriptionSyncFieldsMustBePaired(t *testing.T) {
 	}
 }
 
+func TestValidate_ForcePushRequiresBackupLocation(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Organizations: []Organization{
+			{Host: "git@github.com", Name: "test-user", ForcePush: true},
+		},
+	}
+
+	err := cfg.Validate()
+	if err == nil {
+		t.Fatal("Validate() error = nil, want forcePush validation error")
+	}
+	if !strings.Contains(err.Error(), "forcePush requires backupLocation") {
+		t.Fatalf("Validate() error = %q, want forcePush context", err)
+	}
+}
+
 func TestFindOrganization_ReturnsPointerToStoredElement(t *testing.T) {
 	t.Parallel()
 
