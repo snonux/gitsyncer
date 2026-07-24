@@ -311,12 +311,13 @@ func (g *Generator) buildProjectLinks(repoName, repoPath string) (string, string
 	githubURL := ""
 	cgitURL := fmt.Sprintf("%s/%s/", cfg.GetShowcaseCgitHost(), repoName)
 
-	// Only link to Codeberg when Codeberg syncing is enabled in the config and
-	// this repository is actually wired up to sync with Codeberg (i.e. a
-	// Codeberg remote is configured in its local working copy). A Codeberg org
-	// may be present in the config for tokens/showcase without every project
-	// being synced there.
-	if cfg.CodebergSyncEnabled() && repoHasCodebergRemote(repoPath) {
+	// Only link to Codeberg when Codeberg syncing is enabled, the repository
+	// is part of the configured sync set (the repositories allowlist), and the
+	// repository is actually wired up to sync with Codeberg (a Codeberg remote
+	// is configured in its local working copy). This prevents repos that merely
+	// have a leftover Codeberg remote (e.g. from before they were removed from
+	// the sync set) from displaying a Codeberg link.
+	if cfg.CodebergSyncEnabled() && cfg.IsSyncRepo(repoName) && repoHasCodebergRemote(repoPath) {
 		if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
 			codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
 		}

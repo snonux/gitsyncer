@@ -217,6 +217,25 @@ func (c *Config) FilterSyncRepos(discovered []string) []string {
 	return filtered
 }
 
+// IsSyncRepo reports whether repoName is part of the configured sync set. When
+// Repositories is non-empty, only repos in that list are considered sync repos
+// (the allowlist). When Repositories is empty (discovery mode), every repo is
+// considered a sync repo.
+func (c *Config) IsSyncRepo(repoName string) bool {
+	if c == nil {
+		return false
+	}
+	if len(c.Repositories) == 0 {
+		return true
+	}
+	for _, r := range c.Repositories {
+		if r == repoName {
+			return true
+		}
+	}
+	return false
+}
+
 // FindCodebergOrg finds the first Codeberg organization
 func (c *Config) FindCodebergOrg() *Organization {
 	for i := range c.Organizations {

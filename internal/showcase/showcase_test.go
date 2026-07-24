@@ -214,17 +214,21 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 
 	codebergOrg := config.Organization{Host: "git@codeberg.org", Name: "snonux"}
 
-	// Codeberg sync disabled: no codeberg link even with a codeberg remote.
+	// Codeberg sync disabled: no codeberg link even with a codeberg remote and
+	// the repo in the allowlist.
 	disabled := &Generator{config: &config.Config{
 		Organizations: []config.Organization{codebergOrg},
+		Repositories:  []string{"cpuinfo"},
 	}}
 	if codebergURL, _, _ := disabled.buildProjectLinks("cpuinfo", repoPath); codebergURL != "" {
 		t.Fatalf("disabled buildProjectLinks() codeberg URL = %q, want empty", codebergURL)
 	}
 
-	// Codeberg sync enabled and repo has a codeberg remote: link emitted.
+	// Codeberg sync enabled and repo is in the allowlist and has a codeberg
+	// remote: link emitted.
 	enabled := &Generator{config: &config.Config{
 		Organizations: []config.Organization{codebergOrg},
+		Repositories:  []string{"cpuinfo"},
 		SyncCodeberg:  true,
 	}}
 	codebergURL, _, _ := enabled.buildProjectLinks("cpuinfo", repoPath)
@@ -233,7 +237,14 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 		t.Fatalf("enabled buildProjectLinks() codeberg URL = %q, want %q", codebergURL, want)
 	}
 
-	// Codeberg sync enabled but repo has no codeberg remote: no link.
+	// Codeberg sync enabled and repo has a codeberg remote, but repo is NOT in
+	// the allowlist: no link (it is not one of the repos we sync with Codeberg).
+	if codebergURL, _, _ := enabled.buildProjectLinks("other-repo", repoPath); codebergURL != "" {
+		t.Fatalf("non-allowlisted buildProjectLinks() codeberg URL = %q, want empty", codebergURL)
+	}
+
+	// Codeberg sync enabled, repo in allowlist, but repo has no codeberg remote
+	// (not actually on Codeberg yet): no link (would point to a dead URL).
 	plainRepo := t.TempDir()
 	if err := os.MkdirAll(plainRepo, 0o755); err != nil {
 		t.Fatalf("mkdir: %v", err)
@@ -242,7 +253,17 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
 	if codebergURL, _, _ := enabled.buildProjectLinks("cpuinfo", plainRepo); codebergURL != "" {
-		t.Fatalf("buildProjectLinks() codeberg URL = %q, want empty when repo not synced to Codeberg", codebergURL)
+		t.Fatalf("buildProjectLinks() codeberg URL = %q, want empty when repo not on Codeberg", codebergURL)
+	}
+
+	// Discovery mode (Repositories empty): a repo with a codeberg remote still
+	// gets a link when sync_codeberg is enabled.
+	discovery := &Generator{config: &config.Config{
+		Organizations: []config.Organization{codebergOrg},
+		SyncCodeberg:  true,
+	}}
+	if codebergURL, _, _ := discovery.buildProjectLinks("cpuinfo", repoPath); codebergURL != want {
+		t.Fatalf("discovery buildProjectLinks() codeberg URL = %q, want %q", codebergURL, want)
 	}
 }
 

@@ -217,3 +217,26 @@ func TestFilterSyncRepos_DiscoveryModeWhenEmpty(t *testing.T) {
 		t.Fatalf("nil FilterSyncRepos() = %v, want all discovered", got)
 	}
 }
+
+func TestIsSyncRepo(t *testing.T) {
+	t.Parallel()
+
+	allowlist := &Config{Repositories: []string{"foo", "bar"}}
+	if !allowlist.IsSyncRepo("foo") {
+		t.Fatal("IsSyncRepo(foo) = false, want true")
+	}
+	if allowlist.IsSyncRepo("baz") {
+		t.Fatal("IsSyncRepo(baz) = true, want false (not in allowlist)")
+	}
+
+	// Discovery mode (empty Repositories): every repo is a sync repo.
+	discovery := &Config{}
+	if !discovery.IsSyncRepo("anything") {
+		t.Fatal("IsSyncRepo(anything) = false in discovery mode, want true")
+	}
+
+	var nilCfg *Config
+	if nilCfg.IsSyncRepo("foo") {
+		t.Fatal("nil IsSyncRepo() = true, want false")
+	}
+}
