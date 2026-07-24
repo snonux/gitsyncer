@@ -51,6 +51,10 @@ type releaseTarget struct {
 	createRelease         func(owner, repo, tag, releaseNotes string) error
 	updateRelease         func(owner, repo, tag, releaseNotes string) error
 	ensureReleasesEnabled func(owner, repo string) error
+	// syncRepoRequired marks targets that must only run for repos in the
+	// configured sync allowlist (e.g. Codeberg releases, which must not be
+	// created for repos that are not synced to Codeberg).
+	syncRepoRequired bool
 }
 
 type releaseNotesGenerator interface {
@@ -175,6 +179,7 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 				createRelease:         releaseManager.CreateCodebergRelease,
 				updateRelease:         releaseManager.UpdateCodebergRelease,
 				ensureReleasesEnabled: releaseManager.EnsureCodebergReleasesEnabled,
+				syncRepoRequired:      true,
 			})
 		}
 	}
@@ -214,6 +219,9 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		}
 
 		for _, target := range releaseTargets {
+			if !releaseTargetApplicable(target, cfg, repoName) {
+				continue
+			}
 			missingReleases := getMissingReleasesForTarget(cfg, releaseManager, target, repoName, localTags)
 			processCreateReleasesForTarget(
 				cfg,
@@ -233,6 +241,9 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		// Update existing releases if requested
 		if flags.UpdateReleases {
 			for _, target := range releaseTargets {
+				if !releaseTargetApplicable(target, cfg, repoName) {
+					continue
+				}
 				processUpdateReleasesForTarget(
 					flags,
 					releaseManager,
@@ -249,6 +260,17 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 	}
 
 	return 0
+}
+
+// releaseTargetApplicable reports whether a release target should run for the
+// given repository. Targets marked syncRepoRequired (e.g. Codeberg) only run
+// for repos in the configured sync allowlist, so releases are not created on
+// Codeberg for repos that are not synced there.
+func releaseTargetApplicable(target releaseTarget, cfg *config.Config, repoName string) bool {
+	if !target.syncRepoRequired {
+		return true
+	}
+	return cfg.IsSyncRepo(repoName)
 }
 
 func getMissingReleasesForTarget(cfg *config.Config, releaseManager *release.Manager, target releaseTarget, repoName string, localTags []string) []string {

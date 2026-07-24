@@ -29,7 +29,7 @@ func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, repoName, 
 	if ghOrg != nil {
 		ghClient = factory.NewGitHubDescriptionClient(ghOrg.GitHubToken, ghOrg.Name)
 	}
-	if cbOrg != nil && cfg.CodebergSyncEnabled() {
+	if cbOrg != nil && cfg.CodebergSyncEnabled() && cfg.IsSyncRepo(repoName) {
 		cbClient = factory.NewCodebergDescriptionClient(cbOrg.CodebergToken, cbOrg.Name)
 	}
 

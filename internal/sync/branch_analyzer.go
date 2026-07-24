@@ -195,7 +195,7 @@ func (s *Syncer) getBranchInfo(branch string) (*BranchInfo, error) {
 	var latestCommit time.Time
 	var latestRemote string
 
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	for i := range orgs {
 		org := &orgs[i]
 

@@ -18,7 +18,7 @@ func (s *Syncer) setupRepository(repoPath string) error {
 
 // setupNewRepository clones and configures a new repository
 func (s *Syncer) setupNewRepository(repoPath string) error {
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	if len(orgs) == 0 {
 		return fmt.Errorf("no organizations configured")
 	}
@@ -74,7 +74,7 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 func (s *Syncer) setupExistingRepository(repoPath string) error {
 	fmt.Printf("Using existing repository at %s\n", repoPath)
 
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	// Check and add any missing remotes
 	for i := range orgs {
 		org := &orgs[i]
@@ -101,7 +101,7 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 // getRemotesMap creates a map of remote names to organizations
 func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	remotes := make(map[string]*config.Organization)
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	for i := range orgs {
 		org := &orgs[i]
 		remoteName := s.getRemoteName(org)

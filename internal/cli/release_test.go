@@ -238,6 +238,33 @@ func TestResolveReleaseNotes_CreateAISuccessContinuesOnCacheSaveError(t *testing
 	}
 }
 
+func TestReleaseTargetApplicable_CodebergGatedByAllowlist(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{Repositories: []string{"cpuinfo"}, SyncCodeberg: true}
+	gh := releaseTarget{name: "GitHub"}
+	cb := releaseTarget{name: "Codeberg", syncRepoRequired: true}
+
+	// GitHub target runs for any repo.
+	if !releaseTargetApplicable(gh, cfg, "anything") {
+		t.Fatal("GitHub target should be applicable to any repo")
+	}
+
+	// Codeberg target only runs for allowlisted repos.
+	if !releaseTargetApplicable(cb, cfg, "cpuinfo") {
+		t.Fatal("Codeberg target should be applicable to allowlisted repo")
+	}
+	if releaseTargetApplicable(cb, cfg, "hypr") {
+		t.Fatal("Codeberg target should NOT be applicable to non-allowlisted repo")
+	}
+
+	// Discovery mode (empty allowlist): Codeberg runs for any repo.
+	discovery := &config.Config{SyncCodeberg: true}
+	if !releaseTargetApplicable(cb, discovery, "anything") {
+		t.Fatal("Codeberg target should be applicable to any repo in discovery mode")
+	}
+}
+
 func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
 	cfg := &config.Config{
 		SkipReleases: map[string][]string{

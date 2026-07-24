@@ -184,7 +184,7 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 
 	// Find first non-backup organization to clone from
 	var sourceOrg *config.Organization
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	for i := range orgs {
 		if !orgs[i].BackupLocation {
 			sourceOrg = &orgs[i]
@@ -275,7 +275,7 @@ func (s *Syncer) fetchAll() error {
 	// Check all organizations to identify backup locations
 	// We need to check ALL orgs, not just active ones
 	allOrgsMap := make(map[string]*config.Organization)
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	for i := range orgs {
 		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
@@ -394,7 +394,7 @@ func (s *Syncer) checkoutBranch(branch string) error {
 	}
 
 	// If that fails, create a new branch tracking the first remote that has it
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	for i := range orgs {
 		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
@@ -439,17 +439,46 @@ func (s *Syncer) getRemoteName(org *config.Organization) string {
 	return host
 }
 
+// codebergActiveForRepo reports whether Codeberg is an active sync target for
+// the current repository. Codeberg syncing must be enabled in the config AND
+// the repository must be part of the configured sync set (the repositories
+// allowlist; in discovery mode, with an empty allowlist, every repo qualifies).
+// This is what prevents a repo that is not in the allowlist (e.g. "hypr") from
+// being pushed to or fetched from Codeberg via sync repo / sync all.
+func (s *Syncer) codebergActiveForRepo() bool {
+	return s.config.CodebergSyncEnabled() && s.config.IsSyncRepo(s.repoName)
+}
+
+// syncOrgs returns the organizations that should participate in syncing
+// (clone/fetch/push) for the current repository. Codeberg organizations are
+// excluded unless codebergActiveForRepo is true; backup locations are
+// returned as usual and gated separately via backupActive.
+func (s *Syncer) syncOrgs() []config.Organization {
+	if s.codebergActiveForRepo() {
+		return s.config.Organizations
+	}
+	orgs := make([]config.Organization, 0, len(s.config.Organizations))
+	for i := range s.config.Organizations {
+		if s.config.Organizations[i].IsCodeberg() {
+			continue
+		}
+		orgs = append(orgs, s.config.Organizations[i])
+	}
+	return orgs
+}
+
 // disabledRemoteNames returns the remote names of organizations that must not
-// be synced because their platform syncing is disabled in the config (e.g.
-// Codeberg organizations when CodebergSyncEnabled is false). These remotes may
-// still exist in a working copy from a previous run, so callers use this set
-// to skip fetching and branch discovery for them.
+// be synced because Codeberg is not an active target for the current repo
+// (either Codeberg syncing is disabled in the config, or the repo is not in
+// the configured allowlist). These remotes may still exist in a working copy
+// from a previous run, so callers use this set to skip fetching and branch
+// discovery for them.
 func (s *Syncer) disabledRemoteNames() map[string]bool {
 	disabled := make(map[string]bool)
 	if s.config == nil {
 		return disabled
 	}
-	if s.config.CodebergSyncEnabled() {
+	if s.codebergActiveForRepo() {
 		return disabled
 	}
 	for i := range s.config.Organizations {
@@ -469,7 +498,7 @@ func (s *Syncer) filterBackupBranches(output []byte) []byte {
 	var filtered []string
 
 	activeRemotes := make(map[string]bool)
-	orgs := s.config.SyncOrganizations()
+	orgs := s.syncOrgs()
 	for i := range orgs {
 		remoteName := s.getRemoteName(&orgs[i])
 		activeRemotes[remoteName] = true

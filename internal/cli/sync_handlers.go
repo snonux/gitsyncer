@@ -354,7 +354,7 @@ func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
 }
 
 func createCodebergRepoIfNeededWithFactory(cfg *config.Config, repoName string, factory repoClientFactory) error {
-	if !cfg.CodebergSyncEnabled() {
+	if !cfg.CodebergSyncEnabled() || !cfg.IsSyncRepo(repoName) {
 		return nil
 	}
 
