@@ -185,6 +185,7 @@ func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
 				CodebergToken: "cb-token",
 			},
 		},
+		SyncCodeberg: true,
 	}
 	cache := map[string]string{}
 
@@ -233,6 +234,7 @@ func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
 				CodebergToken: "cb-token",
 			},
 		},
+		SyncCodeberg: true,
 	}
 
 	if err := createGitHubRepoIfNeededWithFactory(cfg, "demo", factory); err != nil {
@@ -316,6 +318,7 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 		Organizations: []config.Organization{
 			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
 		},
+		SyncCodeberg: true,
 	}
 	flags := &Flags{
 		DryRun:           true,
@@ -331,6 +334,50 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 	}
 	if factory.codebergPublicToken != "cb-token" || factory.codebergPublicOrg != "acme" {
 		t.Fatalf("codeberg public client init args = (%q, %q), want (%q, %q)", factory.codebergPublicToken, factory.codebergPublicOrg, "cb-token", "acme")
+	}
+}
+
+func TestHandleSyncCodebergPublicWithFactory_SkipsWhenCodebergSyncDisabled(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{
+		codebergPublicClient: &stubCodebergPublicRepoClient{
+			userRepos: []codeberg.Repository{{Name: "demo"}},
+		},
+	}
+	// A Codeberg org is configured, but sync_codeberg is not enabled.
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
+		},
+	}
+	flags := &Flags{DryRun: true, WorkDir: t.TempDir()}
+
+	if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
+		t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0 when Codeberg sync disabled", got)
+	}
+	if factory.codebergPublicCalls != 0 {
+		t.Fatalf("expected no Codeberg public client creation when disabled, got %d", factory.codebergPublicCalls)
+	}
+}
+
+func TestCreateCodebergRepoIfNeededWithFactory_SkipsWhenCodebergSyncDisabled(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{
+		codebergRepoClient: &stubDescriptionRepoClient{hasToken: true},
+	}
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
+		},
+	}
+
+	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", factory); err != nil {
+		t.Fatalf("createCodebergRepoIfNeededWithFactory() error = %v", err)
+	}
+	if factory.codebergRepoCalls != 0 {
+		t.Fatalf("expected no Codeberg repo client creation when disabled, got %d", factory.codebergRepoCalls)
 	}
 }
 
@@ -364,6 +411,7 @@ func TestHandleSyncCodebergPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilCl
 		Organizations: []config.Organization{
 			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
 		},
+		SyncCodeberg: true,
 	}
 	flags := &Flags{
 		DryRun:           true,
@@ -428,6 +476,7 @@ func TestInitCodebergClientWithFactory_Branches(t *testing.T) {
 		Organizations: []config.Organization{
 			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
 		},
+		SyncCodeberg: true,
 	}
 
 	t.Run("returns client when token exists", func(t *testing.T) {

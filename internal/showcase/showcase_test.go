@@ -171,7 +171,7 @@ func TestBuildProjectLinks_DefaultCgitHost(t *testing.T) {
 	t.Parallel()
 
 	g := &Generator{config: &config.Config{}}
-	_, _, cgitURL := g.buildProjectLinks("cpuinfo")
+	_, _, cgitURL := g.buildProjectLinks("cpuinfo", "")
 
 	if cgitURL != "https://cgit.f3s.buetow.org/cpuinfo/" {
 		t.Fatalf("buildProjectLinks() cgit URL = %q, want %q", cgitURL, "https://cgit.f3s.buetow.org/cpuinfo/")
@@ -186,10 +186,63 @@ func TestBuildProjectLinks_ConfiguredCgitHost(t *testing.T) {
 			ShowcaseCgitHost: "https://cgit.example.net/git/",
 		},
 	}
-	_, _, cgitURL := g.buildProjectLinks("cpuinfo")
+	_, _, cgitURL := g.buildProjectLinks("cpuinfo", "")
 
 	if cgitURL != "https://cgit.example.net/git/cpuinfo/" {
 		t.Fatalf("buildProjectLinks() cgit URL = %q, want %q", cgitURL, "https://cgit.example.net/git/cpuinfo/")
+	}
+}
+
+func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
+	t.Parallel()
+
+	// Build a throwaway git repo with a codeberg remote so that
+	// repoHasCodebergRemote detects an active Codeberg sync.
+	repoPath := t.TempDir()
+	if err := os.MkdirAll(repoPath, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	for _, args := range [][]string{
+		{"init"},
+		{"remote", "add", "codeberg_org", "git@codeberg.org:snonux/cpuinfo.git"},
+	} {
+		cmd := exec.Command("git", append([]string{"-C", repoPath}, args...)...)
+		if out, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v: %v\n%s", args, err, out)
+		}
+	}
+
+	codebergOrg := config.Organization{Host: "git@codeberg.org", Name: "snonux"}
+
+	// Codeberg sync disabled: no codeberg link even with a codeberg remote.
+	disabled := &Generator{config: &config.Config{
+		Organizations: []config.Organization{codebergOrg},
+	}}
+	if codebergURL, _, _ := disabled.buildProjectLinks("cpuinfo", repoPath); codebergURL != "" {
+		t.Fatalf("disabled buildProjectLinks() codeberg URL = %q, want empty", codebergURL)
+	}
+
+	// Codeberg sync enabled and repo has a codeberg remote: link emitted.
+	enabled := &Generator{config: &config.Config{
+		Organizations: []config.Organization{codebergOrg},
+		SyncCodeberg:  true,
+	}}
+	codebergURL, _, _ := enabled.buildProjectLinks("cpuinfo", repoPath)
+	want := "https://codeberg.org/snonux/cpuinfo"
+	if codebergURL != want {
+		t.Fatalf("enabled buildProjectLinks() codeberg URL = %q, want %q", codebergURL, want)
+	}
+
+	// Codeberg sync enabled but repo has no codeberg remote: no link.
+	plainRepo := t.TempDir()
+	if err := os.MkdirAll(plainRepo, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if out, err := exec.Command("git", "-C", plainRepo, "init").CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	if codebergURL, _, _ := enabled.buildProjectLinks("cpuinfo", plainRepo); codebergURL != "" {
+		t.Fatalf("buildProjectLinks() codeberg URL = %q, want empty when repo not synced to Codeberg", codebergURL)
 	}
 }
 

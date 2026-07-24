@@ -18,16 +18,17 @@ func (s *Syncer) setupRepository(repoPath string) error {
 
 // setupNewRepository clones and configures a new repository
 func (s *Syncer) setupNewRepository(repoPath string) error {
-	if len(s.config.Organizations) == 0 {
+	orgs := s.config.SyncOrganizations()
+	if len(orgs) == 0 {
 		return fmt.Errorf("no organizations configured")
 	}
 
 	// Find first non-backup organization to clone from
 	var firstOrg *config.Organization
 	var firstOrgIndex int
-	for i := range s.config.Organizations {
-		if !s.config.Organizations[i].BackupLocation {
-			firstOrg = &s.config.Organizations[i]
+	for i := range orgs {
+		if !orgs[i].BackupLocation {
+			firstOrg = &orgs[i]
 			firstOrgIndex = i
 			break
 		}
@@ -49,11 +50,11 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 	}
 
 	// Add other organizations as remotes
-	for i := range s.config.Organizations {
+	for i := range orgs {
 		if i == firstOrgIndex {
 			continue // Skip the first org we already cloned from
 		}
-		org := &s.config.Organizations[i]
+		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
 		// Skip backup locations unless backup sync is currently active.
@@ -73,9 +74,10 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 func (s *Syncer) setupExistingRepository(repoPath string) error {
 	fmt.Printf("Using existing repository at %s\n", repoPath)
 
+	orgs := s.config.SyncOrganizations()
 	// Check and add any missing remotes
-	for i := range s.config.Organizations {
-		org := &s.config.Organizations[i]
+	for i := range orgs {
+		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
 		// Skip backup locations unless backup sync is currently active.
@@ -99,8 +101,9 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 // getRemotesMap creates a map of remote names to organizations
 func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 	remotes := make(map[string]*config.Organization)
-	for i := range s.config.Organizations {
-		org := &s.config.Organizations[i]
+	orgs := s.config.SyncOrganizations()
+	for i := range orgs {
+		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
 		// Skip backup locations unless backup sync is currently active.

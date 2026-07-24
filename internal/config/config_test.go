@@ -135,3 +135,52 @@ func TestGetShowcaseCgitHost_DefaultAndOverride(t *testing.T) {
 		t.Fatalf("GetShowcaseCgitHost() override = %q, want %q", got, "https://example.test/cgit")
 	}
 }
+
+func TestCodebergSyncEnabled(t *testing.T) {
+	t.Parallel()
+
+	if (&Config{}).CodebergSyncEnabled() {
+		t.Fatal("CodebergSyncEnabled() = true for zero-value Config, want false")
+	}
+	if (&Config{SyncCodeberg: true}).CodebergSyncEnabled() != true {
+		t.Fatal("CodebergSyncEnabled() = false for SyncCodeberg:true, want true")
+	}
+	if (*Config)(nil).CodebergSyncEnabled() {
+		t.Fatal("CodebergSyncEnabled() = true for nil Config, want false")
+	}
+}
+
+func TestSyncOrganizations_ExcludesCodebergUnlessEnabled(t *testing.T) {
+	t.Parallel()
+
+	orgs := []Organization{
+		{Host: "git@github.com", Name: "acme"},
+		{Host: "git@codeberg.org", Name: "acme"},
+		{Host: "user@nas.local:git", BackupLocation: true},
+	}
+
+	// Codeberg syncing disabled (default): Codeberg org is excluded, but
+	// GitHub and backup locations are still returned.
+	disabled := &Config{Organizations: orgs}
+	got := disabled.SyncOrganizations()
+	if len(got) != 2 {
+		t.Fatalf("disabled SyncOrganizations() = %d orgs, want 2", len(got))
+	}
+	for _, o := range got {
+		if o.IsCodeberg() {
+			t.Fatalf("disabled SyncOrganizations() included Codeberg org %q", o.Host)
+		}
+	}
+
+	// Codeberg syncing enabled: every organization is returned.
+	enabled := &Config{Organizations: orgs, SyncCodeberg: true}
+	got = enabled.SyncOrganizations()
+	if len(got) != 3 {
+		t.Fatalf("enabled SyncOrganizations() = %d orgs, want 3", len(got))
+	}
+
+	// The original Organizations slice must be left untouched.
+	if len(disabled.Organizations) != 3 {
+		t.Fatalf("Organizations mutated by SyncOrganizations(): len=%d", len(disabled.Organizations))
+	}
+}

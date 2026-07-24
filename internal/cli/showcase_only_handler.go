@@ -93,22 +93,24 @@ func getAllRepositories(cfg *config.Config) ([]string, error) {
 		repoMap[repo] = true
 	}
 
-	// Add Codeberg public repos if configured
-	if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
-		fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
-		client := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	// Add Codeberg public repos if Codeberg syncing is enabled and configured.
+	if cfg.CodebergSyncEnabled() {
+		if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
+			fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
+			client := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
 
-		repos, err := client.ListPublicRepos()
-		if err != nil {
-			// Try as user
-			repos, err = client.ListUserPublicRepos()
+			repos, err := client.ListPublicRepos()
 			if err != nil {
-				fmt.Printf("Warning: Failed to fetch Codeberg repos: %v\n", err)
+				// Try as user
+				repos, err = client.ListUserPublicRepos()
+				if err != nil {
+					fmt.Printf("Warning: Failed to fetch Codeberg repos: %v\n", err)
+				}
 			}
-		}
 
-		for _, repo := range repos {
-			repoMap[repo.Name] = true
+			for _, repo := range repos {
+				repoMap[repo.Name] = true
+			}
 		}
 	}
 

@@ -185,6 +185,11 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 }
 
 func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
+	if !cfg.CodebergSyncEnabled() {
+		fmt.Println("Codeberg sync is disabled in config (set \"sync_codeberg\": true to enable)")
+		return 0
+	}
+
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg == nil {
 		fmt.Println("No Codeberg organization found in configuration")
@@ -335,6 +340,10 @@ func createCodebergRepoIfNeeded(cfg *config.Config, repoName string) error {
 }
 
 func createCodebergRepoIfNeededWithFactory(cfg *config.Config, repoName string, factory repoClientFactory) error {
+	if !cfg.CodebergSyncEnabled() {
+		return nil
+	}
+
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg == nil {
 		return nil
@@ -387,6 +396,11 @@ func initCodebergClient(cfg *config.Config) forge.RepoClient {
 }
 
 func initCodebergClientWithFactory(cfg *config.Config, factory repoClientFactory) forge.RepoClient {
+	if !cfg.CodebergSyncEnabled() {
+		fmt.Println("Warning: --create-codeberg-repos specified but Codeberg sync is disabled in config")
+		return nil
+	}
+
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg == nil {
 		fmt.Println("Warning: --create-codeberg-repos specified but no Codeberg organization found in config")

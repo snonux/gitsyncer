@@ -71,7 +71,8 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
   "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
-  }
+  },
+  "sync_codeberg": true
 }
 ```
 

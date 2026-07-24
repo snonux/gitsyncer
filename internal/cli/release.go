@@ -133,6 +133,12 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 	}
 
 	codebergOrg := cfg.FindCodebergOrg()
+	if codebergOrg != nil && !cfg.CodebergSyncEnabled() {
+		fmt.Println("Codeberg organization found in config but Codeberg sync is disabled (set \"sync_codeberg\": true to enable Codeberg releases)")
+		codebergOrg = nil
+	} else if codebergOrg == nil {
+		fmt.Println("No Codeberg organization found in config")
+	}
 	if codebergOrg != nil {
 		fmt.Printf("Found Codeberg org: %s\n", codebergOrg.Name)
 
@@ -171,9 +177,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 				ensureReleasesEnabled: releaseManager.EnsureCodebergReleasesEnabled,
 			})
 		}
-	} else {
-		fmt.Println("No Codeberg organization found in config")
 	}
+	// codebergOrg is nil here either because no Codeberg org is configured or
+	// because Codeberg syncing is disabled in the config; the relevant
+	// message has already been printed above.
 
 	// Process the specified repositories
 	for _, repoName := range repositories {

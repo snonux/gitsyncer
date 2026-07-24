@@ -195,8 +195,9 @@ func (s *Syncer) getBranchInfo(branch string) (*BranchInfo, error) {
 	var latestCommit time.Time
 	var latestRemote string
 
-	for i := range s.config.Organizations {
-		org := &s.config.Organizations[i]
+	orgs := s.config.SyncOrganizations()
+	for i := range orgs {
+		org := &orgs[i]
 
 		// Skip backup locations if backup is not enabled
 		if org.BackupLocation && !s.backupEnabled {

@@ -184,9 +184,10 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 
 	// Find first non-backup organization to clone from
 	var sourceOrg *config.Organization
-	for i := range s.config.Organizations {
-		if !s.config.Organizations[i].BackupLocation {
-			sourceOrg = &s.config.Organizations[i]
+	orgs := s.config.SyncOrganizations()
+	for i := range orgs {
+		if !orgs[i].BackupLocation {
+			sourceOrg = &orgs[i]
 			break
 		}
 	}
@@ -274,14 +275,24 @@ func (s *Syncer) fetchAll() error {
 	// Check all organizations to identify backup locations
 	// We need to check ALL orgs, not just active ones
 	allOrgsMap := make(map[string]*config.Organization)
-	for i := range s.config.Organizations {
-		org := &s.config.Organizations[i]
+	orgs := s.config.SyncOrganizations()
+	for i := range orgs {
+		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 		allOrgsMap[remoteName] = org
 	}
 
+	// Remotes that must not be fetched because Codeberg syncing is disabled
+	// in the config. A Codeberg remote may still exist in the working copy
+	// from a previous run, so we explicitly skip it here.
+	disabledRemotes := s.disabledRemoteNames()
+
 	// Fetch from each remote
 	for remote := range remotes {
+		if disabledRemotes[remote] {
+			fmt.Printf("Skipping fetch from disabled remote %s\n", remote)
+			continue
+		}
 		// Check if this remote is a backup location
 		if org, exists := allOrgsMap[remote]; exists && org.BackupLocation {
 			if !s.backupActive(remote) {
@@ -383,8 +394,9 @@ func (s *Syncer) checkoutBranch(branch string) error {
 	}
 
 	// If that fails, create a new branch tracking the first remote that has it
-	for i := range s.config.Organizations {
-		org := &s.config.Organizations[i]
+	orgs := s.config.SyncOrganizations()
+	for i := range orgs {
+		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
 		if s.remoteBranchExists(remoteName, branch) {
@@ -427,10 +439,41 @@ func (s *Syncer) getRemoteName(org *config.Organization) string {
 	return host
 }
 
-// filterBackupBranches filters out branches from backup locations
+// disabledRemoteNames returns the remote names of organizations that must not
+// be synced because their platform syncing is disabled in the config (e.g.
+// Codeberg organizations when CodebergSyncEnabled is false). These remotes may
+// still exist in a working copy from a previous run, so callers use this set
+// to skip fetching and branch discovery for them.
+func (s *Syncer) disabledRemoteNames() map[string]bool {
+	disabled := make(map[string]bool)
+	if s.config == nil {
+		return disabled
+	}
+	if s.config.CodebergSyncEnabled() {
+		return disabled
+	}
+	for i := range s.config.Organizations {
+		org := &s.config.Organizations[i]
+		if org.IsCodeberg() {
+			disabled[s.getRemoteName(org)] = true
+		}
+	}
+	return disabled
+}
+
+// filterBackupBranches filters out branches from backup locations and from
+// remotes that are not active sync targets (e.g. a leftover Codeberg remote
+// when Codeberg syncing is disabled in the config).
 func (s *Syncer) filterBackupBranches(output []byte) []byte {
 	lines := strings.Split(string(output), "\n")
 	var filtered []string
+
+	activeRemotes := make(map[string]bool)
+	orgs := s.config.SyncOrganizations()
+	for i := range orgs {
+		remoteName := s.getRemoteName(&orgs[i])
+		activeRemotes[remoteName] = true
+	}
 
 	for _, line := range lines {
 		line = strings.TrimSpace(line)
@@ -438,10 +481,18 @@ func (s *Syncer) filterBackupBranches(output []byte) []byte {
 			continue
 		}
 
+		parts := strings.SplitN(line, "/", 2)
+		remoteName := parts[0]
+
+		// Skip branches from remotes that are not active sync targets.
+		if !activeRemotes[remoteName] {
+			continue
+		}
+
 		// Check if this branch is from a backup remote
 		isBackup := false
-		for i := range s.config.Organizations {
-			org := &s.config.Organizations[i]
+		for i := range orgs {
+			org := &orgs[i]
 			if org.BackupLocation {
 				remoteName := s.getRemoteName(org)
 				if strings.HasPrefix(line, remoteName+"/") {

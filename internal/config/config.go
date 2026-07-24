@@ -37,6 +37,11 @@ type Config struct {
 	// SkipReleases maps a repository name to a list of tag names for which
 	// releases should NOT be created on any platform (GitHub/Codeberg)
 	SkipReleases map[string][]string `json:"skip_releases,omitempty"`
+	// SyncCodeberg opts in to any Codeberg syncing (push/fetch, repo creation,
+	// releases, description sync, and the codeberg-to-github / github-to-codeberg
+	// subcommands). Codeberg is never synced unless this is explicitly true,
+	// even when a Codeberg organization is present in Organizations.
+	SyncCodeberg bool `json:"sync_codeberg,omitempty"`
 }
 
 // Load reads and parses the configuration file
@@ -181,6 +186,13 @@ func (o *Organization) IsCodeberg() bool {
 	return o.Host == "git@codeberg.org" || strings.Contains(o.Host, "codeberg.org")
 }
 
+// CodebergSyncEnabled reports whether Codeberg syncing has been explicitly
+// enabled in the configuration. Codeberg is never synced unless this returns
+// true, regardless of whether a Codeberg organization is configured.
+func (c *Config) CodebergSyncEnabled() bool {
+	return c != nil && c.SyncCodeberg
+}
+
 // FindCodebergOrg finds the first Codeberg organization
 func (c *Config) FindCodebergOrg() *Organization {
 	for i := range c.Organizations {
@@ -189,6 +201,29 @@ func (c *Config) FindCodebergOrg() *Organization {
 		}
 	}
 	return nil
+}
+
+// SyncOrganizations returns the organizations that should participate in
+// repository syncing (clone/fetch/push). It excludes Codeberg organizations
+// when Codeberg syncing is not enabled via CodebergSyncEnabled, so that a
+// Codeberg org may still be configured (e.g. for showcase links or tokens)
+// without becoming an active sync target. Backup locations are returned as
+// usual; the sync layer gates them separately via backupActive.
+func (c *Config) SyncOrganizations() []Organization {
+	if c == nil {
+		return nil
+	}
+	if c.CodebergSyncEnabled() {
+		return c.Organizations
+	}
+	orgs := make([]Organization, 0, len(c.Organizations))
+	for i := range c.Organizations {
+		if c.Organizations[i].IsCodeberg() {
+			continue
+		}
+		orgs = append(orgs, c.Organizations[i])
+	}
+	return orgs
 }
 
 // IsGitHub checks if the organization is GitHub

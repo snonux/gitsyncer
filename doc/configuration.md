@@ -42,7 +42,8 @@ GitSyncer looks for configuration files in the following order:
   "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
-  }
+  },
+  "sync_codeberg": true
 }
 ```
 
@@ -72,6 +73,18 @@ Array of regex patterns for branches to exclude from synchronization.
 
 #### skip_releases (optional)
 Map of repository names to an array of tag names for which releases should not be created on any platform (GitHub and Codeberg). Useful to suppress auto-release for specific historical tags.
+
+#### sync_codeberg (optional, default: false)
+Opts in to Codeberg syncing. Codeberg is never synced unless this is explicitly set to `true`, even when a Codeberg organization is present in `organizations`. When `false`:
+
+- `sync repo` / `sync all` do not push to or fetch from Codeberg remotes.
+- `sync codeberg-to-github` and `sync github-to-codeberg` skip the Codeberg portion.
+- `manage batch-run` and `sync bidirectional` skip Codeberg syncing (and no longer fail just because no Codeberg sync is configured).
+- Repository descriptions are not synced to Codeberg.
+- Releases are not created on Codeberg.
+- The showcase only renders a "View on Codeberg" link for repositories that are actually synced to Codeberg.
+
+Set `"sync_codeberg": true` to enable all of the above. A Codeberg organization can still be listed in `organizations` (e.g. to keep a token or to generate Codeberg links) without enabling syncing.
 
 Example:
 ```json

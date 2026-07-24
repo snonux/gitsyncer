@@ -301,7 +301,7 @@ func (g *Generator) getRepositories() ([]string, error) {
 	return localrepos.ListLocalReposWithGitDir(g.workDir)
 }
 
-func (g *Generator) buildProjectLinks(repoName string) (string, string, string) {
+func (g *Generator) buildProjectLinks(repoName, repoPath string) (string, string, string) {
 	cfg := g.config
 	if cfg == nil {
 		cfg = &config.Config{}
@@ -311,8 +311,15 @@ func (g *Generator) buildProjectLinks(repoName string) (string, string, string) 
 	githubURL := ""
 	cgitURL := fmt.Sprintf("%s/%s/", cfg.GetShowcaseCgitHost(), repoName)
 
-	if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
-		codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
+	// Only link to Codeberg when Codeberg syncing is enabled in the config and
+	// this repository is actually wired up to sync with Codeberg (i.e. a
+	// Codeberg remote is configured in its local working copy). A Codeberg org
+	// may be present in the config for tokens/showcase without every project
+	// being synced there.
+	if cfg.CodebergSyncEnabled() && repoHasCodebergRemote(repoPath) {
+		if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
+			codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
+		}
 	}
 
 	if githubOrg := cfg.FindGitHubOrg(); githubOrg != nil {
@@ -320,6 +327,21 @@ func (g *Generator) buildProjectLinks(repoName string) (string, string, string) 
 	}
 
 	return codebergURL, githubURL, cgitURL
+}
+
+// repoHasCodebergRemote reports whether the working copy at repoPath has a git
+// remote pointing at codeberg.org, i.e. the repository is actually set up to
+// sync with Codeberg.
+func repoHasCodebergRemote(repoPath string) bool {
+	if repoPath == "" {
+		return false
+	}
+	cmd := exec.Command("git", "-C", repoPath, "remote", "-v")
+	output, err := cmd.Output()
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(output), "codeberg.org")
 }
 
 func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, func() error, error) {
@@ -466,7 +488,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	)
 
 	// Build URLs
-	codebergURL, githubURL, cgitURL := g.buildProjectLinks(repoName)
+	codebergURL, githubURL, cgitURL := g.buildProjectLinks(repoName, repoPath)
 
 	images, codeSnippet, codeLanguage, err := g.collectAssets(repoName, repoPath, statsRepoPath, metadata)
 	if err != nil {
