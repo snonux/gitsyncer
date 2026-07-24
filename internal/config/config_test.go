@@ -184,3 +184,36 @@ func TestSyncOrganizations_ExcludesCodebergUnlessEnabled(t *testing.T) {
 		t.Fatalf("Organizations mutated by SyncOrganizations(): len=%d", len(disabled.Organizations))
 	}
 }
+
+func TestFilterSyncRepos_Allowlist(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{
+		Repositories: []string{"foo", "bar", "baz"},
+	}
+	got := cfg.FilterSyncRepos([]string{"foo", "extra", "bar", "nope"})
+	if len(got) != 2 {
+		t.Fatalf("FilterSyncRepos() = %v, want 2 entries", got)
+	}
+	for _, r := range got {
+		if r != "foo" && r != "bar" {
+			t.Fatalf("FilterSyncRepos() returned unexpected repo %q", r)
+		}
+	}
+}
+
+func TestFilterSyncRepos_DiscoveryModeWhenEmpty(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{Repositories: nil}
+	discovered := []string{"foo", "bar", "baz"}
+	got := cfg.FilterSyncRepos(discovered)
+	if len(got) != len(discovered) {
+		t.Fatalf("FilterSyncRepos() with empty allowlist = %v, want all discovered", got)
+	}
+
+	var nilCfg *Config
+	if got := nilCfg.FilterSyncRepos(discovered); len(got) != len(discovered) {
+		t.Fatalf("nil FilterSyncRepos() = %v, want all discovered", got)
+	}
+}

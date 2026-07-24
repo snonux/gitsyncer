@@ -82,9 +82,12 @@ Opts in to Codeberg syncing. Codeberg is never synced unless this is explicitly 
 - `manage batch-run` and `sync bidirectional` skip Codeberg syncing (and no longer fail just because no Codeberg sync is configured).
 - Repository descriptions are not synced to Codeberg.
 - Releases are not created on Codeberg.
+- `manage delete-repo` skips Codeberg organizations.
 - The showcase only renders a "View on Codeberg" link for repositories that are actually synced to Codeberg.
 
 Set `"sync_codeberg": true` to enable all of the above. A Codeberg organization can still be listed in `organizations` (e.g. to keep a token or to generate Codeberg links) without enabling syncing.
+
+When `sync_codeberg` is `true` **and** `repositories` is non-empty, the `repositories` list acts as an allowlist: the discovery-based commands (`sync codeberg-to-github`, `sync github-to-codeberg`, `sync bidirectional`, and `manage batch-run`) only sync the repos in that list to/from Codeberg, rather than every public repo they discover. This prevents accidentally mirroring unintended repos to Codeberg. When `repositories` is empty, discovery mode is preserved and all public repos are synced.
 
 Example:
 ```json

@@ -218,6 +218,13 @@ func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, facto
 	repoNames := codeberg.GetRepoNames(repos)
 	fmt.Printf("Found %d public repositories on Codeberg\n", len(repoNames))
 
+	if before := len(repoNames); before > 0 {
+		repoNames = cfg.FilterSyncRepos(repoNames)
+		if len(repoNames) < before {
+			fmt.Printf("Restricted to %d configured repositories (allowlist)\n", len(repoNames))
+		}
+	}
+
 	if len(repoNames) == 0 {
 		fmt.Println("No public repositories found")
 		return 0
@@ -282,6 +289,13 @@ func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory
 
 	repoNames := github.GetRepoNames(repos)
 	fmt.Printf("Found %d public repositories on GitHub\n", len(repoNames))
+
+	if before := len(repoNames); before > 0 {
+		repoNames = cfg.FilterSyncRepos(repoNames)
+		if len(repoNames) < before {
+			fmt.Printf("Restricted to %d configured repositories (allowlist)\n", len(repoNames))
+		}
+	}
 
 	if len(repoNames) == 0 {
 		fmt.Println("No public repositories found")

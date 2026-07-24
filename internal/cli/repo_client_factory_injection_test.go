@@ -1,7 +1,10 @@
 package cli
 
 import (
+	"bytes"
 	"errors"
+	"os"
+	"strings"
 	"testing"
 
 	"codeberg.org/snonux/gitsyncer/internal/codeberg"
@@ -9,6 +12,30 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/forge"
 	"codeberg.org/snonux/gitsyncer/internal/github"
 )
+
+// captureStdout runs fn while redirecting os.Stdout, returning the captured
+// output. Used by handler tests that need to assert on user-facing messages.
+func captureStdout(t *testing.T, fn func()) string {
+	t.Helper()
+	orig := os.Stdout
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatalf("os.Pipe: %v", err)
+	}
+	os.Stdout = w
+	defer func() { os.Stdout = orig }()
+
+	fn()
+	if err := w.Close(); err != nil {
+		t.Fatalf("close pipe: %v", err)
+	}
+
+	var buf bytes.Buffer
+	if _, err := buf.ReadFrom(r); err != nil {
+		t.Fatalf("read pipe: %v", err)
+	}
+	return buf.String()
+}
 
 type createCall struct {
 	repoName    string
@@ -334,6 +361,46 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 	}
 	if factory.codebergPublicToken != "cb-token" || factory.codebergPublicOrg != "acme" {
 		t.Fatalf("codeberg public client init args = (%q, %q), want (%q, %q)", factory.codebergPublicToken, factory.codebergPublicOrg, "cb-token", "acme")
+	}
+}
+
+func TestHandleSyncCodebergPublicWithFactory_RestrictsToConfiguredRepos(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{
+		codebergPublicClient: &stubCodebergPublicRepoClient{
+			orgRepos: []codeberg.Repository{
+				{Name: "wanted"},
+				{Name: "also-wanted"},
+				{Name: "not-configured"},
+			},
+		},
+	}
+	// Repositories acts as an allowlist: only "wanted" and "also-wanted"
+	// should be synced even though Codeberg reports a third public repo.
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
+		},
+		Repositories: []string{"wanted", "also-wanted", "missing-on-codeberg"},
+		SyncCodeberg: true,
+	}
+	flags := &Flags{DryRun: true, WorkDir: t.TempDir()}
+
+	out := captureStdout(t, func() {
+		if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
+			t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0", got)
+		}
+	})
+
+	if !strings.Contains(out, "wanted") || !strings.Contains(out, "also-wanted") {
+		t.Fatalf("expected allowlisted repos in output, got:\n%s", out)
+	}
+	if strings.Contains(out, "not-configured") {
+		t.Fatalf("non-allowlisted repo 'not-configured' leaked into sync output:\n%s", out)
+	}
+	if !strings.Contains(out, "allowlist") {
+		t.Fatalf("expected allowlist notice in output, got:\n%s", out)
 	}
 }
 

@@ -193,6 +193,30 @@ func (c *Config) CodebergSyncEnabled() bool {
 	return c != nil && c.SyncCodeberg
 }
 
+// FilterSyncRepos restricts a set of discovered repository names to those that
+// are explicitly configured for syncing. When Repositories is non-empty it acts
+// as an allowlist and only repos in that list are returned; this prevents the
+// discovery-based sync commands (codeberg-to-github, github-to-codeberg,
+// batch-run, bidirectional) from syncing unintended repos to a platform such as
+// Codeberg. When Repositories is empty, discovery mode is preserved and all
+// discovered repos are returned untouched.
+func (c *Config) FilterSyncRepos(discovered []string) []string {
+	if c == nil || len(c.Repositories) == 0 {
+		return discovered
+	}
+	allowed := make(map[string]bool, len(c.Repositories))
+	for _, r := range c.Repositories {
+		allowed[r] = true
+	}
+	filtered := make([]string, 0, len(discovered))
+	for _, r := range discovered {
+		if allowed[r] {
+			filtered = append(filtered, r)
+		}
+	}
+	return filtered
+}
+
 // FindCodebergOrg finds the first Codeberg organization
 func (c *Config) FindCodebergOrg() *Organization {
 	for i := range c.Organizations {
