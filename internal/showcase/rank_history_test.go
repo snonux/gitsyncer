@@ -2,7 +2,6 @@ package showcase
 
 import (
 	"path/filepath"
-	"strings"
 	"testing"
 	"time"
 )
@@ -128,36 +127,5 @@ func TestRankHistoryReadWriteRoundTrip(t *testing.T) {
 	}
 	if len(got.Snapshots) != 1 {
 		t.Fatalf("len(got.Snapshots) = %d, want 1", len(got.Snapshots))
-	}
-}
-
-func TestFormatRankHistoryForHeader(t *testing.T) {
-	t.Parallel()
-
-	header := formatRankHistoryForHeader([]RepoRankHistory{
-		{Spot: 2, Anchor: "now"},
-		{Spot: 3, Anchor: "1w", Arrow: "↖"},
-		{Spot: 3, Anchor: "2w", Arrow: "←"},
-		{Spot: 0, Anchor: "3w", Arrow: "·"},
-		{Spot: 2, Anchor: "4w", Arrow: "↙"},
-	})
-
-	if !strings.Contains(header, " 2") {
-		t.Fatalf("header missing current spot: %s", header)
-	}
-	if !strings.Contains(header, "↖3") {
-		t.Fatalf("header missing up movement: %s", header)
-	}
-	if !strings.Contains(header, "←3") {
-		t.Fatalf("header missing unchanged movement marker: %s", header)
-	}
-	if !strings.Contains(header, "↙2") {
-		t.Fatalf("header missing down movement: %s", header)
-	}
-	if strings.Contains(header, "#") {
-		t.Fatalf("header should not include hash prefixes: %s", header)
-	}
-	if strings.Contains(header, "n/a") {
-		t.Fatalf("header should omit missing history points: %s", header)
 	}
 }

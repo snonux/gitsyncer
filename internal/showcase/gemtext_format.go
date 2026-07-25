@@ -145,7 +145,7 @@ func (g *Generator) writeProjectsGemtext(builder *strings.Builder, summaries []P
 }
 
 func (g *Generator) writeProjectGemtext(builder *strings.Builder, index int, summary ProjectSummary) {
-	builder.WriteString(fmt.Sprintf("### %d. %s%s\n\n", index+1, summary.Name, formatRankHistoryForHeader(summary.RankHistory)))
+	builder.WriteString(fmt.Sprintf("### %d. %s\n\n", index+1, summary.Name))
 	writeProjectMetadata(builder, summary.Metadata)
 	writeProjectSummaryContent(builder, summary)
 	writeProjectLinks(builder, summary)

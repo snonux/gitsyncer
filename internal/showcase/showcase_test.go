@@ -103,7 +103,7 @@ func TestFilterExcludedRepos_EmptyConfigStillRemovesBackupRepos(t *testing.T) {
 	}
 }
 
-func TestFormatGemtext_IncludesRankHistoryInHeader(t *testing.T) {
+func TestFormatGemtext_OmitsRankHistoryFromHeader(t *testing.T) {
 	t.Parallel()
 
 	g := &Generator{config: &config.Config{}}
@@ -121,8 +121,11 @@ func TestFormatGemtext_IncludesRankHistoryInHeader(t *testing.T) {
 		},
 	})
 
-	if !strings.Contains(content, "### 1. alpha 2↖3←3↙2") {
-		t.Fatalf("rank history was not rendered in header: %s", content)
+	if !strings.Contains(content, "### 1. alpha\n") {
+		t.Fatalf("header should just be the repo name: %s", content)
+	}
+	if strings.ContainsAny(content, "↖↙←") {
+		t.Fatalf("rank history arrows should no longer be rendered in header: %s", content)
 	}
 }
 

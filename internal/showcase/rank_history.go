@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"os"
 	"sort"
-	"strings"
 	"time"
 )
 
@@ -169,36 +168,6 @@ func movementArrow(currentSpot, olderSpot int) string {
 		return "↖"
 	}
 	return "↙"
-}
-
-func formatRankHistoryForHeader(history []RepoRankHistory) string {
-	if len(history) == 0 {
-		return ""
-	}
-
-	tokens := make([]string, 0, len(history))
-	lastSpot := 0
-	for _, point := range history {
-		if point.Spot <= 0 {
-			continue
-		}
-
-		spot := fmt.Sprintf("%d", point.Spot)
-		if lastSpot == 0 {
-			tokens = append(tokens, spot)
-			lastSpot = point.Spot
-			continue
-		}
-
-		tokens = append(tokens, movementArrow(lastSpot, point.Spot)+spot)
-		lastSpot = point.Spot
-	}
-
-	if len(tokens) == 0 {
-		return ""
-	}
-
-	return " " + strings.Join(tokens, "")
 }
 
 func anchorLabel(i int) string {
