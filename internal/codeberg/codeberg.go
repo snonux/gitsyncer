@@ -81,7 +81,9 @@ func NewForgejoClient(baseURL, owner string) *Client {
 
 func loadForgejoToken() string {
 	if token, ok := os.LookupEnv("FORGEJO_TOKEN"); ok {
-		return strings.TrimSpace(token)
+		if token = strings.TrimSpace(token); token != "" {
+			return token
+		}
 	}
 
 	home, err := os.UserHomeDir()

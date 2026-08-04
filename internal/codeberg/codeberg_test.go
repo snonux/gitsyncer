@@ -80,6 +80,29 @@ func TestNewForgejoClient_LoadsProtectedToken(t *testing.T) {
 			t.Fatalf("loaded token = %q, want trimmed environment token", client.token)
 		}
 	})
+
+	t.Run("whitespace-only environment falls back to token file", func(t *testing.T) {
+		t.Setenv("FORGEJO_TOKEN", " \t\n")
+		client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		if client.token != "file-token" {
+			t.Fatalf("loaded token = %q, want token from file", client.token)
+		}
+	})
+}
+
+func TestNewForgejoClient_WhitespaceOnlyFileHasNoToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("FORGEJO_TOKEN", " \t\n")
+	tokenFile := filepath.Join(home, ".gitsyncer_forgejo_token")
+	if err := os.WriteFile(tokenFile, []byte(" \t\n"), 0600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+
+	client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+	if client.HasToken() {
+		t.Fatalf("loaded token = %q, want no token", client.token)
+	}
 }
 
 func TestNewForgejoClient_MissingOrUnreadableFileHasNoToken(t *testing.T) {
