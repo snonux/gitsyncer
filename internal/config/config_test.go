@@ -88,6 +88,7 @@ func TestValidate_ForgejoURLs(t *testing.T) {
 		name    string
 		host    string
 		apiBase string
+		owner   string
 		want    string
 	}{
 		{name: "scp-like host", host: "git@forgejo.example:repos", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
@@ -98,11 +99,22 @@ func TestValidate_ForgejoURLs(t *testing.T) {
 		{name: "API base userinfo", host: "ssh://git@forgejo.example:2022", apiBase: "https://user@forgejo.example/api/v1", want: "absolute HTTP(S)"},
 		{name: "API base query", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1?token=bad", want: "absolute HTTP(S)"},
 		{name: "API base fragment", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1#bad", want: "absolute HTTP(S)"},
+		{name: "SSH password", host: "ssh://git:secret@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "nonnumeric SSH port", host: "ssh://git@forgejo.example:ssh", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "zero SSH port", host: "ssh://git@forgejo.example:0", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "out of range SSH port", host: "ssh://git@forgejo.example:65536", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "owner slash", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", owner: "group/owner", want: "safe path segment"},
+		{name: "owner dot segment", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", owner: "..", want: "safe path segment"},
+		{name: "owner query trick", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", owner: "owner?admin=1", want: "safe path segment"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			owner := tt.owner
+			if owner == "" {
+				owner = "owner"
+			}
 			cfg := &Config{Organizations: []Organization{{
-				Host: tt.host, ForgejoAPIBase: tt.apiBase, ForgejoOwner: "owner", BackupLocation: true,
+				Host: tt.host, ForgejoAPIBase: tt.apiBase, ForgejoOwner: owner, BackupLocation: true,
 			}}}
 			err := cfg.Validate()
 			if err == nil || !strings.Contains(err.Error(), tt.want) {

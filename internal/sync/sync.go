@@ -119,6 +119,10 @@ func (b *backupSessionState) status(remoteName string) (bool, string) {
 // SyncRepository synchronizes a repository across all configured organizations
 func (s *Syncer) SyncRepository(repoName string) error {
 	s.repoName = repoName
+	if s.dryRun {
+		fmt.Printf("[DRY RUN] Would synchronize repository %s; no local or remote changes will be made.\n", repoName)
+		return nil
+	}
 
 	// Create work directory if it doesn't exist
 	if err := os.MkdirAll(s.workDir, 0755); err != nil {
@@ -280,19 +284,7 @@ func (s *Syncer) cloneRepository(org *config.Organization, repoPath string) erro
 // addRemote adds a remote to the repository
 func (s *Syncer) addRemote(repoPath string, org *config.Organization) error {
 	remoteName := s.getRemoteName(org)
-
-	// For file:// URLs, we need special handling
-	var remoteURL string
-	if strings.HasPrefix(org.Host, "file://") {
-		remoteURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
-	} else if org.IsForgejo() {
-		remoteURL = strings.TrimRight(org.Host, "/") + "/" + org.ForgejoOwner + "/" + s.repoName + ".git"
-	} else if org.IsSSH() && org.Name == "" {
-		// For SSH backup locations: user@host:path/repo.git
-		remoteURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
-	} else {
-		remoteURL = fmt.Sprintf("%s/%s.git", org.GetGitURL(), s.repoName)
-	}
+	remoteURL := s.expectedRemoteURL(org)
 
 	fmt.Printf("Adding remote %s: %s\n", remoteName, remoteURL)
 
@@ -302,6 +294,19 @@ func (s *Syncer) addRemote(repoPath string, org *config.Organization) error {
 	}
 
 	return nil
+}
+
+func (s *Syncer) expectedRemoteURL(org *config.Organization) string {
+	if strings.HasPrefix(org.Host, "file://") {
+		return fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	}
+	if org.IsForgejo() {
+		return strings.TrimRight(org.Host, "/") + "/" + org.ForgejoOwner + "/" + s.repoName + ".git"
+	}
+	if org.IsSSH() && org.Name == "" {
+		return fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	}
+	return fmt.Sprintf("%s/%s.git", org.GetGitURL(), s.repoName)
 }
 
 // fetchAll fetches from all remotes

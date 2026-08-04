@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
@@ -92,9 +93,33 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 			if err := s.addRemote(repoPath, org); err != nil {
 				return fmt.Errorf("failed to add remote %s: %w", remoteName, err)
 			}
+		} else if org.IsForgejo() {
+			expected := s.expectedRemoteURL(org)
+			if err := verifyRemoteURLs(repoPath, remoteName, expected); err != nil {
+				s.disableBackupForSession(remoteName, err)
+				continue
+			}
 		}
 	}
 
+	return nil
+}
+
+func verifyRemoteURLs(repoPath, remoteName, expected string) error {
+	for _, args := range [][]string{
+		{"remote", "get-url", "--all", remoteName},
+		{"remote", "get-url", "--push", "--all", remoteName},
+	} {
+		output, err := exec.Command("git", append([]string{"-C", repoPath}, args...)...).Output()
+		if err != nil {
+			return fmt.Errorf("failed to inspect Forgejo remote %s: %w", remoteName, err)
+		}
+		for _, configured := range strings.Fields(string(output)) {
+			if configured != expected {
+				return fmt.Errorf("Forgejo remote %s URL mismatch: configured %q, expected %q", remoteName, configured, expected)
+			}
+		}
+	}
 	return nil
 }
 

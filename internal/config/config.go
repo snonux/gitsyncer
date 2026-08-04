@@ -6,12 +6,16 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strconv"
 	"strings"
 )
 
 const (
 	defaultShowcaseCgitHost = "https://cgit.f3s.buetow.org"
 )
+
+var forgejoOwnerPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 // Organization represents a git organization with its host and name
 type Organization struct {
@@ -135,8 +139,11 @@ func (c *Config) Validate() error {
 			if strings.TrimSpace(org.ForgejoOwner) == "" {
 				return fmt.Errorf("organization %d: forgejo_owner is required with forgejo_api_base", i)
 			}
+			if !forgejoOwnerPattern.MatchString(org.ForgejoOwner) || org.ForgejoOwner == "." || org.ForgejoOwner == ".." {
+				return fmt.Errorf("organization %d: forgejo_owner must be one safe path segment", i)
+			}
 			sshBase, err := url.Parse(org.Host)
-			if err != nil || sshBase.Scheme != "ssh" || sshBase.Hostname() == "" || sshBase.User == nil || sshBase.User.Username() == "" || (sshBase.Path != "" && sshBase.Path != "/") || sshBase.RawQuery != "" || sshBase.Fragment != "" {
+			if err != nil || sshBase.Scheme != "ssh" || sshBase.Hostname() == "" || sshBase.User == nil || sshBase.User.Username() == "" || sshBase.User.String() != sshBase.User.Username() || (sshBase.Path != "" && sshBase.Path != "/") || sshBase.RawQuery != "" || sshBase.Fragment != "" || !validPort(sshBase.Port()) {
 				return fmt.Errorf("organization %d: Forgejo host must be an absolute ssh:// URL with a user and host", i)
 			}
 			apiBase, err := url.Parse(org.ForgejoAPIBase)
@@ -167,6 +174,14 @@ func (c *Config) Validate() error {
 	}
 
 	return nil
+}
+
+func validPort(port string) bool {
+	if port == "" {
+		return true
+	}
+	n, err := strconv.Atoi(port)
+	return err == nil && n > 0 && n <= 65535
 }
 
 // ShouldSkipRelease returns true if the configuration specifies that
