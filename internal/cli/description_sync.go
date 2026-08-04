@@ -16,11 +16,11 @@ import (
 // syncRepoDescriptions ensures both platforms have the canonical description
 // Precedence: Codeberg > GitHub; if Codeberg empty and GitHub has one, use GitHub.
 // knownCBDesc and knownGHDesc can be empty; the function fetches as needed.
-func syncRepoDescriptions(cfg *config.Config, dryRun bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
-	syncRepoDescriptionsWithFactory(cfg, dryRun, repoName, knownCBDesc, knownGHDesc, cache, cliRepoClientFactory)
+func syncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
+	syncRepoDescriptionsWithFactory(cfg, dryRun, backupActive, repoName, knownCBDesc, knownGHDesc, cache, cliRepoClientFactory)
 }
 
-func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string, factory repoClientFactory) {
+func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string, factory repoClientFactory) {
 	// Load orgs
 	ghOrg := cfg.FindGitHubOrg()
 	cbOrg := cfg.FindCodebergOrg()
@@ -111,7 +111,7 @@ func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, repoName, 
 		}
 	}
 
-	syncBackupDescriptions(cfg, dryRun, repoName, canonical)
+	syncBackupDescriptions(cfg, dryRun, backupActive, repoName, canonical)
 
 	// Update cache
 	if cache != nil {
@@ -119,14 +119,14 @@ func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, repoName, 
 	}
 }
 
-func syncBackupDescriptions(cfg *config.Config, dryRun bool, repoName, canonical string) {
+func syncBackupDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, repoName, canonical string) {
 	if cfg == nil || canonical == "" {
 		return
 	}
 
 	for i := range cfg.Organizations {
 		org := &cfg.Organizations[i]
-		if !org.BackupLocation {
+		if backupActive == nil || !backupActive(org) {
 			continue
 		}
 
@@ -159,9 +159,6 @@ func syncBackupDescription(org *config.Organization, repoName, description strin
 		client := codeberg.NewGiteaClient(org.ForgejoAPIBase, org.ForgejoToken(), org.ForgejoOwner, "Forgejo")
 		if !client.HasToken() {
 			return true, fmt.Errorf("Forgejo token missing: set FORGEJO_TOKEN")
-		}
-		if err := client.EnsurePublicRepo(repoName, description); err != nil {
-			return true, err
 		}
 		return true, client.UpdateRepoDescription(repoName, description)
 	}

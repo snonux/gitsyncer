@@ -1,12 +1,38 @@
 package cli
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
+
+func TestSyncRepoDescriptions_ForgejoWritesOnlyForActiveNonDryRunBackup(t *testing.T) {
+	var mutations int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPatch {
+			mutations++
+		}
+		w.WriteHeader(http.StatusOK)
+	}))
+	defer server.Close()
+	t.Setenv("FORGEJO_TOKEN", "secret")
+	cfg := &config.Config{Organizations: []config.Organization{{
+		Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: server.URL, ForgejoOwner: "owner", BackupLocation: true,
+	}}}
+
+	syncRepoDescriptions(cfg, false, nil, "demo", "canonical", "", nil)
+	if mutations != 0 {
+		t.Fatalf("inactive backup issued %d Forgejo API mutations, want zero", mutations)
+	}
+	syncRepoDescriptions(cfg, true, func(*config.Organization) bool { return true }, "demo", "canonical", "", nil)
+	if mutations != 0 {
+		t.Fatalf("dry run issued %d Forgejo API mutations, want zero", mutations)
+	}
+}
 
 func TestSyncBackupDescription_FileURLWritesDescription(t *testing.T) {
 	t.Parallel()

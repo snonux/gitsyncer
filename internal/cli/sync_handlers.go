@@ -18,7 +18,7 @@ func shouldEnableBackupSync(flags *Flags) bool {
 		return false
 	}
 
-	return flags.Backup || flags.FullSync
+	return flags.Backup || flags.FullSync || flags.SyncCodebergPublic || flags.SyncGitHubPublic
 }
 
 // HandleSync handles syncing a single repository
@@ -60,6 +60,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
+	syncer.SetDryRun(flags.DryRun)
 	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
 		fmt.Printf("ERROR: Sync failed: %v\n", err)
 		return 1
@@ -74,7 +75,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 
 	// Also sync descriptions for this single repository
 	descCache := loadDescriptionCache(flags.WorkDir)
-	syncRepoDescriptions(cfg, flags.DryRun, flags.SyncRepo, "", "", descCache)
+	syncRepoDescriptions(cfg, flags.DryRun, syncer.BackupActive, flags.SyncRepo, "", "", descCache)
 	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
 		fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
 	}
@@ -109,6 +110,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
+	syncer.SetDryRun(flags.DryRun)
 	successCount := 0
 	// Load descriptions cache
 	descCache := loadDescriptionCache(flags.WorkDir)
@@ -160,7 +162,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 		}
 		successCount++
 		// Sync descriptions after repo sync
-		syncRepoDescriptions(cfg, flags.DryRun, repo, "", "", descCache)
+		syncRepoDescriptions(cfg, flags.DryRun, syncer.BackupActive, repo, "", "", descCache)
 	}
 	// Save descriptions cache
 	if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
@@ -491,6 +493,7 @@ func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
 		syncer:    sync.New(cfg, flags.WorkDir),
 	}
 	execution.syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
+	execution.syncer.SetDryRun(flags.DryRun)
 
 	manager, st, err := loadSyncState(flags.WorkDir)
 	if err != nil {
@@ -621,9 +624,9 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 
 		// After syncing, sync descriptions according to precedence
 		if cbRepo, ok := repoMap[repoName]; ok {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, cbRepo.Description, "", execution.descCache)
+			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, repoName, cbRepo.Description, "", execution.descCache)
 		} else {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", execution.descCache)
+			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, repoName, "", "", execution.descCache)
 		}
 	}
 
@@ -688,9 +691,9 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 
 		// After syncing, sync descriptions according to precedence
 		if ghRepo, ok := repoMap[repoName]; ok {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", ghRepo.Description, execution.descCache)
+			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, repoName, "", ghRepo.Description, execution.descCache)
 		} else {
-			syncRepoDescriptions(cfg, flags.DryRun, repoName, "", "", execution.descCache)
+			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, repoName, "", "", execution.descCache)
 		}
 	}
 

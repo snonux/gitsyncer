@@ -3,12 +3,44 @@ package sync
 import (
 	"errors"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	stdsync "sync"
 	"sync/atomic"
 	"testing"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
+
+func TestEnsureForgejoBackups_DryRunIssuesNoAPIMutations(t *testing.T) {
+	mutations := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPost || r.Method == http.MethodPatch {
+			mutations++
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer server.Close()
+	cfg := &config.Config{Organizations: []config.Organization{{
+		Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: server.URL, ForgejoOwner: "owner", BackupLocation: true,
+	}}}
+	syncer := New(cfg, t.TempDir())
+	syncer.SetBackupEnabled(true)
+	syncer.SetDryRun(true)
+	syncer.ensureForgejoBackups("demo")
+	if mutations != 0 {
+		t.Fatalf("dry run issued %d Forgejo API mutations, want zero", mutations)
+	}
+}
+
+func TestPushToAllRemotes_DryRunDoesNotInvokeGitPush(t *testing.T) {
+	syncer := New(&config.Config{}, t.TempDir())
+	syncer.SetDryRun(true)
+	remotes := map[string]*config.Organization{"origin": {Host: "git@example.invalid", Name: "owner"}}
+	if err := syncer.pushToAllRemotes("/path/that/does/not/exist", "main", remotes, nil); err != nil {
+		t.Fatalf("pushToAllRemotes() error = %v; dry run must not execute git push", err)
+	}
+}
 
 func TestHandlePushError_DisablesBackupForSession(t *testing.T) {
 	syncer := &Syncer{}

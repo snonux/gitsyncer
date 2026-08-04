@@ -25,6 +25,7 @@ type Syncer struct {
 	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
 	branchFilter     *BranchFilter                     // Filter for excluding branches
 	backupEnabled    bool                              // Whether to sync to backup locations
+	dryRun           bool                              // Whether mutations should only be reported
 	backupSession    backupSessionState
 }
 
@@ -53,6 +54,11 @@ func (s *Syncer) SetBackupEnabled(enabled bool) {
 	s.backupEnabled = enabled
 }
 
+// SetDryRun prevents remote repository creation and Git pushes.
+func (s *Syncer) SetDryRun(enabled bool) {
+	s.dryRun = enabled
+}
+
 func (s *Syncer) backupActive(remoteName string) bool {
 	if !s.backupEnabled {
 		return false
@@ -60,6 +66,12 @@ func (s *Syncer) backupActive(remoteName string) bool {
 
 	disabled, _ := s.backupSession.status(remoteName)
 	return !disabled
+}
+
+// BackupActive reports whether a backup organization is enabled and has not
+// failed earlier in this sync session.
+func (s *Syncer) BackupActive(org *config.Organization) bool {
+	return org != nil && org.BackupLocation && s.backupActive(s.getRemoteName(org))
 }
 
 func (s *Syncer) disableBackupForSession(remoteName string, err error) {
@@ -161,6 +173,9 @@ func (s *Syncer) SyncRepository(repoName string) error {
 }
 
 func (s *Syncer) ensureForgejoBackups(repoName string) {
+	if s.dryRun {
+		return
+	}
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
 		if !org.IsForgejo() || !s.backupActive(s.getRemoteName(org)) {

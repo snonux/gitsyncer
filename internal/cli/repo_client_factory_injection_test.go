@@ -216,7 +216,7 @@ func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
 	}
 	cache := map[string]string{}
 
-	syncRepoDescriptionsWithFactory(cfg, false, "demo", "", "", cache, factory)
+	syncRepoDescriptionsWithFactory(cfg, false, nil, "demo", "", "", cache, factory)
 
 	if factory.githubDescCalls != 1 || factory.codebergDescCalls != 1 {
 		t.Fatalf("expected one injected description client creation per forge, got github=%d codeberg=%d", factory.githubDescCalls, factory.codebergDescCalls)

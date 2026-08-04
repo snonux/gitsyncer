@@ -177,11 +177,13 @@ Forgejo can be used as a first-class, one-way public backup target. Repository c
 
 ```json
 {
-  "host": "ssh://git@code.f3s.buetow.org:2022",
-  "forgejo_api_base": "https://code.f3s.buetow.org/api/v1",
-  "forgejo_owner": "snonux",
-  "backupLocation": true,
-  "forcePush": true
+  "organizations": [{
+    "host": "ssh://git@code.f3s.buetow.org:2022",
+    "forgejo_api_base": "https://code.f3s.buetow.org/api/v1",
+    "forgejo_owner": "snonux",
+    "backupLocation": true,
+    "forcePush": true
+  }]
 }
 ```
 

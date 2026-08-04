@@ -81,6 +81,33 @@ func TestValidate_ForgejoMustBeBackupOnly(t *testing.T) {
 	}
 }
 
+func TestValidate_ForgejoURLs(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name    string
+		host    string
+		apiBase string
+		want    string
+	}{
+		{name: "scp-like host", host: "git@forgejo.example:repos", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "HTTP Git host", host: "https://forgejo.example", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "relative API base", host: "ssh://git@forgejo.example:2022", apiBase: "/api/v1", want: "absolute HTTP(S)"},
+		{name: "non-HTTP API base", host: "ssh://git@forgejo.example:2022", apiBase: "ftp://forgejo.example/api/v1", want: "absolute HTTP(S)"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := &Config{Organizations: []Organization{{
+				Host: tt.host, ForgejoAPIBase: tt.apiBase, ForgejoOwner: "owner", BackupLocation: true,
+			}}}
+			err := cfg.Validate()
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("Validate() error = %v, want containing %q", err, tt.want)
+			}
+		})
+	}
+}
+
 func TestForgejoToken_UsesEnvironmentOnly(t *testing.T) {
 	t.Setenv("FORGEJO_TOKEN", " protected-token ")
 

@@ -69,6 +69,10 @@ func (s *Syncer) pushToAllRemotes(repoPath, branch string, remotes map[string]*c
 		} else {
 			fmt.Printf("  Pushing to %s (%s)...\n", remoteName, org.Host)
 		}
+		if s.dryRun {
+			fmt.Printf("    [DRY RUN] Skipping push to %s\n", remoteName)
+			continue
+		}
 
 		if err := s.handlePushError(remoteName, org, pushBranchWithBackupSupport(repoPath, remoteName, branch, remoteHasBranch, org)); err != nil {
 			return err
