@@ -228,6 +228,9 @@ func TestGiteaClient_EnsurePublicRepoUsesOrganizationEndpoint(t *testing.T) {
 
 	var posted bool
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Authorization") != "token secret" {
+			t.Errorf("Authorization = %q, want token secret", r.Header.Get("Authorization"))
+		}
 		switch {
 		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/snonux/demo":
 			w.WriteHeader(http.StatusNotFound)
@@ -237,8 +240,9 @@ func TestGiteaClient_EnsurePublicRepoUsesOrganizationEndpoint(t *testing.T) {
 			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
 				t.Errorf("decode payload: %v", err)
 			}
-			if payload["private"] != false || payload["auto_init"] != false {
-				t.Errorf("create payload = %#v, want public and uninitialized", payload)
+			if payload["name"] != "demo" || payload["description"] != "Mirror of demo" ||
+				payload["private"] != false || payload["auto_init"] != false {
+				t.Errorf("create payload = %#v, want named, described, public, and uninitialized", payload)
 			}
 			w.WriteHeader(http.StatusCreated)
 			_, _ = w.Write([]byte(`{"name":"demo","full_name":"snonux/demo","private":false}`))
@@ -255,6 +259,36 @@ func TestGiteaClient_EnsurePublicRepoUsesOrganizationEndpoint(t *testing.T) {
 	}
 	if !posted {
 		t.Fatal("organization repository endpoint was not called")
+	}
+}
+
+func TestGiteaClient_EnsurePublicRepoReportsOrganizationCreateFailure(t *testing.T) {
+	t.Parallel()
+
+	var postRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/snonux/demo":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/snonux/repos":
+			postRequests++
+			w.WriteHeader(http.StatusForbidden)
+			_, _ = w.Write([]byte(`{"message":"not allowed to create repository in organization"}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewGiteaClient(server.URL+"/api/v1", "secret", "snonux", "Forgejo", forge.OwnerTypeOrganization)
+	err := client.EnsurePublicRepo("demo", "Mirror of demo")
+	if err == nil || !strings.Contains(err.Error(), "not allowed to create repository in organization") ||
+		!strings.Contains(err.Error(), "status code 403") {
+		t.Fatalf("EnsurePublicRepo() error = %v, want organization API message and status", err)
+	}
+	if postRequests != 1 {
+		t.Fatalf("organization repository POST requests = %d, want 1", postRequests)
 	}
 }
 
