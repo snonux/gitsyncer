@@ -67,6 +67,29 @@ func TestValidate_ForcePushRequiresBackupLocation(t *testing.T) {
 	}
 }
 
+func TestValidate_ForgejoMustBeBackupOnly(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{Organizations: []Organization{{
+		Host:           "ssh://git@forgejo.example:2022",
+		ForgejoAPIBase: "https://forgejo.example/api/v1",
+		ForgejoOwner:   "snonux",
+	}}}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "must set backupLocation") {
+		t.Fatalf("Validate() error = %v, want backup-only validation", err)
+	}
+}
+
+func TestForgejoToken_UsesEnvironmentOnly(t *testing.T) {
+	t.Setenv("FORGEJO_TOKEN", " protected-token ")
+
+	org := Organization{ForgejoAPIBase: "https://forgejo.example/api/v1"}
+	if got := org.ForgejoToken(); got != "protected-token" {
+		t.Fatalf("ForgejoToken() = %q, want protected environment token", got)
+	}
+}
+
 func TestFindOrganization_ReturnsPointerToStoredElement(t *testing.T) {
 	t.Parallel()
 

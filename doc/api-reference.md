@@ -175,9 +175,13 @@ The config package handles configuration loading and validation.
 #### type Organization
 ```go
 type Organization struct {
-    Host        string `json:"host"`         // Git host (e.g., "git@github.com")
-    Name        string `json:"name"`         // Organization/username
-    GitHubToken string `json:"github_token"` // Optional GitHub API token
+    Host           string `json:"host"`             // Git host (e.g., "git@github.com")
+    Name           string `json:"name"`             // Organization/username
+    GitHubToken    string `json:"github_token"`     // Optional GitHub API token
+    ForgejoAPIBase string `json:"forgejo_api_base"` // Gitea-compatible API root
+    ForgejoOwner   string `json:"forgejo_owner"`    // Forgejo backup owner
+    BackupLocation bool   `json:"backupLocation"`   // One-way destination
+    ForcePush      bool   `json:"forcePush"`        // Force backup branches/tags
 }
 ```
 
@@ -216,6 +220,9 @@ Finds organization by host string.
 
 #### func (o *Organization) IsCodeberg() bool
 Returns true if organization host contains "codeberg.org".
+
+#### func (o *Organization) IsForgejo() bool
+Returns true when a Forgejo API base is configured. Forgejo organizations must be backup-only; their API token is read from `FORGEJO_TOKEN`.
 
 #### func (c *Config) FindCodebergOrg() *Organization
 Finds first Codeberg organization in config.

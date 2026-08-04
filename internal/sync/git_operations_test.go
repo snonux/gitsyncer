@@ -11,6 +11,32 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
+func TestAddRemote_ForgejoUsesOwnerAndSSHURL(t *testing.T) {
+	repoPath := t.TempDir()
+	if output, err := exec.Command("git", "init", repoPath).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	syncer := New(&config.Config{}, t.TempDir())
+	syncer.repoName = "demo"
+	org := &config.Organization{
+		Host:           "ssh://git@code.f3s.buetow.org:2022",
+		ForgejoAPIBase: "https://code.f3s.buetow.org/api/v1",
+		ForgejoOwner:   "snonux",
+		BackupLocation: true,
+	}
+	if err := syncer.addRemote(repoPath, org); err != nil {
+		t.Fatalf("addRemote() error = %v", err)
+	}
+	remoteName := syncer.getRemoteName(org)
+	output, err := exec.Command("git", "-C", repoPath, "remote", "get-url", remoteName).Output()
+	if err != nil {
+		t.Fatalf("git remote get-url: %v", err)
+	}
+	if got, want := strings.TrimSpace(string(output)), "ssh://git@code.f3s.buetow.org:2022/snonux/demo.git"; got != want {
+		t.Fatalf("remote URL = %q, want %q", got, want)
+	}
+}
+
 func TestGitCommand_SetsDir(t *testing.T) {
 	cmd := gitCommand("/tmp/example-repo", "status")
 

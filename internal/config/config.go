@@ -18,6 +18,8 @@ type Organization struct {
 	Name                string `json:"name"`
 	GitHubToken         string `json:"github_token,omitempty"`
 	CodebergToken       string `json:"codeberg_token,omitempty"`
+	ForgejoAPIBase      string `json:"forgejo_api_base,omitempty"`    // Gitea-compatible API root, for example https://code.example/api/v1
+	ForgejoOwner        string `json:"forgejo_owner,omitempty"`       // Forgejo user that owns backup repositories
 	BackupLocation      bool   `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
 	ForcePush           bool   `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup destination
 	DescriptionSyncHost string `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
@@ -119,11 +121,25 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("organization %d: missing host", i)
 		}
 		// Name can be empty for file:// URLs or SSH backup locations
-		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() {
+		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() && !org.IsForgejo() {
 			return fmt.Errorf("organization %d: missing name", i)
 		}
 		if org.ForcePush && !org.BackupLocation {
 			return fmt.Errorf("organization %d: forcePush requires backupLocation", i)
+		}
+		if org.IsForgejo() {
+			if !org.BackupLocation {
+				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation", i)
+			}
+			if strings.TrimSpace(org.ForgejoOwner) == "" {
+				return fmt.Errorf("organization %d: forgejo_owner is required with forgejo_api_base", i)
+			}
+			if org.DescriptionSyncHost != "" || org.DescriptionSyncRoot != "" {
+				return fmt.Errorf("organization %d: Forgejo descriptions are managed through the API; descriptionSyncHost/Root are not allowed", i)
+			}
+		}
+		if org.ForgejoOwner != "" && org.ForgejoAPIBase == "" {
+			return fmt.Errorf("organization %d: forgejo_api_base is required with forgejo_owner", i)
 		}
 		hasDescriptionSyncHost := strings.TrimSpace(org.DescriptionSyncHost) != ""
 		hasDescriptionSyncRoot := strings.TrimSpace(org.DescriptionSyncRoot) != ""
@@ -184,6 +200,16 @@ func (c *Config) FindOrganization(host string) *Organization {
 // IsCodeberg checks if the organization is Codeberg
 func (o *Organization) IsCodeberg() bool {
 	return o.Host == "git@codeberg.org" || strings.Contains(o.Host, "codeberg.org")
+}
+
+// IsForgejo reports whether the organization is a configured Forgejo backup target.
+func (o *Organization) IsForgejo() bool {
+	return strings.TrimSpace(o.ForgejoAPIBase) != ""
+}
+
+// ForgejoToken returns the Forgejo API token from the protected environment.
+func (o *Organization) ForgejoToken() string {
+	return strings.TrimSpace(os.Getenv("FORGEJO_TOKEN"))
 }
 
 // CodebergSyncEnabled reports whether Codeberg syncing has been explicitly
@@ -287,7 +313,7 @@ func (c *Config) FindGitHubOrg() *Organization {
 // IsSSH checks if the organization is a plain SSH location
 func (o *Organization) IsSSH() bool {
 	// Check if it's not a known git hosting service and contains SSH-like syntax
-	return !o.IsGitHub() && !o.IsCodeberg() && !strings.HasPrefix(o.Host, "file://") &&
+	return !o.IsGitHub() && !o.IsCodeberg() && !o.IsForgejo() && !strings.HasPrefix(o.Host, "file://") &&
 		(strings.Contains(o.Host, "@") || strings.Contains(o.Host, ":"))
 }
 

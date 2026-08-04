@@ -37,6 +37,7 @@ type Client struct {
 	baseURL string
 	org     string
 	token   string
+	service string
 }
 
 var _ forge.RepoClient = (*Client)(nil)
@@ -56,9 +57,20 @@ func NewClient(token, org string) *Client {
 	c := &Client{
 		baseURL: "https://codeberg.org/api/v1",
 		org:     org,
+		service: "Codeberg",
 	}
 	c.loadToken(token)
 	return c
+}
+
+// NewGiteaClient creates a client for a Gitea-compatible service such as Forgejo.
+func NewGiteaClient(baseURL, token, owner, service string) *Client {
+	return &Client{
+		baseURL: strings.TrimRight(baseURL, "/"),
+		org:     owner,
+		token:   strings.TrimSpace(token),
+		service: service,
+	}
 }
 
 // loadToken loads the Codeberg API token from config, env, or file
@@ -289,6 +301,9 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 
 // CreateRepo creates a new repository on Codeberg
 func (c *Client) CreateRepo(repoName, description string, private bool) error {
+	if !c.HasToken() {
+		return fmt.Errorf("%s token required to create repository", c.service)
+	}
 	exists, err := forge.CheckRepoExists(repoName, c.RepoExists)
 	if err != nil {
 		return err
@@ -303,6 +318,7 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		"name":        repoName,
 		"description": description,
 		"private":     private,
+		"auto_init":   false,
 	}
 
 	body, err := json.Marshal(payload)
@@ -347,6 +363,38 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return fmt.Errorf("failed to create repository: %s (status code %d)", string(body), resp.StatusCode)
 	}
 
+	var created Repository
+	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+		return fmt.Errorf("failed to validate created %s repository: %w", c.service, err)
+	}
+	if created.Name != repoName || created.FullName != c.org+"/"+repoName {
+		return fmt.Errorf("%s repository created under wrong owner: API returned %q, expected %q", c.service, created.FullName, c.org+"/"+repoName)
+	}
+	if created.Private {
+		return fmt.Errorf("created %s repository %s is unexpectedly private", c.service, created.FullName)
+	}
+
+	return nil
+}
+
+// EnsurePublicRepo creates an absent public repository and rejects unsafe collisions.
+func (c *Client) EnsurePublicRepo(repoName, description string) error {
+	if !c.HasToken() {
+		return fmt.Errorf("%s token required to manage backup repository", c.service)
+	}
+	repo, exists, err := c.GetRepo(repoName)
+	if err != nil {
+		return fmt.Errorf("check %s repository %s/%s: %w", c.service, c.org, repoName, err)
+	}
+	if !exists {
+		return c.CreateRepo(repoName, description, false)
+	}
+	if repo.Name != repoName || (repo.FullName != "" && repo.FullName != c.org+"/"+repoName) {
+		return fmt.Errorf("%s repository collision: API returned %q for %s/%s", c.service, repo.FullName, c.org, repoName)
+	}
+	if repo.Private {
+		return fmt.Errorf("%s repository %s/%s is unexpectedly private", c.service, c.org, repoName)
+	}
 	return nil
 }
 

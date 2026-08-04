@@ -8,6 +8,7 @@ import (
 	"strings"
 	stdsync "sync"
 
+	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
@@ -110,6 +111,8 @@ func (s *Syncer) SyncRepository(repoName string) error {
 		return err
 	}
 
+	s.ensureForgejoBackups(repoName)
+
 	// Fetch all remotes
 	fmt.Printf("Fetching updates from all remotes...\n")
 	if err := s.fetchAll(); err != nil {
@@ -155,6 +158,19 @@ func (s *Syncer) SyncRepository(repoName string) error {
 
 	fmt.Printf("\nRepository %s synchronized successfully!\n", repoName)
 	return nil
+}
+
+func (s *Syncer) ensureForgejoBackups(repoName string) {
+	for i := range s.config.Organizations {
+		org := &s.config.Organizations[i]
+		if !org.IsForgejo() || !s.backupActive(s.getRemoteName(org)) {
+			continue
+		}
+		client := codeberg.NewGiteaClient(org.ForgejoAPIBase, org.ForgejoToken(), org.ForgejoOwner, "Forgejo")
+		if err := client.EnsurePublicRepo(repoName, "Mirror of "+repoName); err != nil {
+			s.disableBackupForSession(s.getRemoteName(org), err)
+		}
+	}
 }
 
 func (s *Syncer) repoPath() string {
@@ -246,6 +262,8 @@ func (s *Syncer) addRemote(repoPath string, org *config.Organization) error {
 	var remoteURL string
 	if strings.HasPrefix(org.Host, "file://") {
 		remoteURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	} else if org.IsForgejo() {
+		remoteURL = strings.TrimRight(org.Host, "/") + "/" + org.ForgejoOwner + "/" + s.repoName + ".git"
 	} else if org.IsSSH() && org.Name == "" {
 		// For SSH backup locations: user@host:path/repo.git
 		remoteURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)

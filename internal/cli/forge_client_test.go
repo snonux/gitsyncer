@@ -7,8 +7,6 @@ import (
 )
 
 func TestNewRepoClientForOrg(t *testing.T) {
-	t.Parallel()
-
 	t.Run("github", func(t *testing.T) {
 		client, ok := newRepoClientForOrg(config.Organization{
 			Host:        "git@github.com",
@@ -34,6 +32,19 @@ func TestNewRepoClientForOrg(t *testing.T) {
 		}
 		if !client.HasToken() {
 			t.Fatal("expected codeberg client token to be loaded")
+		}
+	})
+
+	t.Run("forgejo backup", func(t *testing.T) {
+		t.Setenv("FORGEJO_TOKEN", "token")
+		client, ok := newRepoClientForOrg(config.Organization{
+			Host:           "ssh://git@code.f3s.buetow.org:2022",
+			ForgejoAPIBase: "https://code.f3s.buetow.org/api/v1",
+			ForgejoOwner:   "snonux",
+			BackupLocation: true,
+		})
+		if !ok || !client.HasToken() {
+			t.Fatal("expected supported Forgejo client with environment token")
 		}
 	})
 

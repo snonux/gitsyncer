@@ -382,7 +382,7 @@ func pushBranchWithBackupSupport(repoPath, remoteName, branch string, remoteHasB
 		// Check if it's because the repository doesn't exist
 		if isRepositoryMissing(outputStr) {
 			// If it's an SSH backup location, try to create the repository
-			if org.BackupLocation && org.IsSSH() {
+			if org.BackupLocation && org.IsSSH() && !org.IsForgejo() {
 				return createAndPushSSHBackupRepo(repoPath, remoteName, branch, org)
 			}
 

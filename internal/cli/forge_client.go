@@ -15,6 +15,9 @@ func newRepoClientForOrg(org config.Organization) (forge.RepoClient, bool) {
 	case org.IsCodeberg():
 		client := codeberg.NewClient(org.CodebergToken, org.Name)
 		return client, true
+	case org.IsForgejo():
+		client := codeberg.NewGiteaClient(org.ForgejoAPIBase, org.ForgejoToken(), org.ForgejoOwner, "Forgejo")
+		return client, true
 	default:
 		return nil, false
 	}

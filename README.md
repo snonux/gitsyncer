@@ -173,6 +173,20 @@ gitsyncer sync bidirectional --dry-run
 
 `sync bidirectional`, `sync codeberg-to-github`, `sync github-to-codeberg`, and `manage batch-run` now always try configured backup locations when `backupLocation: true` is present in the config. If a backup push fails because that host is offline or unavailable, GitSyncer records that failure in memory and skips that destination for the rest of the process while continuing the primary sync targets and other backups.
 
+Forgejo can be used as a first-class, one-way public backup target. Repository creation and descriptions use its Gitea-compatible API, while branches and tags are pushed over SSH:
+
+```json
+{
+  "host": "ssh://git@code.f3s.buetow.org:2022",
+  "forgejo_api_base": "https://code.f3s.buetow.org/api/v1",
+  "forgejo_owner": "snonux",
+  "backupLocation": true,
+  "forcePush": true
+}
+```
+
+Set the API credential in the protected process environment as `FORGEJO_TOKEN`; never put it in the JSON configuration. A repository named `demo` is pushed to `ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets are never fetched or used as primary bidirectional sources, and GitSyncer never runs remote shell repository-creation or description-file commands for them.
+
 ### Release Management
 
 #### Check for missing releases

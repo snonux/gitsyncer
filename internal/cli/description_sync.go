@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
@@ -148,6 +149,21 @@ func syncBackupDescription(org *config.Organization, repoName, description strin
 	description = strings.TrimSpace(description)
 	if description == "" {
 		return false, nil
+	}
+
+	if org.IsForgejo() {
+		if dryRun {
+			fmt.Printf("  [DRY RUN] Would update Forgejo description for %s on %s -> %q\n", repoName, org.Host, description)
+			return true, nil
+		}
+		client := codeberg.NewGiteaClient(org.ForgejoAPIBase, org.ForgejoToken(), org.ForgejoOwner, "Forgejo")
+		if !client.HasToken() {
+			return true, fmt.Errorf("Forgejo token missing: set FORGEJO_TOKEN")
+		}
+		if err := client.EnsurePublicRepo(repoName, description); err != nil {
+			return true, err
+		}
+		return true, client.UpdateRepoDescription(repoName, description)
 	}
 
 	if strings.HasPrefix(org.Host, "file://") {
