@@ -73,6 +73,28 @@ func NewGiteaClient(baseURL, token, owner, service string) *Client {
 	}
 }
 
+// NewForgejoClient creates a Forgejo client using protected token sources.
+// FORGEJO_TOKEN takes precedence over ~/.gitsyncer_forgejo_token.
+func NewForgejoClient(baseURL, owner string) *Client {
+	return NewGiteaClient(baseURL, loadForgejoToken(), owner, "Forgejo")
+}
+
+func loadForgejoToken() string {
+	if token, ok := os.LookupEnv("FORGEJO_TOKEN"); ok {
+		return strings.TrimSpace(token)
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".gitsyncer_forgejo_token"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // loadToken loads the Codeberg API token from config, env, or file
 func (c *Client) loadToken(tokenFromConfig string) {
 	if tokenFromConfig != "" {

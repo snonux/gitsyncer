@@ -222,7 +222,10 @@ Finds organization by host string.
 Returns true if organization host contains "codeberg.org".
 
 #### func (o *Organization) IsForgejo() bool
-Returns true when a Forgejo API base is configured. Forgejo organizations must be backup-only; their API token is read from `FORGEJO_TOKEN`.
+Returns true when a Forgejo API base is configured. Forgejo organizations must be backup-only.
+
+#### func NewForgejoClient(baseURL, owner string) *Client
+Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling back to the trimmed contents of `~/.gitsyncer_forgejo_token`. Forgejo tokens are never read from JSON configuration.
 
 #### func (c *Config) FindCodebergOrg() *Organization
 Finds first Codeberg organization in config.

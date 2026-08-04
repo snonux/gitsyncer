@@ -124,15 +124,6 @@ func TestValidate_ForgejoURLs(t *testing.T) {
 	}
 }
 
-func TestForgejoToken_UsesEnvironmentOnly(t *testing.T) {
-	t.Setenv("FORGEJO_TOKEN", " protected-token ")
-
-	org := Organization{ForgejoAPIBase: "https://forgejo.example/api/v1"}
-	if got := org.ForgejoToken(); got != "protected-token" {
-		t.Fatalf("ForgejoToken() = %q, want protected environment token", got)
-	}
-}
-
 func TestFindOrganization_ReturnsPointerToStoredElement(t *testing.T) {
 	t.Parallel()
 

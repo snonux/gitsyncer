@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 )
@@ -49,6 +51,69 @@ func TestNewClient_HasNoTokenWhenNoSourcesAvailable(t *testing.T) {
 	client := NewClient("", "example-org")
 	if client.HasToken() {
 		t.Fatal("expected no token when config, env, and file are empty")
+	}
+}
+
+func TestNewForgejoClient_LoadsProtectedToken(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+	t.Setenv("FORGEJO_TOKEN", "")
+	if err := os.Unsetenv("FORGEJO_TOKEN"); err != nil {
+		t.Fatalf("unset FORGEJO_TOKEN: %v", err)
+	}
+	tokenFile := filepath.Join(home, ".gitsyncer_forgejo_token")
+	if err := os.WriteFile(tokenFile, []byte("  file-token\n"), 0600); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+
+	t.Run("token file is trimmed", func(t *testing.T) {
+		client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		if client.token != "file-token" {
+			t.Fatalf("loaded token = %q, want trimmed file token", client.token)
+		}
+	})
+
+	t.Run("environment takes precedence and is trimmed", func(t *testing.T) {
+		t.Setenv("FORGEJO_TOKEN", "  env-token\n")
+		client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		if client.token != "env-token" {
+			t.Fatalf("loaded token = %q, want trimmed environment token", client.token)
+		}
+	})
+}
+
+func TestNewForgejoClient_MissingOrUnreadableFileHasNoToken(t *testing.T) {
+	tests := []struct {
+		name  string
+		setup func(*testing.T, string)
+	}{
+		{name: "missing"},
+		{name: "unreadable", setup: func(t *testing.T, home string) {
+			if err := os.Mkdir(filepath.Join(home, ".gitsyncer_forgejo_token"), 0700); err != nil {
+				t.Fatalf("create unreadable token path: %v", err)
+			}
+		}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("FORGEJO_TOKEN", "")
+			if err := os.Unsetenv("FORGEJO_TOKEN"); err != nil {
+				t.Fatalf("unset FORGEJO_TOKEN: %v", err)
+			}
+			if tt.setup != nil {
+				tt.setup(t, home)
+			}
+			client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+			if client.HasToken() {
+				t.Fatal("HasToken() = true, want false")
+			}
+			err := client.EnsurePublicRepo("demo", "")
+			if err == nil || strings.Contains(err.Error(), home) {
+				t.Fatalf("missing-token error = %q, want generic error without credential path", err)
+			}
+		})
 	}
 }
 

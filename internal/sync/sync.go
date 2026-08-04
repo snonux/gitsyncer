@@ -193,7 +193,7 @@ func (s *Syncer) ensureForgejoBackups(repoName string) {
 		if !org.IsForgejo() || !s.backupActive(s.getRemoteName(org)) {
 			continue
 		}
-		client := codeberg.NewGiteaClient(org.ForgejoAPIBase, org.ForgejoToken(), org.ForgejoOwner, "Forgejo")
+		client := codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner)
 		if err := client.EnsurePublicRepo(repoName, "Mirror of "+repoName); err != nil {
 			s.disableBackupForSession(s.getRemoteName(org), err)
 		}

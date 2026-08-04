@@ -69,7 +69,7 @@ Array of organization objects. At least one organization must be configured.
 - **backupLocation** (boolean, required for Forgejo): Keeps the destination one-way; it is pushed but never fetched
 - **forcePush** (boolean, optional): Force-update backup branches and tags
 
-Forgejo credentials are accepted only from the `FORGEJO_TOKEN` environment variable, not from tracked configuration. Forgejo creation is public and uninitialized. Existing repositories must belong to the configured owner and must be public. The Git SSH URL is formed as `<host>/<forgejo_owner>/<repo>.git`; do not configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo because metadata is updated through the API.
+Forgejo credentials are read first from `FORGEJO_TOKEN`, then from `~/.gitsyncer_forgejo_token`; surrounding whitespace is trimmed. Protect the token file with `chmod 600 ~/.gitsyncer_forgejo_token`. Forgejo tokens are not accepted from tracked JSON configuration. Forgejo creation is public and uninitialized. Existing repositories must belong to the configured owner and must be public. The Git SSH URL is formed as `<host>/<forgejo_owner>/<repo>.git`; do not configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo because metadata is updated through the API.
 
 #### repositories (optional)
 Array of repository names to sync. If empty, use `gitsyncer sync codeberg-to-github` or `gitsyncer sync github-to-codeberg` to discover repositories.

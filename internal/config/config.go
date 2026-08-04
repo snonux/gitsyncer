@@ -231,11 +231,6 @@ func (o *Organization) IsForgejo() bool {
 	return strings.TrimSpace(o.ForgejoAPIBase) != ""
 }
 
-// ForgejoToken returns the Forgejo API token from the protected environment.
-func (o *Organization) ForgejoToken() string {
-	return strings.TrimSpace(os.Getenv("FORGEJO_TOKEN"))
-}
-
 // CodebergSyncEnabled reports whether Codeberg syncing has been explicitly
 // enabled in the configuration. Codeberg is never synced unless this returns
 // true, regardless of whether a Codeberg organization is configured.

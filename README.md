@@ -187,7 +187,7 @@ Forgejo can be used as a first-class, one-way public backup target. Repository c
 }
 ```
 
-Set the API credential in the protected process environment as `FORGEJO_TOKEN`; never put it in the JSON configuration. A repository named `demo` is pushed to `ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets are never fetched or used as primary bidirectional sources, and GitSyncer never runs remote shell repository-creation or description-file commands for them.
+Set the API credential in the protected process environment as `FORGEJO_TOKEN`, or store it in `~/.gitsyncer_forgejo_token` with mode `0600`. The environment takes precedence and surrounding whitespace is removed from either source. Never put a Forgejo token in the JSON configuration. A repository named `demo` is pushed to `ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets are never fetched or used as primary bidirectional sources, and GitSyncer never runs remote shell repository-creation or description-file commands for them.
 
 ### Release Management
 
