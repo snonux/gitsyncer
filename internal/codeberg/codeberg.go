@@ -91,16 +91,16 @@ func loadForgejoToken() string {
 		return ""
 	}
 	tokenPath := filepath.Join(home, ".gitsyncer_forgejo_token")
-	info, err := os.Lstat(tokenPath)
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-		return ""
-	}
-	tokenFile, err := os.Open(tokenPath)
+	tokenFile, err := openProtectedTokenFile(tokenPath)
 	if err != nil {
 		return ""
 	}
 	defer func() { _ = tokenFile.Close() }()
 
+	info, err := tokenFile.Stat()
+	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
+		return ""
+	}
 	data, err := io.ReadAll(tokenFile)
 	if err != nil {
 		return ""
