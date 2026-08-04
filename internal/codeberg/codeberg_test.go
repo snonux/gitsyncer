@@ -2,6 +2,7 @@ package codeberg
 
 import (
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -146,6 +147,22 @@ func TestNewForgejoClient_MissingOrUnreadableFileHasNoToken(t *testing.T) {
 			if err := os.Mkdir(filepath.Join(home, ".gitsyncer_forgejo_token"), 0700); err != nil {
 				t.Fatalf("create unreadable token path: %v", err)
 			}
+		}},
+		{name: "symlink", setup: func(t *testing.T, home string) {
+			target := filepath.Join(home, "token-target")
+			if err := os.WriteFile(target, []byte("file-token"), 0600); err != nil {
+				t.Fatalf("write symlink target: %v", err)
+			}
+			if err := os.Symlink(target, filepath.Join(home, ".gitsyncer_forgejo_token")); err != nil {
+				t.Fatalf("create token symlink: %v", err)
+			}
+		}},
+		{name: "unix socket", setup: func(t *testing.T, home string) {
+			listener, err := net.Listen("unix", filepath.Join(home, ".gitsyncer_forgejo_token"))
+			if err != nil {
+				t.Fatalf("create token socket: %v", err)
+			}
+			t.Cleanup(func() { _ = listener.Close() })
 		}},
 	}
 	for _, tt := range tests {
