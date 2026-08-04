@@ -74,6 +74,14 @@ func (s *Syncer) BackupActive(org *config.Organization) bool {
 	return org != nil && org.BackupLocation && s.backupActive(s.getRemoteName(org))
 }
 
+// DisableBackup disables a backup organization after an API or push failure.
+func (s *Syncer) DisableBackup(org *config.Organization, err error) {
+	if org == nil || !org.BackupLocation || err == nil {
+		return
+	}
+	s.disableBackupForSession(s.getRemoteName(org), err)
+}
+
 func (s *Syncer) disableBackupForSession(remoteName string, err error) {
 	if !s.backupEnabled {
 		return

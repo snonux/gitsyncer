@@ -136,11 +136,11 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("organization %d: forgejo_owner is required with forgejo_api_base", i)
 			}
 			sshBase, err := url.Parse(org.Host)
-			if err != nil || sshBase.Scheme != "ssh" || sshBase.Hostname() == "" || sshBase.User == nil || sshBase.User.Username() == "" || sshBase.RawQuery != "" || sshBase.Fragment != "" {
+			if err != nil || sshBase.Scheme != "ssh" || sshBase.Hostname() == "" || sshBase.User == nil || sshBase.User.Username() == "" || (sshBase.Path != "" && sshBase.Path != "/") || sshBase.RawQuery != "" || sshBase.Fragment != "" {
 				return fmt.Errorf("organization %d: Forgejo host must be an absolute ssh:// URL with a user and host", i)
 			}
 			apiBase, err := url.Parse(org.ForgejoAPIBase)
-			if err != nil || (apiBase.Scheme != "http" && apiBase.Scheme != "https") || apiBase.Host == "" || !apiBase.IsAbs() {
+			if err != nil || (apiBase.Scheme != "http" && apiBase.Scheme != "https") || apiBase.Host == "" || !apiBase.IsAbs() || apiBase.User != nil || apiBase.RawQuery != "" || apiBase.Fragment != "" {
 				return fmt.Errorf("organization %d: forgejo_api_base must be an absolute HTTP(S) URL", i)
 			}
 			if org.DescriptionSyncHost != "" || org.DescriptionSyncRoot != "" {

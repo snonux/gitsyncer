@@ -453,3 +453,37 @@ func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.
 		t.Fatalf("expected no update attempts when getReleases fails, got %d", updateCalls)
 	}
 }
+
+func TestProcessReleaseTargets_DryRunDispatchesNoMutations(t *testing.T) {
+	flags := &Flags{DryRun: true, AIReleaseNotes: true, AutoCreateReleases: true}
+	releaseManager := release.NewManager("")
+	createCalls := 0
+	updateCalls := 0
+	ensureCalls := 0
+	target := releaseTarget{
+		name:  "GitHub",
+		owner: "owner",
+		getReleases: func(_, _ string) ([]string, error) {
+			return []string{"v1.0.0"}, nil
+		},
+		createRelease: func(_, _, _, _ string) error {
+			createCalls++
+			return nil
+		},
+		updateRelease: func(_, _, _, _ string) error {
+			updateCalls++
+			return nil
+		},
+		ensureReleasesEnabled: func(_, _ string) error {
+			ensureCalls++
+			return nil
+		},
+	}
+
+	processCreateReleasesForTarget(&config.Config{}, flags, releaseManager, target, "demo", "/not/a/repo", []string{"v1.0.0"}, []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
+	processUpdateReleasesForTarget(flags, releaseManager, target, "demo", "/not/a/repo", []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
+
+	if createCalls != 0 || updateCalls != 0 || ensureCalls != 0 {
+		t.Fatalf("dry run dispatched release mutations: create=%d update=%d ensure=%d", createCalls, updateCalls, ensureCalls)
+	}
+}

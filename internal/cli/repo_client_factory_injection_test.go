@@ -216,7 +216,7 @@ func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
 	}
 	cache := map[string]string{}
 
-	syncRepoDescriptionsWithFactory(cfg, false, nil, "demo", "", "", cache, factory)
+	syncRepoDescriptionsWithFactory(cfg, false, nil, nil, "demo", "", "", cache, factory)
 
 	if factory.githubDescCalls != 1 || factory.codebergDescCalls != 1 {
 		t.Fatalf("expected one injected description client creation per forge, got github=%d codeberg=%d", factory.githubDescCalls, factory.codebergDescCalls)
@@ -264,10 +264,10 @@ func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
 		SyncCodeberg: true,
 	}
 
-	if err := createGitHubRepoIfNeededWithFactory(cfg, "demo", factory); err != nil {
+	if err := createGitHubRepoIfNeededWithFactory(cfg, "demo", false, factory); err != nil {
 		t.Fatalf("createGitHubRepoIfNeededWithFactory() error = %v", err)
 	}
-	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", factory); err != nil {
+	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", false, factory); err != nil {
 		t.Fatalf("createCodebergRepoIfNeededWithFactory() error = %v", err)
 	}
 
@@ -293,6 +293,38 @@ func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
 	}
 	if codebergClient.createCalls[0].description != "Mirror of demo" {
 		t.Fatalf("codeberg create description = %q, want %q", codebergClient.createCalls[0].description, "Mirror of demo")
+	}
+}
+
+func TestCreateRepoHelpersWithFactory_DryRunDispatchesNoMutations(t *testing.T) {
+	t.Parallel()
+
+	githubClient := &stubDescriptionRepoClient{hasToken: true}
+	codebergClient := &stubDescriptionRepoClient{hasToken: true}
+	factory := &stubRepoClientFactory{
+		githubRepoClient:   githubClient,
+		codebergRepoClient: codebergClient,
+	}
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@github.com", Name: "acme", GitHubToken: "gh-token"},
+			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
+		},
+		Repositories: []string{"demo"},
+		SyncCodeberg: true,
+	}
+
+	if err := createGitHubRepoIfNeededWithFactory(cfg, "demo", true, factory); err != nil {
+		t.Fatalf("dry-run GitHub create returned error: %v", err)
+	}
+	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", true, factory); err != nil {
+		t.Fatalf("dry-run Codeberg create returned error: %v", err)
+	}
+	if len(githubClient.createCalls) != 0 || len(codebergClient.createCalls) != 0 {
+		t.Fatalf("dry run dispatched create mutations: github=%d codeberg=%d", len(githubClient.createCalls), len(codebergClient.createCalls))
+	}
+	if factory.githubRepoCalls != 0 || factory.codebergRepoCalls != 0 {
+		t.Fatalf("dry run initialized mutation clients: github=%d codeberg=%d", factory.githubRepoCalls, factory.codebergRepoCalls)
 	}
 }
 
@@ -440,7 +472,7 @@ func TestCreateCodebergRepoIfNeededWithFactory_SkipsWhenCodebergSyncDisabled(t *
 		},
 	}
 
-	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", factory); err != nil {
+	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", false, factory); err != nil {
 		t.Fatalf("createCodebergRepoIfNeededWithFactory() error = %v", err)
 	}
 	if factory.codebergRepoCalls != 0 {

@@ -54,7 +54,7 @@ gitsyncer sync repo myproject --auto-create-releases --ai-tool opencode`,
 		flags.SyncRepo = args[0]
 
 		exitCode := cli.HandleSync(cfg, flags)
-		if exitCode == 0 && !noReleases {
+		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleasesForRepo(cfg, flags, args[0])
 		}
 		os.Exit(exitCode)
@@ -78,7 +78,7 @@ var syncAllCmd = &cobra.Command{
 		flags.SyncAll = true
 
 		exitCode := cli.HandleSyncAll(cfg, flags)
-		if exitCode == 0 && !noReleases {
+		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleases(cfg, flags)
 		}
 		os.Exit(exitCode)
@@ -106,7 +106,7 @@ var syncCodebergToGitHubCmd = &cobra.Command{
 		}
 
 		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
-		if exitCode == 0 && !noReleases {
+		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleases(cfg, flags)
 		}
 		os.Exit(exitCode)
@@ -134,7 +134,7 @@ var syncGitHubToCodebergCmd = &cobra.Command{
 		}
 
 		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
-		if exitCode == 0 && !noReleases {
+		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleases(cfg, flags)
 		}
 		os.Exit(exitCode)
@@ -170,7 +170,7 @@ repositories between GitHub and Codeberg. This is equivalent to the old --full f
 
 		// Then sync GitHub to Codeberg
 		exitCode = cli.HandleSyncGitHubPublic(cfg, flags)
-		if exitCode == 0 && !noReleases {
+		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleases(cfg, flags)
 		}
 		os.Exit(exitCode)
@@ -214,4 +214,8 @@ func buildFlags() *cli.Flags {
 		CreateGitHubRepos:   createRepos,
 		CreateCodebergRepos: createRepos,
 	}
+}
+
+func shouldRunPostSyncReleases(exitCode int, flags *cli.Flags, releasesDisabled bool) bool {
+	return exitCode == 0 && flags != nil && !flags.DryRun && !releasesDisabled
 }

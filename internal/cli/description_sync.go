@@ -16,11 +16,11 @@ import (
 // syncRepoDescriptions ensures both platforms have the canonical description
 // Precedence: Codeberg > GitHub; if Codeberg empty and GitHub has one, use GitHub.
 // knownCBDesc and knownGHDesc can be empty; the function fetches as needed.
-func syncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
-	syncRepoDescriptionsWithFactory(cfg, dryRun, backupActive, repoName, knownCBDesc, knownGHDesc, cache, cliRepoClientFactory)
+func syncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
+	syncRepoDescriptionsWithFactory(cfg, dryRun, backupActive, disableBackup, repoName, knownCBDesc, knownGHDesc, cache, cliRepoClientFactory)
 }
 
-func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, repoName, knownCBDesc, knownGHDesc string, cache map[string]string, factory repoClientFactory) {
+func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string, factory repoClientFactory) {
 	// Load orgs
 	ghOrg := cfg.FindGitHubOrg()
 	cbOrg := cfg.FindCodebergOrg()
@@ -111,7 +111,7 @@ func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActi
 		}
 	}
 
-	syncBackupDescriptions(cfg, dryRun, backupActive, repoName, canonical)
+	syncBackupDescriptions(cfg, dryRun, backupActive, disableBackup, repoName, canonical)
 
 	// Update cache
 	if cache != nil {
@@ -119,7 +119,7 @@ func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActi
 	}
 }
 
-func syncBackupDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, repoName, canonical string) {
+func syncBackupDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, canonical string) {
 	if cfg == nil || canonical == "" {
 		return
 	}
@@ -133,6 +133,9 @@ func syncBackupDescriptions(cfg *config.Config, dryRun bool, backupActive func(*
 		supported, err := syncBackupDescription(org, repoName, canonical, dryRun)
 		if err != nil {
 			fmt.Printf("  Warning: Failed to update backup description on %s: %v\n", org.Host, err)
+			if disableBackup != nil {
+				disableBackup(org, err)
+			}
 			continue
 		}
 		if supported && !dryRun {

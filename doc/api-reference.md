@@ -86,7 +86,7 @@ Discovers and syncs all public GitHub repositories to other platforms, used by `
 
 ### Helper Functions (sync_handlers.go)
 
-#### func createGitHubRepoIfNeeded(cfg *config.Config, repoName string) error
+#### func createGitHubRepoIfNeeded(cfg *config.Config, repoName string, dryRun bool) error
 Creates GitHub repository if it doesn't exist and token is available.
 
 #### func initGitHubClient(cfg *config.Config) *github.Client

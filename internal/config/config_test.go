@@ -92,8 +92,12 @@ func TestValidate_ForgejoURLs(t *testing.T) {
 	}{
 		{name: "scp-like host", host: "git@forgejo.example:repos", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
 		{name: "HTTP Git host", host: "https://forgejo.example", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "SSH host path", host: "ssh://git@forgejo.example:2022/owner", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
 		{name: "relative API base", host: "ssh://git@forgejo.example:2022", apiBase: "/api/v1", want: "absolute HTTP(S)"},
 		{name: "non-HTTP API base", host: "ssh://git@forgejo.example:2022", apiBase: "ftp://forgejo.example/api/v1", want: "absolute HTTP(S)"},
+		{name: "API base userinfo", host: "ssh://git@forgejo.example:2022", apiBase: "https://user@forgejo.example/api/v1", want: "absolute HTTP(S)"},
+		{name: "API base query", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1?token=bad", want: "absolute HTTP(S)"},
+		{name: "API base fragment", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1#bad", want: "absolute HTTP(S)"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

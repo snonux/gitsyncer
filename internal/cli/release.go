@@ -64,6 +64,11 @@ type releaseNotesGenerator interface {
 
 // HandleCheckReleasesForRepos checks for version tags without releases and creates them with confirmation
 func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories []string) int {
+	if flags.DryRun {
+		fmt.Println("[DRY RUN] Skipping post-sync release processing")
+		return 0
+	}
+
 	releaseManager := release.NewManager(flags.WorkDir)
 	releaseManager.SetAITool(flags.AITool)
 
@@ -315,7 +320,7 @@ func processCreateReleasesForTarget(
 	aiReleaseNotesCache map[string]string,
 	failedAIGenerations *[]string,
 ) {
-	if len(missingReleases) == 0 {
+	if flags.DryRun || len(missingReleases) == 0 {
 		return
 	}
 
@@ -391,7 +396,7 @@ func processUpdateReleasesForTarget(
 	aiReleaseNotesCache map[string]string,
 	failedAIGenerations *[]string,
 ) {
-	if !flags.AIReleaseNotes {
+	if flags.DryRun || !flags.AIReleaseNotes {
 		return
 	}
 
