@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -29,7 +30,7 @@ type ProjectSummary struct {
 	Summary      string
 	CodebergURL  string
 	GitHubURL    string
-	CgitURL      string
+	ForgejoURL   string
 	Metadata     *RepoMetadata
 	RankHistory  []RepoRankHistory // Latest 5 weekly rank points, newest first
 	Images       []string          // Relative paths to images in showcase directory
@@ -309,7 +310,7 @@ func (g *Generator) buildProjectLinks(repoName, repoPath string) (string, string
 
 	codebergURL := ""
 	githubURL := ""
-	cgitURL := fmt.Sprintf("%s/%s/", cfg.GetShowcaseCgitHost(), repoName)
+	forgejoURL := ""
 
 	// Only link to Codeberg when Codeberg syncing is enabled, the repository
 	// is part of the configured sync set (the repositories allowlist), and the
@@ -326,8 +327,15 @@ func (g *Generator) buildProjectLinks(repoName, repoPath string) (string, string
 	if githubOrg := cfg.FindGitHubOrg(); githubOrg != nil {
 		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
 	}
+	if forgejoOrg := cfg.FindForgejoOrg(); forgejoOrg != nil {
+		apiBase, err := url.Parse(forgejoOrg.ForgejoAPIBase)
+		if err == nil {
+			apiBase.Path = strings.TrimSuffix(strings.TrimRight(apiBase.Path, "/"), "/api/v1")
+			forgejoURL = fmt.Sprintf("%s/%s/%s", strings.TrimRight(apiBase.String(), "/"), forgejoOrg.ForgejoOwner, repoName)
+		}
+	}
 
-	return codebergURL, githubURL, cgitURL
+	return codebergURL, githubURL, forgejoURL
 }
 
 // repoHasCodebergRemote reports whether the working copy at repoPath has a git
@@ -489,7 +497,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	)
 
 	// Build URLs
-	codebergURL, githubURL, cgitURL := g.buildProjectLinks(repoName, repoPath)
+	codebergURL, githubURL, forgejoURL := g.buildProjectLinks(repoName, repoPath)
 
 	images, codeSnippet, codeLanguage, err := g.collectAssets(repoName, repoPath, statsRepoPath, metadata)
 	if err != nil {
@@ -501,7 +509,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		Summary:      summary,
 		CodebergURL:  codebergURL,
 		GitHubURL:    githubURL,
-		CgitURL:      cgitURL,
+		ForgejoURL:   forgejoURL,
 		Metadata:     metadata,
 		Images:       images,
 		CodeSnippet:  codeSnippet,

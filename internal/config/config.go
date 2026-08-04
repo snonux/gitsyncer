@@ -11,10 +11,6 @@ import (
 	"strings"
 )
 
-const (
-	defaultShowcaseCgitHost = "https://cgit.f3s.buetow.org"
-)
-
 var forgejoOwnerPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 // Organization represents a git organization with its host and name
@@ -40,7 +36,7 @@ type Config struct {
 	ExcludeFromShowcase   []string          `json:"exclude_from_showcase,omitempty"`   // Repository names to exclude from showcase
 	ShowcaseStatsBranches map[string]string `json:"showcase_stats_branches,omitempty"` // Repository names mapped to the branch used for showcase stats/code snippets
 	ShowcaseOutputDir     string            `json:"showcase_output_dir,omitempty"`     // Directory where showcase files and assets are written
-	ShowcaseCgitHost      string            `json:"showcase_cgit_host,omitempty"`      // Base URL for cgit links in showcase output
+	ShowcaseCgitHost      string            `json:"showcase_cgit_host,omitempty"`      // Deprecated: accepted for configuration compatibility but ignored
 	// SkipReleases maps a repository name to a list of tag names for which
 	// releases should NOT be created on any platform (GitHub/Codeberg)
 	SkipReleases map[string][]string `json:"skip_releases,omitempty"`
@@ -291,6 +287,16 @@ func (c *Config) FindCodebergOrg() *Organization {
 	return nil
 }
 
+// FindForgejoOrg finds the first configured Forgejo organization.
+func (c *Config) FindForgejoOrg() *Organization {
+	for i := range c.Organizations {
+		if c.Organizations[i].IsForgejo() {
+			return &c.Organizations[i]
+		}
+	}
+	return nil
+}
+
 // SyncOrganizations returns the organizations that should participate in
 // repository syncing (clone/fetch/push). It excludes Codeberg organizations
 // when Codeberg syncing is not enabled via CodebergSyncEnabled, so that a
@@ -348,17 +354,6 @@ func (c *Config) GetShowcaseOutputDir() (string, error) {
 		return "", fmt.Errorf("failed to get home directory: %w", err)
 	}
 	return filepath.Join(home, "git", "foo.zone-content", "gemtext", "about"), nil
-}
-
-// GetShowcaseCgitHost returns the configured cgit host, or the default host.
-func (c *Config) GetShowcaseCgitHost() string {
-	if c != nil {
-		host := strings.TrimSpace(c.ShowcaseCgitHost)
-		if host != "" {
-			return strings.TrimRight(host, "/")
-		}
-	}
-	return defaultShowcaseCgitHost
 }
 
 func expandHomePath(path string) (string, error) {

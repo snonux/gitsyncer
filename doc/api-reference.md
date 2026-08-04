@@ -192,7 +192,7 @@ type Config struct {
     Repositories          []string            `json:"repositories"`              // Specific repos to sync
     ExcludeBranches       []string            `json:"exclude_branches"`          // Regex patterns for branch exclusion
     ShowcaseOutputDir     string              `json:"showcase_output_dir"`       // Showcase output directory
-    ShowcaseCgitHost      string              `json:"showcase_cgit_host"`        // Base URL for showcase cgit links
+    ShowcaseCgitHost      string              `json:"showcase_cgit_host"`        // Deprecated compatibility key; ignored
     ShowcaseStatsBranches map[string]string   `json:"showcase_stats_branches"`   // Per-repo branch overrides for showcase stats/code snippets
 }
 ```

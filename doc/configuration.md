@@ -39,7 +39,6 @@ GitSyncer looks for configuration files in the following order:
     "-wip$"
   ],
   "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
-  "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   },
@@ -129,17 +128,10 @@ Example:
 }
 ```
 
-#### showcase_cgit_host (optional)
-Base URL used to generate cgit links in showcase project sections.
+#### Forgejo showcase links
+Showcase repository links require a Forgejo backup organization and are derived from its `forgejo_api_base` and `forgejo_owner`. For example, API base `https://code.example/api/v1` and owner `snonux` produce `https://code.example/snonux/<repo>`. This avoids a separate host setting that can drift from the backup configuration.
 
-Default: `https://cgit.f3s.buetow.org`
-
-Example:
-```json
-{
-  "showcase_cgit_host": "https://cgit.example.net/git"
-}
-```
+The legacy `showcase_cgit_host` key remains accepted for configuration compatibility, but it is ignored. Remove it when updating existing configurations.
 
 ## Examples
 
@@ -188,7 +180,6 @@ Sync between GitHub and Codeberg:
     "^old-"
   ],
   "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
-  "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   }

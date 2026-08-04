@@ -151,48 +151,49 @@ func TestFormatGemtext_SanitizesMarkdownHeadingsInSummary(t *testing.T) {
 	}
 }
 
-func TestFormatGemtext_IncludesCgitLink(t *testing.T) {
+func TestFormatGemtext_IncludesForgejoLinkAndHint(t *testing.T) {
 	t.Parallel()
 
 	g := &Generator{config: &config.Config{}}
 	content := g.formatGemtext([]ProjectSummary{
 		{
-			Name:        "cpuinfo",
-			Summary:     "summary",
-			CodebergURL: "https://codeberg.org/snonux/cpuinfo",
-			GitHubURL:   "https://github.com/snonux/cpuinfo",
-			CgitURL:     "https://cgit.f3s.buetow.org/cpuinfo/",
+			Name:       "ggaze",
+			Summary:    "summary",
+			ForgejoURL: "https://code.f3s.buetow.org/snonux/ggaze",
 		},
 	})
 
-	if !strings.Contains(content, "For cgit access go to c-git dot f3s dot buetow dot org slash cpuinfo\n") {
-		t.Fatalf("cgit hint text was not rendered: %s", content)
+	if !strings.Contains(content, "=> https://code.f3s.buetow.org/snonux/ggaze View on Forgejo\n") {
+		t.Fatalf("Forgejo link was not rendered: %s", content)
+	}
+	if !strings.Contains(content, "For Forgejo access go to code dot f3s dot buetow dot org slash snonux slash ggaze\n") {
+		t.Fatalf("Forgejo hint text was not rendered: %s", content)
 	}
 }
 
-func TestBuildProjectLinks_DefaultCgitHost(t *testing.T) {
+func TestBuildProjectLinks_UsesForgejoOrganization(t *testing.T) {
 	t.Parallel()
 
-	g := &Generator{config: &config.Config{}}
-	_, _, cgitURL := g.buildProjectLinks("cpuinfo", "")
+	g := &Generator{config: &config.Config{Organizations: []config.Organization{{
+		Host: "ssh://git@code.f3s.buetow.org:2022", ForgejoAPIBase: "https://code.f3s.buetow.org/api/v1", ForgejoOwner: "snonux", BackupLocation: true,
+	}}}}
+	_, _, forgejoURL := g.buildProjectLinks("cpuinfo", "")
 
-	if cgitURL != "https://cgit.f3s.buetow.org/cpuinfo/" {
-		t.Fatalf("buildProjectLinks() cgit URL = %q, want %q", cgitURL, "https://cgit.f3s.buetow.org/cpuinfo/")
+	if forgejoURL != "https://code.f3s.buetow.org/snonux/cpuinfo" {
+		t.Fatalf("buildProjectLinks() Forgejo URL = %q, want %q", forgejoURL, "https://code.f3s.buetow.org/snonux/cpuinfo")
 	}
 }
 
-func TestBuildProjectLinks_ConfiguredCgitHost(t *testing.T) {
+func TestBuildProjectLinks_LegacyShowcaseHostIsIgnored(t *testing.T) {
 	t.Parallel()
 
 	g := &Generator{
-		config: &config.Config{
-			ShowcaseCgitHost: "https://cgit.example.net/git/",
-		},
+		config: &config.Config{ShowcaseCgitHost: "https://legacy.example/git/"},
 	}
-	_, _, cgitURL := g.buildProjectLinks("cpuinfo", "")
+	_, _, forgejoURL := g.buildProjectLinks("cpuinfo", "")
 
-	if cgitURL != "https://cgit.example.net/git/cpuinfo/" {
-		t.Fatalf("buildProjectLinks() cgit URL = %q, want %q", cgitURL, "https://cgit.example.net/git/cpuinfo/")
+	if forgejoURL != "" {
+		t.Fatalf("buildProjectLinks() Forgejo URL = %q without a Forgejo organization, want empty", forgejoURL)
 	}
 }
 

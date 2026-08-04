@@ -179,17 +179,18 @@ func TestGetShowcaseOutputDir_OverrideAndExpandHome(t *testing.T) {
 	}
 }
 
-func TestGetShowcaseCgitHost_DefaultAndOverride(t *testing.T) {
+func TestFindForgejoOrg(t *testing.T) {
 	t.Parallel()
 
-	defaultCfg := &Config{}
-	if got := defaultCfg.GetShowcaseCgitHost(); got != "https://cgit.f3s.buetow.org" {
-		t.Fatalf("GetShowcaseCgitHost() default = %q, want %q", got, "https://cgit.f3s.buetow.org")
+	if got := (&Config{}).FindForgejoOrg(); got != nil {
+		t.Fatalf("FindForgejoOrg() = %#v, want nil", got)
 	}
 
-	customCfg := &Config{ShowcaseCgitHost: "https://example.test/cgit/"}
-	if got := customCfg.GetShowcaseCgitHost(); got != "https://example.test/cgit" {
-		t.Fatalf("GetShowcaseCgitHost() override = %q, want %q", got, "https://example.test/cgit")
+	cfg := &Config{Organizations: []Organization{{Host: "git@github.com", Name: "owner"}, {
+		Host: "ssh://git@code.example:2022", ForgejoAPIBase: "https://code.example/api/v1", ForgejoOwner: "forge-owner", BackupLocation: true,
+	}}}
+	if got := cfg.FindForgejoOrg(); got == nil || got.ForgejoOwner != "forge-owner" {
+		t.Fatalf("FindForgejoOrg() = %#v, want Forgejo organization", got)
 	}
 }
 

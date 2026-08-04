@@ -2,6 +2,7 @@ package showcase
 
 import (
 	"fmt"
+	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -231,7 +232,12 @@ func writeProjectLinks(builder *strings.Builder, summary ProjectSummary) {
 	if summary.GitHubURL != "" {
 		builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
 	}
-	if summary.CgitURL != "" {
-		builder.WriteString(fmt.Sprintf("For cgit access go to c-git dot f3s dot buetow dot org slash %s\n", summary.Name))
+	if summary.ForgejoURL != "" {
+		builder.WriteString(fmt.Sprintf("=> %s View on Forgejo\n", summary.ForgejoURL))
+		if forgejoURL, err := url.Parse(summary.ForgejoURL); err == nil {
+			host := strings.ReplaceAll(forgejoURL.Hostname(), ".", " dot ")
+			path := strings.ReplaceAll(strings.Trim(forgejoURL.Path, "/"), "/", " slash ")
+			builder.WriteString(fmt.Sprintf("For Forgejo access go to %s slash %s\n", host, path))
+		}
 	}
 }

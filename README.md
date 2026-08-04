@@ -68,7 +68,6 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
     "repo2"
   ],
   "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
-  "showcase_cgit_host": "https://cgit.f3s.buetow.org",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   },
@@ -478,7 +477,7 @@ Weekly rank snapshots are written on full showcase runs (all repositories), incl
 
 The showcase output defaults to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl`. You can override the output directory with `showcase_output_dir`.
 
-cgit links in project sections default to `https://cgit.f3s.buetow.org/<repo>/`. You can override the cgit host with `showcase_cgit_host`.
+Forgejo links in project sections are derived from the configured Forgejo backup's `forgejo_api_base` and `forgejo_owner`. For example, `https://code.f3s.buetow.org/api/v1` with owner `snonux` produces `https://code.f3s.buetow.org/snonux/<repo>`, keeping showcase links aligned with the backup destination. The legacy `showcase_cgit_host` key is accepted but ignored and may be removed from configurations.
 
 You can override the branch used for showcase stats and cached code snippets on a per-repository basis with `showcase_stats_branches`. For example, `foo.zone` can use `content-gemtext` while the rest of the repos continue to use their current checkout branch.
 
