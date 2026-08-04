@@ -190,7 +190,10 @@ Forgejo can be used as a first-class, one-way public backup target. Repository c
 Set an API token with the minimal scopes for the configured owner type:
 `write:repository` plus `write:organization` for an organization, or
 `write:repository` plus `write:user` for a user. The owner type may be `user`
-(the default for backward compatibility) or `organization`. Store the token in
+(the default for backward compatibility) or `organization`. For an organization
+owner, use a token from an interactive user that is authorized to create
+repositories in that organization; an organization pseudo-user cannot issue a
+usable token. Store the token in
 protected process environment as `FORGEJO_TOKEN`, or store it in
 `~/.gitsyncer_forgejo_token` with mode `0600`. The environment takes precedence;
 surrounding

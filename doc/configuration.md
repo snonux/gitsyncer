@@ -72,8 +72,10 @@ Array of organization objects. At least one organization must be configured.
 Forgejo credentials are read first from `FORGEJO_TOKEN`, then from
 `~/.gitsyncer_forgejo_token`; surrounding whitespace is trimmed. The token needs
 minimal scopes `write:repository` plus `write:user` for a user owner, or
-`write:repository` plus `write:organization` for an organization owner. Protect
-the token file with
+`write:repository` plus `write:organization` for an organization owner.
+For an organization owner, the token must belong to an interactive user that is
+authorized to create repositories in the organization; an organization
+pseudo-user cannot issue a usable token. Protect the token file with
 `chmod 600 ~/.gitsyncer_forgejo_token`. Forgejo tokens are not accepted from
 tracked JSON configuration. Forgejo creation is public and uninitialized.
 Existing repositories must belong to the configured owner and must be public.

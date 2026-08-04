@@ -229,8 +229,10 @@ Returns true when a Forgejo API base is configured. Forgejo organizations must b
 Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling
 back to the trimmed contents of `~/.gitsyncer_forgejo_token`. It requires the
 `write:repository` plus `write:user` for a user owner, or `write:repository` plus
-`write:organization` for an organization owner. Forgejo tokens are never read
-from JSON configuration.
+`write:organization` for an organization owner. For an organization owner, the
+token must belong to an interactive user authorized to create repositories in
+that organization, not an organization pseudo-user. Forgejo tokens are never
+read from JSON configuration.
 
 #### func (c *Config) FindCodebergOrg() *Organization
 Finds first Codeberg organization in config.
