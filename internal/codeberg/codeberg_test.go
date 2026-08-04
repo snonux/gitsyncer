@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
 func TestNewClient_UsesTokenOrgOrderAndReturnsPointer(t *testing.T) {
@@ -68,7 +70,7 @@ func TestNewForgejoClient_LoadsProtectedToken(t *testing.T) {
 	}
 
 	t.Run("token file is trimmed", func(t *testing.T) {
-		client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		client := NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 		if client.token != "file-token" {
 			t.Fatalf("loaded token = %q, want trimmed file token", client.token)
 		}
@@ -76,7 +78,7 @@ func TestNewForgejoClient_LoadsProtectedToken(t *testing.T) {
 
 	t.Run("environment takes precedence and is trimmed", func(t *testing.T) {
 		t.Setenv("FORGEJO_TOKEN", "  env-token\n")
-		client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		client := NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 		if client.token != "env-token" {
 			t.Fatalf("loaded token = %q, want trimmed environment token", client.token)
 		}
@@ -84,7 +86,7 @@ func TestNewForgejoClient_LoadsProtectedToken(t *testing.T) {
 
 	t.Run("whitespace-only environment falls back to token file", func(t *testing.T) {
 		t.Setenv("FORGEJO_TOKEN", " \t\n")
-		client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		client := NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 		if client.token != "file-token" {
 			t.Fatalf("loaded token = %q, want token from file", client.token)
 		}
@@ -105,7 +107,7 @@ func TestNewForgejoClient_AcceptsOwnerOnlyTokenFileModes(t *testing.T) {
 				t.Fatalf("set token file mode: %v", err)
 			}
 
-			client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+			client := NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 			if client.token != "file-token" {
 				t.Fatalf("loaded token = %q, want file token", client.token)
 			}
@@ -122,7 +124,7 @@ func TestNewForgejoClient_WhitespaceOnlyFileHasNoToken(t *testing.T) {
 		t.Fatalf("write token file: %v", err)
 	}
 
-	client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+	client := NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 	if client.HasToken() {
 		t.Fatalf("loaded token = %q, want no token", client.token)
 	}
@@ -176,7 +178,7 @@ func TestNewForgejoClient_MissingOrUnreadableFileHasNoToken(t *testing.T) {
 			if tt.setup != nil {
 				tt.setup(t, home)
 			}
-			client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+			client := NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 			if client.HasToken() {
 				t.Fatal("HasToken() = true, want false")
 			}
@@ -212,12 +214,66 @@ func TestGiteaClient_EnsurePublicRepoCreatesUninitializedRepository(t *testing.T
 	}))
 	defer server.Close()
 
-	client := NewGiteaClient(server.URL+"/api/v1/", "secret", "snonux", "Forgejo")
+	client := NewGiteaClient(server.URL+"/api/v1/", "secret", "snonux", "Forgejo", "")
 	if err := client.EnsurePublicRepo("demo", "Demo repository"); err != nil {
 		t.Fatalf("EnsurePublicRepo() error = %v", err)
 	}
 	if createPayload["name"] != "demo" || createPayload["private"] != false || createPayload["auto_init"] != false {
 		t.Fatalf("create payload = %#v", createPayload)
+	}
+}
+
+func TestGiteaClient_EnsurePublicRepoUsesOrganizationEndpoint(t *testing.T) {
+	t.Parallel()
+
+	var posted bool
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch {
+		case r.Method == http.MethodGet && r.URL.Path == "/api/v1/repos/snonux/demo":
+			w.WriteHeader(http.StatusNotFound)
+		case r.Method == http.MethodPost && r.URL.Path == "/api/v1/orgs/snonux/repos":
+			posted = true
+			var payload map[string]any
+			if err := json.NewDecoder(r.Body).Decode(&payload); err != nil {
+				t.Errorf("decode payload: %v", err)
+			}
+			if payload["private"] != false || payload["auto_init"] != false {
+				t.Errorf("create payload = %#v, want public and uninitialized", payload)
+			}
+			w.WriteHeader(http.StatusCreated)
+			_, _ = w.Write([]byte(`{"name":"demo","full_name":"snonux/demo","private":false}`))
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	defer server.Close()
+
+	client := NewGiteaClient(server.URL+"/api/v1", "secret", "snonux", "Forgejo", forge.OwnerTypeOrganization)
+	if err := client.EnsurePublicRepo("demo", "Mirror of demo"); err != nil {
+		t.Fatalf("EnsurePublicRepo() error = %v", err)
+	}
+	if !posted {
+		t.Fatal("organization repository endpoint was not called")
+	}
+}
+
+func TestGiteaClient_EnsurePublicRepoRejectsInvalidOwnerType(t *testing.T) {
+	t.Parallel()
+
+	requests := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+
+	err := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo", "team").EnsurePublicRepo("demo", "")
+	if err == nil || !strings.Contains(err.Error(), "invalid Forgejo owner type") {
+		t.Fatalf("EnsurePublicRepo() error = %v, want invalid owner type error", err)
+	}
+	if requests != 0 {
+		t.Fatalf("invalid owner type issued %d HTTP requests, want zero", requests)
 	}
 }
 
@@ -238,7 +294,7 @@ func TestGiteaClient_EnsurePublicRepoRejectsUnsafeExistingRepositories(t *testin
 				_ = json.NewEncoder(w).Encode(tt.repo)
 			}))
 			defer server.Close()
-			err := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo").EnsurePublicRepo("demo", "")
+			err := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo", forge.OwnerTypeUser).EnsurePublicRepo("demo", "")
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("EnsurePublicRepo() error = %v, want containing %q", err, tt.want)
 			}
@@ -257,7 +313,7 @@ func TestGiteaClient_UpdatesDescriptionAtConfiguredAPIBase(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := NewGiteaClient(server.URL+"/custom/api", "secret", "snonux", "Forgejo")
+	client := NewGiteaClient(server.URL+"/custom/api", "secret", "snonux", "Forgejo", forge.OwnerTypeUser)
 	if err := client.UpdateRepoDescription("demo", "new description"); err != nil {
 		t.Fatalf("UpdateRepoDescription() error = %v", err)
 	}
@@ -266,7 +322,7 @@ func TestGiteaClient_UpdatesDescriptionAtConfiguredAPIBase(t *testing.T) {
 func TestGiteaClient_EnsurePublicRepoRequiresToken(t *testing.T) {
 	t.Parallel()
 
-	err := NewGiteaClient("https://forgejo.example/api/v1", "", "snonux", "Forgejo").EnsurePublicRepo("demo", "")
+	err := NewGiteaClient("https://forgejo.example/api/v1", "", "snonux", "Forgejo", forge.OwnerTypeUser).EnsurePublicRepo("demo", "")
 	if err == nil || !strings.Contains(err.Error(), "token required") {
 		t.Fatalf("EnsurePublicRepo() error = %v, want clear missing-token error", err)
 	}
@@ -280,7 +336,7 @@ func TestGiteaClient_EnsurePublicRepoReportsAPIFailure(t *testing.T) {
 	}))
 	defer server.Close()
 
-	err := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo").EnsurePublicRepo("demo", "")
+	err := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo", forge.OwnerTypeUser).EnsurePublicRepo("demo", "")
 	if err == nil || !strings.Contains(err.Error(), "status 503") {
 		t.Fatalf("EnsurePublicRepo() error = %v, want API status context", err)
 	}

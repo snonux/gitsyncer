@@ -8,6 +8,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
 func TestNewForgejoClient_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {
@@ -21,7 +23,7 @@ func TestNewForgejoClient_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {
 
 	done := make(chan *Client, 1)
 	go func() {
-		done <- NewForgejoClient("https://forgejo.example/api/v1", "owner")
+		done <- NewForgejoClient("https://forgejo.example/api/v1", "owner", forge.OwnerTypeUser)
 	}()
 
 	select {

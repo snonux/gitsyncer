@@ -9,22 +9,25 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
 var forgejoOwnerPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
 // Organization represents a git organization with its host and name
 type Organization struct {
-	Host                string `json:"host"`
-	Name                string `json:"name"`
-	GitHubToken         string `json:"github_token,omitempty"`
-	CodebergToken       string `json:"codeberg_token,omitempty"`
-	ForgejoAPIBase      string `json:"forgejo_api_base,omitempty"`    // Gitea-compatible API root, for example https://code.example/api/v1
-	ForgejoOwner        string `json:"forgejo_owner,omitempty"`       // Forgejo user that owns backup repositories
-	BackupLocation      bool   `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
-	ForcePush           bool   `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup destination
-	DescriptionSyncHost string `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
-	DescriptionSyncRoot string `json:"descriptionSyncRoot,omitempty"` // Filesystem path on DescriptionSyncHost where bare repos live
+	Host                string          `json:"host"`
+	Name                string          `json:"name"`
+	GitHubToken         string          `json:"github_token,omitempty"`
+	CodebergToken       string          `json:"codeberg_token,omitempty"`
+	ForgejoAPIBase      string          `json:"forgejo_api_base,omitempty"`    // Gitea-compatible API root, for example https://code.example/api/v1
+	ForgejoOwner        string          `json:"forgejo_owner,omitempty"`       // Forgejo user or organization that owns backup repositories
+	ForgejoOwnerType    forge.OwnerType `json:"forgejo_owner_type,omitempty"`  // user (default) or organization
+	BackupLocation      bool            `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
+	ForcePush           bool            `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup destination
+	DescriptionSyncHost string          `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
+	DescriptionSyncRoot string          `json:"descriptionSyncRoot,omitempty"` // Filesystem path on DescriptionSyncHost where bare repos live
 }
 
 // Config holds the application configuration
@@ -129,6 +132,9 @@ func (c *Config) Validate() error {
 			return fmt.Errorf("organization %d: forcePush requires backupLocation", i)
 		}
 		if org.IsForgejo() {
+			if org.ForgejoOwnerType != "" && !org.ForgejoOwnerType.Valid() {
+				return fmt.Errorf("organization %d: forgejo_owner_type must be %q or %q", i, forge.OwnerTypeUser, forge.OwnerTypeOrganization)
+			}
 			if !org.BackupLocation {
 				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation", i)
 			}
@@ -152,6 +158,9 @@ func (c *Config) Validate() error {
 		}
 		if org.ForgejoOwner != "" && org.ForgejoAPIBase == "" {
 			return fmt.Errorf("organization %d: forgejo_api_base is required with forgejo_owner", i)
+		}
+		if org.ForgejoOwnerType != "" && org.ForgejoAPIBase == "" {
+			return fmt.Errorf("organization %d: forgejo_api_base is required with forgejo_owner_type", i)
 		}
 		hasDescriptionSyncHost := strings.TrimSpace(org.DescriptionSyncHost) != ""
 		hasDescriptionSyncRoot := strings.TrimSpace(org.DescriptionSyncRoot) != ""

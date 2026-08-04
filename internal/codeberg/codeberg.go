@@ -34,10 +34,11 @@ type Repository struct {
 
 // Client handles Codeberg API operations
 type Client struct {
-	baseURL string
-	org     string
-	token   string
-	service string
+	baseURL   string
+	org       string
+	token     string
+	service   string
+	ownerType forge.OwnerType
 }
 
 var _ forge.RepoClient = (*Client)(nil)
@@ -55,28 +56,33 @@ func closeResponseBody(resp *http.Response) {
 // NewClient creates a new Codeberg API client
 func NewClient(token, org string) *Client {
 	c := &Client{
-		baseURL: "https://codeberg.org/api/v1",
-		org:     org,
-		service: "Codeberg",
+		baseURL:   "https://codeberg.org/api/v1",
+		org:       org,
+		service:   "Codeberg",
+		ownerType: forge.OwnerTypeUser,
 	}
 	c.loadToken(token)
 	return c
 }
 
 // NewGiteaClient creates a client for a Gitea-compatible service such as Forgejo.
-func NewGiteaClient(baseURL, token, owner, service string) *Client {
+func NewGiteaClient(baseURL, token, owner, service string, ownerType forge.OwnerType) *Client {
+	if ownerType == "" {
+		ownerType = forge.OwnerTypeUser
+	}
 	return &Client{
-		baseURL: strings.TrimRight(baseURL, "/"),
-		org:     owner,
-		token:   strings.TrimSpace(token),
-		service: service,
+		baseURL:   strings.TrimRight(baseURL, "/"),
+		org:       owner,
+		token:     strings.TrimSpace(token),
+		service:   service,
+		ownerType: ownerType,
 	}
 }
 
 // NewForgejoClient creates a Forgejo client using protected token sources.
 // FORGEJO_TOKEN takes precedence over ~/.gitsyncer_forgejo_token.
-func NewForgejoClient(baseURL, owner string) *Client {
-	return NewGiteaClient(baseURL, loadForgejoToken(), owner, "Forgejo")
+func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client {
+	return NewGiteaClient(baseURL, loadForgejoToken(), owner, "Forgejo", ownerType)
 }
 
 func loadForgejoToken() string {
@@ -336,6 +342,15 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 
 // CreateRepo creates a new repository on Codeberg
 func (c *Client) CreateRepo(repoName, description string, private bool) error {
+	var url string
+	switch c.ownerType {
+	case forge.OwnerTypeUser:
+		url = fmt.Sprintf("%s/user/repos", c.baseURL)
+	case forge.OwnerTypeOrganization:
+		url = fmt.Sprintf("%s/orgs/%s/repos", c.baseURL, c.org)
+	default:
+		return fmt.Errorf("invalid %s owner type %q", c.service, c.ownerType)
+	}
 	if !c.HasToken() {
 		return fmt.Errorf("%s token required to create repository", c.service)
 	}
@@ -346,8 +361,6 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 	if exists {
 		return nil // Repository already exists
 	}
-
-	url := fmt.Sprintf("%s/user/repos", c.baseURL)
 
 	payload := map[string]interface{}{
 		"name":        repoName,
@@ -414,6 +427,9 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 
 // EnsurePublicRepo creates an absent public repository and rejects unsafe collisions.
 func (c *Client) EnsurePublicRepo(repoName, description string) error {
+	if !c.ownerType.Valid() {
+		return fmt.Errorf("invalid %s owner type %q", c.service, c.ownerType)
+	}
 	if !c.HasToken() {
 		return fmt.Errorf("%s token required to manage backup repository", c.service)
 	}

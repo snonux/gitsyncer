@@ -2,6 +2,21 @@ package forge
 
 import "fmt"
 
+// OwnerType identifies whether a repository owner is a user or organization.
+type OwnerType string
+
+const (
+	// OwnerTypeUser creates repositories for the authenticated user.
+	OwnerTypeUser OwnerType = "user"
+	// OwnerTypeOrganization creates repositories in the named organization.
+	OwnerTypeOrganization OwnerType = "organization"
+)
+
+// Valid reports whether the owner type is supported.
+func (t OwnerType) Valid() bool {
+	return t == OwnerTypeUser || t == OwnerTypeOrganization
+}
+
 // RepoClient defines shared repository lifecycle operations across forges.
 type RepoClient interface {
 	HasToken() bool

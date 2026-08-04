@@ -64,15 +64,16 @@ Array of organization objects. At least one organization must be configured.
   - Only needed for Codeberg organizations
   - Can also be set via environment variable or file
 - **forgejo_api_base** (string, optional): Gitea-compatible API root for a Forgejo backup, such as `https://code.example/api/v1`
-- **forgejo_owner** (string, required with `forgejo_api_base`): User that owns the backup repositories
+- **forgejo_owner** (string, required with `forgejo_api_base`): User or organization that owns the backup repositories
+- **forgejo_owner_type** (`user` or `organization`, optional): Owner kind; defaults to `user` for backward compatibility
 - **backupLocation** (boolean, required for Forgejo): Keeps the destination one-way; it is pushed but never fetched
 - **forcePush** (boolean, optional): Force-update backup branches and tags
 
 Forgejo credentials are read first from `FORGEJO_TOKEN`, then from
 `~/.gitsyncer_forgejo_token`; surrounding whitespace is trimmed. The token needs
-the `write:repository` and `write:user` scopes: Forgejo uses `write:user` for
-creating repositories owned by the configured user and `write:repository` for
-metadata updates. Protect the token file with
+minimal scopes `write:repository` plus `write:user` for a user owner, or
+`write:repository` plus `write:organization` for an organization owner. Protect
+the token file with
 `chmod 600 ~/.gitsyncer_forgejo_token`. Forgejo tokens are not accepted from
 tracked JSON configuration. Forgejo creation is public and uninitialized.
 Existing repositories must belong to the configured owner and must be public.

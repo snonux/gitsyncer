@@ -4,6 +4,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
 func TestValidate_ShowcaseStatsBranchesRejectsEmptyBranch(t *testing.T) {
@@ -79,6 +81,44 @@ func TestValidate_ForgejoMustBeBackupOnly(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "must set backupLocation") {
 		t.Fatalf("Validate() error = %v, want backup-only validation", err)
 	}
+}
+
+func TestValidate_ForgejoOwnerType(t *testing.T) {
+	t.Parallel()
+
+	t.Run("defaults to user", func(t *testing.T) {
+		cfg := &Config{Organizations: []Organization{{
+			Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: "https://forgejo.example/api/v1",
+			ForgejoOwner: "snonux", BackupLocation: true,
+		}}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+		if got := cfg.Organizations[0].ForgejoOwnerType; got != "" {
+			t.Fatalf("ForgejoOwnerType = %q, want omitted value retained", got)
+		}
+	})
+
+	t.Run("accepts organization", func(t *testing.T) {
+		cfg := &Config{Organizations: []Organization{{
+			Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: "https://forgejo.example/api/v1",
+			ForgejoOwner: "snonux", ForgejoOwnerType: forge.OwnerTypeOrganization, BackupLocation: true,
+		}}}
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() error = %v", err)
+		}
+	})
+
+	t.Run("rejects invalid value", func(t *testing.T) {
+		cfg := &Config{Organizations: []Organization{{
+			Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: "https://forgejo.example/api/v1",
+			ForgejoOwner: "snonux", ForgejoOwnerType: "team", BackupLocation: true,
+		}}}
+		err := cfg.Validate()
+		if err == nil || !strings.Contains(err.Error(), "forgejo_owner_type") {
+			t.Fatalf("Validate() error = %v, want owner type validation", err)
+		}
+	})
 }
 
 func TestValidate_ForgejoURLs(t *testing.T) {

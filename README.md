@@ -180,17 +180,20 @@ Forgejo can be used as a first-class, one-way public backup target. Repository c
     "host": "ssh://git@code.f3s.buetow.org:2022",
     "forgejo_api_base": "https://code.f3s.buetow.org/api/v1",
     "forgejo_owner": "snonux",
+    "forgejo_owner_type": "organization",
     "backupLocation": true,
     "forcePush": true
   }]
 }
 ```
 
-Set an API token with the `write:repository` and `write:user` scopes in the
+Set an API token with the minimal scopes for the configured owner type:
+`write:repository` plus `write:organization` for an organization, or
+`write:repository` plus `write:user` for a user. The owner type may be `user`
+(the default for backward compatibility) or `organization`. Store the token in
 protected process environment as `FORGEJO_TOKEN`, or store it in
-`~/.gitsyncer_forgejo_token` with mode `0600`. Forgejo requires `write:user` to
-create a repository owned by the configured user; `write:repository` covers
-repository metadata updates. The environment takes precedence and surrounding
+`~/.gitsyncer_forgejo_token` with mode `0600`. The environment takes precedence;
+surrounding
 whitespace is removed from either source. Never put a Forgejo token in the JSON
 configuration. A repository named `demo` is pushed to
 `ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets are never

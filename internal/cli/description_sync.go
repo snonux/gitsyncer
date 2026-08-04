@@ -159,7 +159,7 @@ func syncBackupDescription(org *config.Organization, repoName, description strin
 			fmt.Printf("  [DRY RUN] Would update Forgejo description for %s on %s -> %q\n", repoName, org.Host, description)
 			return true, nil
 		}
-		client := codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner)
+		client := codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType)
 		if !client.HasToken() {
 			return true, fmt.Errorf("Forgejo token missing: set FORGEJO_TOKEN or create ~/.gitsyncer_forgejo_token")
 		}

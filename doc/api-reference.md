@@ -180,6 +180,7 @@ type Organization struct {
     GitHubToken    string `json:"github_token"`     // Optional GitHub API token
     ForgejoAPIBase string `json:"forgejo_api_base"` // Gitea-compatible API root
     ForgejoOwner   string `json:"forgejo_owner"`    // Forgejo backup owner
+    ForgejoOwnerType forge.OwnerType `json:"forgejo_owner_type"` // user (default) or organization
     BackupLocation bool   `json:"backupLocation"`   // One-way destination
     ForcePush      bool   `json:"forcePush"`        // Force backup branches/tags
 }
@@ -224,11 +225,12 @@ Returns true if organization host contains "codeberg.org".
 #### func (o *Organization) IsForgejo() bool
 Returns true when a Forgejo API base is configured. Forgejo organizations must be backup-only.
 
-#### func NewForgejoClient(baseURL, owner string) *Client
+#### func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client
 Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling
 back to the trimmed contents of `~/.gitsyncer_forgejo_token`. It requires the
-`write:repository` and `write:user` scopes to update and create public backup
-repositories. Forgejo tokens are never read from JSON configuration.
+`write:repository` plus `write:user` for a user owner, or `write:repository` plus
+`write:organization` for an organization owner. Forgejo tokens are never read
+from JSON configuration.
 
 #### func (c *Config) FindCodebergOrg() *Organization
 Finds first Codeberg organization in config.
