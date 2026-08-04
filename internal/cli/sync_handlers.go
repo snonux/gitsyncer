@@ -258,7 +258,7 @@ func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, facto
 	}
 
 	if !flags.DryRun {
-		return syncCodebergRepos(cfg, flags, repos, repoNames)
+		return syncCodebergRepos(cfg, flags, repos, repoNames, factory)
 	}
 
 	return 0
@@ -328,7 +328,7 @@ func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory
 	}
 
 	if !flags.DryRun {
-		return syncGitHubRepos(cfg, flags, repos, repoNames)
+		return syncGitHubRepos(cfg, flags, repos, repoNames, factory)
 	}
 
 	return 0
@@ -587,11 +587,11 @@ func printDeleteScript(syncer *sync.Syncer) {
 	}
 }
 
-func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string) int {
+func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string, factory repoClientFactory) int {
 	// Initialize GitHub client if needed
 	var githubClient forge.RepoClient
-	if flags.CreateGitHubRepos {
-		githubClient = initGitHubClient(cfg)
+	if flags.CreateGitHubRepos && !flags.DryRun {
+		githubClient = initGitHubClientWithFactory(cfg, factory)
 	}
 
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
@@ -654,11 +654,11 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 	return 0
 }
 
-func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string) int {
+func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string, factory repoClientFactory) int {
 	// Initialize Codeberg client if needed
 	var codebergClient forge.RepoClient
-	if flags.CreateCodebergRepos {
-		codebergClient = initCodebergClient(cfg)
+	if flags.CreateCodebergRepos && !flags.DryRun {
+		codebergClient = initCodebergClientWithFactory(cfg, factory)
 	}
 
 	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))

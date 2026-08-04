@@ -328,6 +328,42 @@ func TestCreateRepoHelpersWithFactory_DryRunDispatchesNoMutations(t *testing.T) 
 	}
 }
 
+func TestSyncCodebergRepos_DryRunCreateReposDispatchesNoMutations(t *testing.T) {
+	t.Parallel()
+
+	client := &stubDescriptionRepoClient{hasToken: true}
+	factory := &stubRepoClientFactory{githubRepoClient: client}
+	flags := &Flags{DryRun: true, CreateGitHubRepos: true, WorkDir: t.TempDir()}
+
+	if got := syncCodebergRepos(&config.Config{}, flags, nil, []string{"demo"}, factory); got != 0 {
+		t.Fatalf("syncCodebergRepos() = %d, want 0", got)
+	}
+	if factory.githubRepoCalls != 0 {
+		t.Fatalf("dry run initialized %d GitHub mutation clients, want 0", factory.githubRepoCalls)
+	}
+	if len(client.createCalls) != 0 {
+		t.Fatalf("dry run dispatched %d GitHub create calls, want 0", len(client.createCalls))
+	}
+}
+
+func TestSyncGitHubRepos_DryRunCreateReposDispatchesNoMutations(t *testing.T) {
+	t.Parallel()
+
+	client := &stubDescriptionRepoClient{hasToken: true}
+	factory := &stubRepoClientFactory{codebergRepoClient: client}
+	flags := &Flags{DryRun: true, CreateCodebergRepos: true, WorkDir: t.TempDir()}
+
+	if got := syncGitHubRepos(&config.Config{}, flags, nil, []string{"demo"}, factory); got != 0 {
+		t.Fatalf("syncGitHubRepos() = %d, want 0", got)
+	}
+	if factory.codebergRepoCalls != 0 {
+		t.Fatalf("dry run initialized %d Codeberg mutation clients, want 0", factory.codebergRepoCalls)
+	}
+	if len(client.createCalls) != 0 {
+		t.Fatalf("dry run dispatched %d Codeberg create calls, want 0", len(client.createCalls))
+	}
+}
+
 func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 	t.Parallel()
 
