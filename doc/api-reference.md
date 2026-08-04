@@ -225,7 +225,10 @@ Returns true if organization host contains "codeberg.org".
 Returns true when a Forgejo API base is configured. Forgejo organizations must be backup-only.
 
 #### func NewForgejoClient(baseURL, owner string) *Client
-Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling back to the trimmed contents of `~/.gitsyncer_forgejo_token`. Forgejo tokens are never read from JSON configuration.
+Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling
+back to the trimmed contents of `~/.gitsyncer_forgejo_token`. It requires the
+`write:repository` and `write:user` scopes to update and create public backup
+repositories. Forgejo tokens are never read from JSON configuration.
 
 #### func (c *Config) FindCodebergOrg() *Organization
 Finds first Codeberg organization in config.
