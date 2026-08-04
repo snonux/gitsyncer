@@ -90,7 +90,17 @@ func loadForgejoToken() string {
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(home, ".gitsyncer_forgejo_token"))
+	tokenFile, err := os.Open(filepath.Join(home, ".gitsyncer_forgejo_token"))
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = tokenFile.Close() }()
+
+	info, err := tokenFile.Stat()
+	if err != nil || info.Mode().Perm()&0077 != 0 {
+		return ""
+	}
+	data, err := io.ReadAll(tokenFile)
 	if err != nil {
 		return ""
 	}

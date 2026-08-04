@@ -90,6 +90,28 @@ func TestNewForgejoClient_LoadsProtectedToken(t *testing.T) {
 	})
 }
 
+func TestNewForgejoClient_AcceptsOwnerOnlyTokenFileModes(t *testing.T) {
+	for _, mode := range []os.FileMode{0600, 0400} {
+		t.Run(mode.String(), func(t *testing.T) {
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+			t.Setenv("FORGEJO_TOKEN", "")
+			tokenFile := filepath.Join(home, ".gitsyncer_forgejo_token")
+			if err := os.WriteFile(tokenFile, []byte("file-token"), mode); err != nil {
+				t.Fatalf("write token file: %v", err)
+			}
+			if err := os.Chmod(tokenFile, mode); err != nil {
+				t.Fatalf("set token file mode: %v", err)
+			}
+
+			client := NewForgejoClient("https://forgejo.example/api/v1", "owner")
+			if client.token != "file-token" {
+				t.Fatalf("loaded token = %q, want file token", client.token)
+			}
+		})
+	}
+}
+
 func TestNewForgejoClient_WhitespaceOnlyFileHasNoToken(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
@@ -111,6 +133,15 @@ func TestNewForgejoClient_MissingOrUnreadableFileHasNoToken(t *testing.T) {
 		setup func(*testing.T, string)
 	}{
 		{name: "missing"},
+		{name: "group or other permissions", setup: func(t *testing.T, home string) {
+			tokenFile := filepath.Join(home, ".gitsyncer_forgejo_token")
+			if err := os.WriteFile(tokenFile, []byte("file-token"), 0644); err != nil {
+				t.Fatalf("write token file: %v", err)
+			}
+			if err := os.Chmod(tokenFile, 0644); err != nil {
+				t.Fatalf("set token file mode: %v", err)
+			}
+		}},
 		{name: "unreadable", setup: func(t *testing.T, home string) {
 			if err := os.Mkdir(filepath.Join(home, ".gitsyncer_forgejo_token"), 0700); err != nil {
 				t.Fatalf("create unreadable token path: %v", err)
@@ -133,8 +164,8 @@ func TestNewForgejoClient_MissingOrUnreadableFileHasNoToken(t *testing.T) {
 				t.Fatal("HasToken() = true, want false")
 			}
 			err := client.EnsurePublicRepo("demo", "")
-			if err == nil || strings.Contains(err.Error(), home) {
-				t.Fatalf("missing-token error = %q, want generic error without credential path", err)
+			if err == nil || strings.Contains(err.Error(), home) || strings.Contains(err.Error(), "file-token") {
+				t.Fatalf("missing-token error = %q, want generic error without credential details", err)
 			}
 		})
 	}
