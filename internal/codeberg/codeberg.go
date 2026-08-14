@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -41,15 +40,6 @@ type Client struct {
 
 var _ forge.RepoClient = (*Client)(nil)
 var _ forge.RepoDescriptionClient = (*Client)(nil)
-
-// closeResponseBody closes an HTTP response body. By the time this runs the
-// body has already been fully read (or the caller is bailing out on an
-// earlier error), so a close failure here cannot change the outcome that was
-// already determined - the error is intentionally discarded rather than
-// treated as actionable.
-func closeResponseBody(resp *http.Response) {
-	_ = resp.Body.Close()
-}
 
 // NewClient creates a new Codeberg API client
 func NewClient(token, org string) *Client {
@@ -110,30 +100,24 @@ func (c *Client) HasToken() bool {
 func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 	var repo Repository
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return repo, false, err
-	}
-	defer cancel()
+	headers := map[string]string{}
 	if c.HasToken() {
-		req.Header.Set("Authorization", "token "+c.token)
+		headers["Authorization"] = "token " + c.token
 	}
 
-	resp, err := httpclient.Do(req)
+	result, err := httpclient.DoJSON(http.MethodGet, url, headers, nil)
 	if err != nil {
 		return repo, false, err
 	}
-	defer closeResponseBody(resp)
 
-	if resp.StatusCode == 404 {
+	if result.StatusCode == http.StatusNotFound {
 		return repo, false, nil
 	}
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return repo, false, fmt.Errorf("failed to get repo: status %d: %s", resp.StatusCode, string(body))
+	if result.StatusCode != http.StatusOK {
+		return repo, false, fmt.Errorf("failed to get repo: status %d: %s", result.StatusCode, string(result.Body))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
+	if err := json.Unmarshal(result.Body, &repo); err != nil {
 		return repo, false, fmt.Errorf("failed to parse response: %w", err)
 	}
 	return repo, true, nil
@@ -163,23 +147,16 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 		return err
 	}
 
-	req, cancel, err := httpclient.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
+	result, err := httpclient.DoJSON(http.MethodPatch, url, map[string]string{
+		"Content-Type":  "application/json",
+		"Authorization": "token " + c.token,
+	}, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
-	defer cancel()
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Authorization", "token "+c.token)
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != http.StatusOK {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to update Codeberg description: %s - %s", resp.Status, string(b))
+	if result.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update Codeberg description: %s - %s", result.Status, string(result.Body))
 	}
 	return nil
 }
@@ -258,24 +235,17 @@ func GetRepoNames(repos []Repository) []string {
 }
 
 func (c *Client) listReposPage(url string) ([]Repository, error) {
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
-	resp, err := httpclient.Do(req)
+	result, err := httpclient.DoJSON(http.MethodGet, url, nil, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to fetch repositories: %w", err)
 	}
-	defer closeResponseBody(resp)
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("API returned status %d", resp.StatusCode)
+	if result.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("API returned status %d", result.StatusCode)
 	}
 
 	var repos []Repository
-	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+	if err := json.Unmarshal(result.Body, &repos); err != nil {
 		return nil, fmt.Errorf("failed to parse response: %w", err)
 	}
 
@@ -285,35 +255,38 @@ func (c *Client) listReposPage(url string) ([]Repository, error) {
 // RepoExists checks if a repository exists on Codeberg
 func (c *Client) RepoExists(repoName string) (bool, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return false, err
-	}
-	defer cancel()
-
+	headers := map[string]string{}
 	if c.HasToken() {
-		req.Header.Set("Authorization", "token "+c.token)
+		headers["Authorization"] = "token " + c.token
 	}
 
-	resp, err := httpclient.Do(req)
+	result, err := httpclient.DoJSON(http.MethodGet, url, headers, nil)
 	if err != nil {
 		return false, err
 	}
-	defer closeResponseBody(resp)
 
-	return resp.StatusCode == 200, nil
+	return result.StatusCode == http.StatusOK, nil
+}
+
+// createRepoURL resolves the create-repository endpoint for this client's
+// owner type: a Codeberg/Gitea user account and an organization use
+// different endpoints.
+func (c *Client) createRepoURL() (string, error) {
+	switch c.ownerType {
+	case forge.OwnerTypeUser:
+		return fmt.Sprintf("%s/user/repos", c.baseURL), nil
+	case forge.OwnerTypeOrganization:
+		return fmt.Sprintf("%s/orgs/%s/repos", c.baseURL, c.org), nil
+	default:
+		return "", fmt.Errorf("invalid %s owner type %q", c.service, c.ownerType)
+	}
 }
 
 // CreateRepo creates a new repository on Codeberg
 func (c *Client) CreateRepo(repoName, description string, private bool) error {
-	var url string
-	switch c.ownerType {
-	case forge.OwnerTypeUser:
-		url = fmt.Sprintf("%s/user/repos", c.baseURL)
-	case forge.OwnerTypeOrganization:
-		url = fmt.Sprintf("%s/orgs/%s/repos", c.baseURL, c.org)
-	default:
-		return fmt.Errorf("invalid %s owner type %q", c.service, c.ownerType)
+	url, err := c.createRepoURL()
+	if err != nil {
+		return err
 	}
 	if !c.HasToken() {
 		return fmt.Errorf("%s token required to create repository", c.service)
@@ -326,6 +299,16 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return nil // Repository already exists
 	}
 
+	return c.postCreateRepo(url, repoName, description, private)
+}
+
+// postCreateRepo sends the create-repository POST and validates the
+// response: an unexpected owner on the created repo, or an unexpectedly
+// private result, are both reported as errors so callers don't have to
+// re-check what they asked for. Split out of CreateRepo so the
+// existence-check flow and the HTTP round trip each stay close to the
+// ~30-line guideline.
+func (c *Client) postCreateRepo(url, repoName, description string, private bool) error {
 	payload := map[string]interface{}{
 		"name":        repoName,
 		"description": description,
@@ -338,45 +321,22 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return err
 	}
 
-	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(body))
-	if err != nil {
-		return err
-	}
-	defer cancel()
-
-	req.Header.Set("Content-Type", "application/json")
+	headers := map[string]string{"Content-Type": "application/json"}
 	if c.HasToken() {
-		req.Header.Set("Authorization", "token "+c.token)
+		headers["Authorization"] = "token " + c.token
 	}
 
-	resp, err := httpclient.Do(req)
+	result, err := httpclient.DoJSON(http.MethodPost, url, headers, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
-	defer closeResponseBody(resp)
 
-	if resp.StatusCode != http.StatusCreated {
-		// Read the response body to get more detailed error information
-		body, err := io.ReadAll(resp.Body)
-		if err != nil {
-			return fmt.Errorf("failed to create repository: status code %d (could not read response)", resp.StatusCode)
-		}
-
-		// Try to parse as JSON error response
-		var errorResp map[string]interface{}
-		if err := json.Unmarshal(body, &errorResp); err == nil {
-			// If we can parse the JSON, extract the message
-			if msg, ok := errorResp["message"].(string); ok {
-				return fmt.Errorf("failed to create repository: %s (status code %d)", msg, resp.StatusCode)
-			}
-		}
-
-		// If we can't parse JSON, return the raw response
-		return fmt.Errorf("failed to create repository: %s (status code %d)", string(body), resp.StatusCode)
+	if result.StatusCode != http.StatusCreated {
+		return createRepoError(result.StatusCode, result.Body)
 	}
 
 	var created Repository
-	if err := json.NewDecoder(resp.Body).Decode(&created); err != nil {
+	if err := json.Unmarshal(result.Body, &created); err != nil {
 		return fmt.Errorf("failed to validate created %s repository: %w", c.service, err)
 	}
 	if created.Name != repoName || created.FullName != c.org+"/"+repoName {
@@ -387,6 +347,19 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 	}
 
 	return nil
+}
+
+// createRepoError builds the error for a non-201 create-repository response,
+// preferring the API's own JSON error message when the body decodes.
+func createRepoError(statusCode int, body []byte) error {
+	var errorResp map[string]interface{}
+	if err := json.Unmarshal(body, &errorResp); err == nil {
+		if msg, ok := errorResp["message"].(string); ok {
+			return fmt.Errorf("failed to create repository: %s (status code %d)", msg, statusCode)
+		}
+	}
+
+	return fmt.Errorf("failed to create repository: %s (status code %d)", string(body), statusCode)
 }
 
 // EnsurePublicRepo creates an absent public repository and rejects unsafe collisions.
@@ -425,20 +398,12 @@ func (c *Client) DeleteRepo(repoName string) error {
 
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
 
-	req, cancel, err := httpclient.NewRequest(http.MethodDelete, url, nil)
+	result, err := httpclient.DoJSON(http.MethodDelete, url, map[string]string{
+		"Authorization": "token " + c.token,
+	}, nil)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "token "+c.token)
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	body, _ := io.ReadAll(resp.Body)
-	return forge.DeleteStatusError(resp.StatusCode, string(body))
+	return forge.DeleteStatusError(result.StatusCode, string(result.Body))
 }

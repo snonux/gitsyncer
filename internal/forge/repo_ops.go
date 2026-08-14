@@ -1,6 +1,9 @@
 package forge
 
-import "fmt"
+import (
+	"fmt"
+	"net/http"
+)
 
 // OwnerType identifies whether a repository owner is a user or organization.
 type OwnerType string
@@ -82,11 +85,11 @@ func EnsureRepoExists(org, repoName string, existsFn RepoExistsFunc) error {
 // DeleteStatusError maps common forge delete status codes into stable errors.
 func DeleteStatusError(statusCode int, body string) error {
 	switch statusCode {
-	case 204, 404:
+	case http.StatusNoContent, http.StatusNotFound:
 		return nil
-	case 403:
+	case http.StatusForbidden:
 		return fmt.Errorf("permission denied (403): %s", body)
-	case 401:
+	case http.StatusUnauthorized:
 		return fmt.Errorf("authentication failed (401): %s", body)
 	default:
 		return fmt.Errorf("failed to delete repository: status %d: %s", statusCode, body)

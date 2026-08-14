@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -41,15 +40,21 @@ func (c *Client) repoURL(owner, repo string) string {
 	return fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repo)
 }
 
-// authRequest attaches the standard Gitea/Codeberg auth + content headers.
-func (c *Client) authRequest(req *http.Request, contentType bool) {
+// authHeaders returns the standard Gitea/Codeberg auth + content headers for
+// a DoJSON call. contentType indicates whether the request carries a JSON
+// body that needs Content-Type: application/json set. This replaces the
+// former authRequest(req, bool), which mutated an *http.Request directly;
+// DoJSON takes a headers map instead of a pre-built request, so the helper
+// now builds and returns one.
+func (c *Client) authHeaders(contentType bool) map[string]string {
+	headers := map[string]string{"Accept": "application/json"}
 	if c.token != "" {
-		req.Header.Set("Authorization", "token "+c.token)
+		headers["Authorization"] = "token " + c.token
 	}
 	if contentType {
-		req.Header.Set("Content-Type", "application/json")
+		headers["Content-Type"] = "application/json"
 	}
-	req.Header.Set("Accept", "application/json")
+	return headers
 }
 
 // GetReleases fetches the tag names of existing releases for the repository.
@@ -57,29 +62,20 @@ func (c *Client) authRequest(req *http.Request, contentType bool) {
 // the caller can treat it as "no releases yet" instead of an error.
 func (c *Client) GetReleases(owner, repo string) ([]string, error) {
 	url := c.releasesURL(owner, repo)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, url, c.authHeaders(false), nil)
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
-	c.authRequest(req, false)
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode == 404 {
+	if result.StatusCode == http.StatusNotFound {
 		return []string{}, nil
 	}
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("%s API error: %s - %s", c.service, resp.Status, string(body))
+	if result.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%s API error: %s - %s", c.service, result.Status, string(result.Body))
 	}
 
 	var releases []codebergRelease
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	if err := json.Unmarshal(result.Body, &releases); err != nil {
 		return nil, err
 	}
 
@@ -115,25 +111,16 @@ func (c *Client) EnsureReleasesEnabled(owner, repo string) error {
 // releases are currently enabled.
 func (c *Client) fetchReleaseSettings(infoURL string) (repoReleaseSettings, error) {
 	var settings repoReleaseSettings
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, infoURL, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, infoURL, c.authHeaders(false), nil)
 	if err != nil {
 		return settings, err
 	}
-	defer cancel()
-	c.authRequest(req, false)
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return settings, err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return settings, fmt.Errorf("failed to get repo info: %s - %s", resp.Status, string(body))
+	if result.StatusCode != http.StatusOK {
+		return settings, fmt.Errorf("failed to get repo info: %s - %s", result.Status, string(result.Body))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&settings); err != nil {
+	if err := json.Unmarshal(result.Body, &settings); err != nil {
 		return settings, fmt.Errorf("failed to parse repo info: %w", err)
 	}
 	return settings, nil
@@ -145,22 +132,13 @@ func (c *Client) enableReleases(infoURL string) error {
 	if err != nil {
 		return err
 	}
-	req, cancel, err := httpclient.NewRequest(http.MethodPatch, infoURL, bytes.NewBuffer(payload))
+	result, err := httpclient.DoJSON(http.MethodPatch, infoURL, c.authHeaders(true), bytes.NewBuffer(payload))
 	if err != nil {
 		return err
 	}
-	defer cancel()
-	c.authRequest(req, true)
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to enable releases: %s - %s", resp.Status, string(body))
+	if result.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to enable releases: %s - %s", result.Status, string(result.Body))
 	}
 	return nil
 }
@@ -169,20 +147,11 @@ func (c *Client) enableReleases(infoURL string) error {
 // status code, the full status string (e.g. "422 Unprocessable Entity"), and
 // the raw body. It does not retry; the caller decides how to react.
 func (c *Client) postRelease(url string, jsonData []byte) (int, string, []byte, error) {
-	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	result, err := httpclient.DoJSON(http.MethodPost, url, c.authHeaders(true), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return 0, "", nil, err
 	}
-	defer cancel()
-	c.authRequest(req, true)
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return 0, "", nil, err
-	}
-	defer closeResponseBody(resp)
-	body, _ := io.ReadAll(resp.Body)
-	return resp.StatusCode, resp.Status, body, nil
+	return result.StatusCode, result.Status, result.Body, nil
 }
 
 // CreateRelease creates a release for the given tag on Codeberg/Gitea. The
@@ -219,14 +188,14 @@ func (c *Client) CreateRelease(owner, repo, tag, releaseNotes string) error {
 		return err
 	}
 
-	if status == 201 {
+	if status == http.StatusCreated {
 		return nil
 	}
 
 	switch {
-	case status == 404:
+	case status == http.StatusNotFound:
 		return c.handleCreate404(owner, repo, url, jsonData, respBody)
-	case status == 409 && strings.Contains(string(respBody), "Release is has no Tag"):
+	case status == http.StatusConflict && strings.Contains(string(respBody), "Release is has no Tag"):
 		fmt.Printf("\nWARNING: %s/Gitea returned 'Release is has no Tag' error for tag %s\n", c.service, tag)
 		fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
 		fmt.Printf("You may need to create this release manually through the %s web interface.\n\n", c.service)
@@ -250,45 +219,35 @@ func (c *Client) CreateRelease(owner, repo, tag, releaseNotes string) error {
 // matching the original inline implementation.
 func (c *Client) handleCreate404(owner, repo, url string, jsonData []byte, respBody []byte) error {
 	probeURL := c.repoURL(owner, repo)
-	probeReq, probeCancel, perr := httpclient.NewRequest(http.MethodGet, probeURL, nil)
-	if perr == nil {
-		defer probeCancel()
-		c.authRequest(probeReq, false)
-		probeResp, perr2 := httpclient.Do(probeReq)
-		if perr2 == nil {
-			defer closeResponseBody(probeResp)
-			if probeResp.StatusCode == 200 {
-				var repoInfo struct {
-					HasReleases bool `json:"has_releases"`
-				}
-				if data, rerr := io.ReadAll(probeResp.Body); rerr == nil {
-					_ = json.Unmarshal(data, &repoInfo) // best-effort; ignore decode errors
-				}
-				if !repoInfo.HasReleases {
-					// Releases are disabled: enable them and retry creation once.
-					if err := c.enableReleases(probeURL); err != nil {
-						return fmt.Errorf(
-							"failed to create %s release: releases are disabled for %s/%s and enabling via API failed: %w. Raw response: %s",
-							c.service, owner, repo, err, string(respBody),
-						)
-					}
-					retryStatus, retryStatusText, retryBody, err := c.postRelease(url, jsonData)
-					if err != nil {
-						return err
-					}
-					if retryStatus != 201 {
-						return fmt.Errorf("failed to create %s release after enabling releases: %s - %s", c.service, retryStatusText, string(retryBody))
-					}
-					return nil
-				}
-				// Repo exists and has releases enabled; a 404 here points at a
-				// permission scope problem rather than a missing repository.
+	probeResult, perr := httpclient.DoJSON(http.MethodGet, probeURL, c.authHeaders(false), nil)
+	if perr == nil && probeResult.StatusCode == http.StatusOK {
+		var repoInfo struct {
+			HasReleases bool `json:"has_releases"`
+		}
+		_ = json.Unmarshal(probeResult.Body, &repoInfo) // best-effort; ignore decode errors
+		if !repoInfo.HasReleases {
+			// Releases are disabled: enable them and retry creation once.
+			if err := c.enableReleases(probeURL); err != nil {
 				return fmt.Errorf(
-					"failed to create %s release: repo %s/%s exists but returned 404 on release creation. This usually indicates the token lacks write permissions to this repository or owner. Ensure the token belongs to '%s' (or a collaborator/maintainer) and has repository write access. Raw response: %s",
-					c.service, owner, repo, owner, string(respBody),
+					"failed to create %s release: releases are disabled for %s/%s and enabling via API failed: %w. Raw response: %s",
+					c.service, owner, repo, err, string(respBody),
 				)
 			}
+			retryStatus, retryStatusText, retryBody, err := c.postRelease(url, jsonData)
+			if err != nil {
+				return err
+			}
+			if retryStatus != http.StatusCreated {
+				return fmt.Errorf("failed to create %s release after enabling releases: %s - %s", c.service, retryStatusText, string(retryBody))
+			}
+			return nil
 		}
+		// Repo exists and has releases enabled; a 404 here points at a
+		// permission scope problem rather than a missing repository.
+		return fmt.Errorf(
+			"failed to create %s release: repo %s/%s exists but returned 404 on release creation. This usually indicates the token lacks write permissions to this repository or owner. Ensure the token belongs to '%s' (or a collaborator/maintainer) and has repository write access. Raw response: %s",
+			c.service, owner, repo, owner, string(respBody),
+		)
 	}
 
 	// The probe either failed to reach the API or returned a non-200 (most
@@ -307,34 +266,41 @@ func (c *Client) UpdateRelease(owner, repo, tag, releaseNotes string) error {
 		return fmt.Errorf("%s token is required for updating releases", c.service)
 	}
 
-	// First, look up the release id by tag.
+	releaseID, err := c.releaseIDForTag(owner, repo, tag)
+	if err != nil {
+		return err
+	}
+
+	return c.patchRelease(owner, repo, releaseID, tag, releaseNotes)
+}
+
+// releaseIDForTag looks up the numeric release id for a tag, since the
+// Gitea update endpoint is keyed by id rather than tag name.
+func (c *Client) releaseIDForTag(owner, repo, tag string) (int64, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s/releases/tags/%s", c.baseURL, owner, repo, tag)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, url, c.authHeaders(false), nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer cancel()
-	c.authRequest(req, false)
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to get release: %s - %s", resp.Status, string(body))
+	if result.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("failed to get release: %s - %s", result.Status, string(result.Body))
 	}
 
 	var releaseInfo struct {
 		ID int64 `json:"id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil {
-		return err
+	if err := json.Unmarshal(result.Body, &releaseInfo); err != nil {
+		return 0, err
 	}
+	return releaseInfo.ID, nil
+}
 
-	updateURL := fmt.Sprintf("%s/repos/%s/%s/releases/%d", c.baseURL, owner, repo, releaseInfo.ID)
+// patchRelease sends the actual release-body update for a known release id.
+// Split out of UpdateRelease so the id lookup and the patch each stay close
+// to the ~30-line guideline.
+func (c *Client) patchRelease(owner, repo string, releaseID int64, tag, releaseNotes string) error {
+	updateURL := fmt.Sprintf("%s/repos/%s/%s/releases/%d", c.baseURL, owner, repo, releaseID)
 	release := codebergRelease{
 		TagName: tag,
 		Name:    tag,
@@ -346,22 +312,13 @@ func (c *Client) UpdateRelease(owner, repo, tag, releaseNotes string) error {
 		return err
 	}
 
-	updateReq, updateCancel, err := httpclient.NewRequest(http.MethodPatch, updateURL, bytes.NewBuffer(jsonData))
+	updateResult, err := httpclient.DoJSON(http.MethodPatch, updateURL, c.authHeaders(true), bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
-	defer updateCancel()
-	c.authRequest(updateReq, true)
 
-	updateResp, err := httpclient.Do(updateReq)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(updateResp)
-
-	if updateResp.StatusCode != 200 {
-		body, _ := io.ReadAll(updateResp.Body)
-		return fmt.Errorf("failed to update %s release: %s - %s", c.service, updateResp.Status, string(body))
+	if updateResult.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update %s release: %s - %s", c.service, updateResult.Status, string(updateResult.Body))
 	}
 	return nil
 }

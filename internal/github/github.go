@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
@@ -20,15 +19,6 @@ type Client struct {
 
 var _ forge.RepoClient = (*Client)(nil)
 var _ forge.RepoDescriptionClient = (*Client)(nil)
-
-// closeResponseBody closes an HTTP response body. By the time this runs the
-// body has already been fully read (or the caller is bailing out on an
-// earlier error), so a close failure here cannot change the outcome that was
-// already determined - the error is intentionally discarded rather than
-// treated as actionable.
-func closeResponseBody(resp *http.Response) {
-	_ = resp.Body.Close()
-}
 
 // NewClient creates a new GitHub API client
 func NewClient(token, org string) *Client {
@@ -83,33 +73,25 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
 	fmt.Printf("  Checking URL: %s\n", url)
 
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+	}, nil)
 	if err != nil {
 		return false, err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return false, err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode == 200 {
+	switch result.StatusCode {
+	case http.StatusOK:
 		return true, nil
-	} else if resp.StatusCode == 404 {
+	case http.StatusNotFound:
 		return false, nil
-	} else if resp.StatusCode == 401 {
-		// Read the response body for 401 errors
-		body, _ := io.ReadAll(resp.Body)
-		fmt.Printf("  401 Unauthorized - Response: %s\n", string(body))
-		return false, fmt.Errorf("authentication failed (401): %s", string(body))
+	case http.StatusUnauthorized:
+		fmt.Printf("  401 Unauthorized - Response: %s\n", string(result.Body))
+		return false, fmt.Errorf("authentication failed (401): %s", string(result.Body))
 	}
 
-	return false, fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	return false, fmt.Errorf("unexpected status code: %d", result.StatusCode)
 }
 
 // CreateRepo creates a new repository
@@ -130,6 +112,13 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return nil
 	}
 
+	return c.createRepoRequest(repoName, description, private)
+}
+
+// createRepoRequest sends the create-repository POST and interprets the
+// response. Split out of CreateRepo (which handles the existence check and
+// early return) so each function stays close to the ~30-line guideline.
+func (c *Client) createRepoRequest(repoName, description string, private bool) error {
 	url := "https://api.github.com/user/repos"
 
 	reqBody := CreateRepoRequest{
@@ -144,42 +133,40 @@ func (c *Client) CreateRepo(repoName, description string, private bool) error {
 		return err
 	}
 
-	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonBody))
+	result, err := httpclient.DoJSON(http.MethodPost, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+		"Content-Type":  "application/json",
+	}, bytes.NewBuffer(jsonBody))
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Content-Type", "application/json")
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode == 201 {
+	if result.StatusCode == http.StatusCreated {
 		var createResp CreateRepoResponse
-		if err := json.NewDecoder(resp.Body).Decode(&createResp); err != nil {
+		if err := json.Unmarshal(result.Body, &createResp); err != nil {
 			return fmt.Errorf("failed to parse response: %w", err)
 		}
 		fmt.Printf("Created GitHub repository: %s\n", createResp.FullName)
 		return nil
 	}
 
-	// Handle error response
+	return createRepoError(result.StatusCode, result.Body)
+}
+
+// createRepoError builds the error for a non-201 create-repository response,
+// preferring the GitHub API's own error message when the body decodes.
+func createRepoError(statusCode int, body []byte) error {
 	var errResp ErrorResponse
-	if err := json.NewDecoder(resp.Body).Decode(&errResp); err != nil {
-		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	if err := json.Unmarshal(body, &errResp); err != nil {
+		return fmt.Errorf("unexpected status code: %d", statusCode)
 	}
 
 	if errResp.Message != "" {
 		return fmt.Errorf("GitHub API error: %s", errResp.Message)
 	}
 
-	return fmt.Errorf("failed to create repository: status %d", resp.StatusCode)
+	return fmt.Errorf("failed to create repository: status %d", statusCode)
 }
 
 // HasToken returns whether a token is configured
@@ -196,29 +183,22 @@ func (c *Client) GetRepo(repoName string) (Repository, bool, error) {
 	}
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+	}, nil)
 	if err != nil {
 		return repo, false, err
 	}
-	defer cancel()
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return repo, false, err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode == 404 {
+	if result.StatusCode == http.StatusNotFound {
 		return repo, false, nil
 	}
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return repo, false, fmt.Errorf("failed to get repo: status %d: %s", resp.StatusCode, string(body))
+	if result.StatusCode != http.StatusOK {
+		return repo, false, fmt.Errorf("failed to get repo: status %d: %s", result.StatusCode, string(result.Body))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(&repo); err != nil {
+	if err := json.Unmarshal(result.Body, &repo); err != nil {
 		return repo, false, fmt.Errorf("failed to decode repo: %w", err)
 	}
 	return repo, true, nil
@@ -248,24 +228,17 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 		return err
 	}
 
-	req, cancel, err := httpclient.NewRequest(http.MethodPatch, url, bytes.NewBuffer(body))
+	result, err := httpclient.DoJSON(http.MethodPatch, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+		"Content-Type":  "application/json",
+	}, bytes.NewBuffer(body))
 	if err != nil {
 		return err
 	}
-	defer cancel()
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-	req.Header.Set("Content-Type", "application/json")
 
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		b, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to update GitHub description: %s - %s", resp.Status, string(b))
+	if result.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update GitHub description: %s - %s", result.Status, string(result.Body))
 	}
 	return nil
 }
@@ -318,28 +291,20 @@ func (c *Client) ListPublicRepos() ([]Repository, error) {
 }
 
 func (c *Client) listPublicReposPage(url string) ([]Repository, error) {
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+	}, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return nil, err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("failed to list repos: status %d: %s", resp.StatusCode, string(body))
+	if result.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("failed to list repos: status %d: %s", result.StatusCode, string(result.Body))
 	}
 
 	var repos []Repository
-	if err := json.NewDecoder(resp.Body).Decode(&repos); err != nil {
+	if err := json.Unmarshal(result.Body, &repos); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -367,21 +332,13 @@ func (c *Client) DeleteRepo(repoName string) error {
 
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s", c.org, repoName)
 
-	req, cancel, err := httpclient.NewRequest(http.MethodDelete, url, nil)
+	result, err := httpclient.DoJSON(http.MethodDelete, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+	}, nil)
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", "application/vnd.github.v3+json")
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	body, _ := io.ReadAll(resp.Body)
-	return forge.DeleteStatusError(resp.StatusCode, string(body))
+	return forge.DeleteStatusError(result.StatusCode, string(result.Body))
 }

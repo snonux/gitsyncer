@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 
 	"codeberg.org/snonux/gitsyncer/internal/forge"
@@ -32,34 +31,26 @@ const githubAccept = "application/vnd.github.v3+json"
 // unauthenticated rate-limited access).
 func (c *Client) GetReleases(owner, repo string) ([]string, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
-	if err != nil {
-		return nil, err
-	}
-	defer cancel()
-
+	headers := map[string]string{"Accept": githubAccept}
 	// Add GitHub token if available
 	if c.token != "" {
-		req.Header.Set("Authorization", "Bearer "+c.token)
+		headers["Authorization"] = "Bearer " + c.token
 	}
-	req.Header.Set("Accept", githubAccept)
 
-	resp, err := httpclient.Do(req)
+	result, err := httpclient.DoJSON(http.MethodGet, url, headers, nil)
 	if err != nil {
 		return nil, err
 	}
-	defer closeResponseBody(resp)
 
-	if resp.StatusCode == 404 {
+	if result.StatusCode == http.StatusNotFound {
 		return []string{}, nil
 	}
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("GitHub API error: %s - %s", resp.Status, string(body))
+	if result.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("GitHub API error: %s - %s", result.Status, string(result.Body))
 	}
 
 	var releases []Release
-	if err := json.NewDecoder(resp.Body).Decode(&releases); err != nil {
+	if err := json.Unmarshal(result.Body, &releases); err != nil {
 		return nil, err
 	}
 
@@ -94,25 +85,17 @@ func (c *Client) CreateRelease(owner, repo, tag, releaseNotes string) error {
 		return err
 	}
 
-	req, cancel, err := httpclient.NewRequest(http.MethodPost, url, bytes.NewBuffer(jsonData))
+	result, err := httpclient.DoJSON(http.MethodPost, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Content-Type":  "application/json",
+		"Accept":        githubAccept,
+	}, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Content-Type", "application/json")
-	req.Header.Set("Accept", githubAccept)
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 201 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create GitHub release: %s - %s", resp.Status, string(body))
+	if result.StatusCode != http.StatusCreated {
+		return fmt.Errorf("failed to create GitHub release: %s - %s", result.Status, string(result.Body))
 	}
 	return nil
 }
@@ -123,36 +106,44 @@ func (c *Client) UpdateRelease(owner, repo, tag, releaseNotes string) error {
 		return fmt.Errorf("GitHub token is required for updating releases")
 	}
 
-	// First, look up the release id by tag.
+	releaseID, err := c.releaseIDForTag(owner, repo, tag)
+	if err != nil {
+		return err
+	}
+
+	return c.patchRelease(owner, repo, releaseID, tag, releaseNotes)
+}
+
+// releaseIDForTag looks up the numeric release id for a tag, since GitHub's
+// update endpoint is keyed by id rather than tag name.
+func (c *Client) releaseIDForTag(owner, repo, tag string) (int64, error) {
 	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/tags/%s", owner, repo, tag)
-	req, cancel, err := httpclient.NewRequest(http.MethodGet, url, nil)
+	result, err := httpclient.DoJSON(http.MethodGet, url, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Accept":        githubAccept,
+	}, nil)
 	if err != nil {
-		return err
+		return 0, err
 	}
-	defer cancel()
 
-	req.Header.Set("Authorization", "Bearer "+c.token)
-	req.Header.Set("Accept", githubAccept)
-
-	resp, err := httpclient.Do(req)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(resp)
-
-	if resp.StatusCode != 200 {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to get release: %s - %s", resp.Status, string(body))
+	if result.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("failed to get release: %s - %s", result.Status, string(result.Body))
 	}
 
 	var releaseInfo struct {
 		ID int64 `json:"id"`
 	}
-	if err := json.NewDecoder(resp.Body).Decode(&releaseInfo); err != nil {
-		return err
+	if err := json.Unmarshal(result.Body, &releaseInfo); err != nil {
+		return 0, err
 	}
+	return releaseInfo.ID, nil
+}
 
-	updateURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/%d", owner, repo, releaseInfo.ID)
+// patchRelease sends the actual release-body update for a known release id.
+// Split out of UpdateRelease so the id lookup and the patch each stay close
+// to the ~30-line guideline.
+func (c *Client) patchRelease(owner, repo string, releaseID int64, tag, releaseNotes string) error {
+	updateURL := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases/%d", owner, repo, releaseID)
 	release := Release{
 		TagName: tag,
 		Name:    tag,
@@ -164,25 +155,17 @@ func (c *Client) UpdateRelease(owner, repo, tag, releaseNotes string) error {
 		return err
 	}
 
-	updateReq, updateCancel, err := httpclient.NewRequest(http.MethodPatch, updateURL, bytes.NewBuffer(jsonData))
+	updateResult, err := httpclient.DoJSON(http.MethodPatch, updateURL, map[string]string{
+		"Authorization": "Bearer " + c.token,
+		"Content-Type":  "application/json",
+		"Accept":        githubAccept,
+	}, bytes.NewBuffer(jsonData))
 	if err != nil {
 		return err
 	}
-	defer updateCancel()
 
-	updateReq.Header.Set("Authorization", "Bearer "+c.token)
-	updateReq.Header.Set("Content-Type", "application/json")
-	updateReq.Header.Set("Accept", githubAccept)
-
-	updateResp, err := httpclient.Do(updateReq)
-	if err != nil {
-		return err
-	}
-	defer closeResponseBody(updateResp)
-
-	if updateResp.StatusCode != 200 {
-		body, _ := io.ReadAll(updateResp.Body)
-		return fmt.Errorf("failed to update GitHub release: %s - %s", updateResp.Status, string(body))
+	if updateResult.StatusCode != http.StatusOK {
+		return fmt.Errorf("failed to update GitHub release: %s - %s", updateResult.Status, string(updateResult.Body))
 	}
 	return nil
 }
