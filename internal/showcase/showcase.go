@@ -2,9 +2,7 @@ package showcase
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
-	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -17,11 +15,17 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/localrepos"
 )
 
-// Generator handles showcase generation for repositories
+// Generator handles showcase generation for repositories. It orchestrates
+// the per-repo pipeline (filter -> summarize -> link -> write) and delegates
+// the actual work to focused collaborators: SummaryCache owns cache/rank-
+// history persistence, ProjectLinker owns outbound URL construction, and
+// aitool.Runner (via resolveSummary) owns AI-tool selection and invocation.
 type Generator struct {
 	config  *config.Config
 	workDir string
 	aiTool  string
+	cache   *SummaryCache
+	linker  *ProjectLinker
 }
 
 // ProjectSummary holds the summary information for a project
@@ -55,6 +59,8 @@ func New(cfg *config.Config, workDir string) *Generator {
 		config:  cfg,
 		workDir: workDir,
 		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.2:cloud)
+		cache:   NewSummaryCache(workDir),
+		linker:  NewProjectLinker(cfg),
 	}
 }
 
@@ -67,31 +73,72 @@ func (g *Generator) SetAITool(tool string) {
 // If repoFilter is provided, only those repositories are processed
 // If repoFilter is empty/nil, all repositories in work directory are processed
 func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) error {
-	var repos []string
-	var err error
-
-	if len(repoFilter) > 0 {
-		// Use the provided filter
-		repos = repoFilter
-	} else {
-		// Get all repositories in work directory
-		repos, err = g.getRepositories()
-		if err != nil {
-			return fmt.Errorf("failed to get repositories: %w", err)
-		}
-	}
-
-	if len(repos) == 0 {
-		return fmt.Errorf("no repositories found")
+	repos, err := g.resolveRepoList(repoFilter)
+	if err != nil {
+		return err
 	}
 
 	// Filter out excluded repositories
 	filteredRepos := g.filterExcludedRepos(repos)
-
 	fmt.Printf("Found %d repositories to process (after filtering %d excluded)\n",
 		len(filteredRepos), len(repos)-len(filteredRepos))
 
-	// Generate summaries for each repository
+	summaries, successCount := g.generateSummaries(filteredRepos, forceRegenerate)
+	if successCount == 0 {
+		return fmt.Errorf("failed to generate any summaries")
+	}
+	fmt.Printf("\nSuccessfully generated %d/%d summaries\n", successCount, len(repos))
+
+	sortSummariesByScore(summaries)
+
+	anchorDate := time.Now()
+	if err := g.updateRankHistory(repoFilter, summaries, anchorDate); err != nil {
+		return err
+	}
+
+	// When filtering (single repo), we need to update existing showcase.
+	// writeShowcaseOutput merges the new summary with all cached ones (or, for
+	// a full run, writes summaries directly) and returns the complete, sorted
+	// list so we can regenerate the SVG consistently.
+	allSummaries, err := g.writeShowcaseOutput(repoFilter, summaries)
+	if err != nil {
+		return err
+	}
+
+	// Always regenerate the interactive SVG rank history alongside the text showcase.
+	if err := g.writeRankHistorySVGFile(allSummaries); err != nil {
+		// Non-fatal: log the warning but don't abort the showcase run.
+		fmt.Printf("Warning: failed to write rank history SVG: %v\n", err)
+	}
+
+	return nil
+}
+
+// resolveRepoList returns repoFilter verbatim when non-empty (a caller-
+// requested subset), otherwise discovers all repositories in the work
+// directory. Either way, an empty result is treated as an error since
+// there'd be nothing to showcase.
+func (g *Generator) resolveRepoList(repoFilter []string) ([]string, error) {
+	repos := repoFilter
+	if len(repos) == 0 {
+		discovered, err := g.getRepositories()
+		if err != nil {
+			return nil, fmt.Errorf("failed to get repositories: %w", err)
+		}
+		repos = discovered
+	}
+
+	if len(repos) == 0 {
+		return nil, fmt.Errorf("no repositories found")
+	}
+	return repos, nil
+}
+
+// generateSummaries runs generateProjectSummary for each repo in
+// filteredRepos, printing a per-repo report and collecting the successful
+// summaries. A repo whose summary generation fails is skipped with a
+// warning rather than aborting the whole run.
+func (g *Generator) generateSummaries(filteredRepos []string, forceRegenerate bool) ([]ProjectSummary, int) {
 	summaries := make([]ProjectSummary, 0, len(filteredRepos))
 	successCount := 0
 
@@ -104,86 +151,78 @@ func (g *Generator) GenerateShowcase(repoFilter []string, forceRegenerate bool) 
 			continue
 		}
 
-		// Print the generated summary to stdout
-		fmt.Printf("\n--- Generated summary for %s ---\n", repo)
-		fmt.Println(summary.Summary)
-		if summary.Metadata != nil {
-			fmt.Printf("Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages))
-			fmt.Printf("Commits: %d\n", summary.Metadata.CommitCount)
-			fmt.Printf("Lines of Code: %d\n", summary.Metadata.LinesOfCode)
-			fmt.Printf("First Commit: %s\n", summary.Metadata.FirstCommitDate)
-			fmt.Printf("Last Commit: %s\n", summary.Metadata.LastCommitDate)
-			fmt.Printf("License: %s\n", summary.Metadata.License)
-			fmt.Printf("Tags: %d\n", summary.Metadata.TagCount)
-			fmt.Printf("Score: %.1f\n", summary.Metadata.Score)
-		}
-		fmt.Println("--- End of summary ---")
-
+		printProjectSummary(repo, summary)
 		summaries = append(summaries, *summary)
 		successCount++
 	}
 
-	if successCount == 0 {
-		return fmt.Errorf("failed to generate any summaries")
+	return summaries, successCount
+}
+
+// printProjectSummary prints a freshly generated summary and its metadata to
+// stdout, for operator visibility while a showcase run is in progress.
+func printProjectSummary(repo string, summary *ProjectSummary) {
+	fmt.Printf("\n--- Generated summary for %s ---\n", repo)
+	fmt.Println(summary.Summary)
+	if summary.Metadata != nil {
+		fmt.Printf("Languages: %s\n", FormatLanguagesWithPercentages(summary.Metadata.Languages))
+		fmt.Printf("Commits: %d\n", summary.Metadata.CommitCount)
+		fmt.Printf("Lines of Code: %d\n", summary.Metadata.LinesOfCode)
+		fmt.Printf("First Commit: %s\n", summary.Metadata.FirstCommitDate)
+		fmt.Printf("Last Commit: %s\n", summary.Metadata.LastCommitDate)
+		fmt.Printf("License: %s\n", summary.Metadata.License)
+		fmt.Printf("Tags: %d\n", summary.Metadata.TagCount)
+		fmt.Printf("Score: %.1f\n", summary.Metadata.Score)
 	}
+	fmt.Println("--- End of summary ---")
+}
 
-	fmt.Printf("\nSuccessfully generated %d/%d summaries\n", successCount, len(repos))
-
-	// Sort summaries by score (highest first)
+// sortSummariesByScore sorts summaries by Metadata.Score descending (higher
+// score is better, combining LOC and recent activity). Summaries with
+// missing metadata sort last.
+func sortSummariesByScore(summaries []ProjectSummary) {
 	sort.Slice(summaries, func(i, j int) bool {
-		// If metadata is missing, put at the end
 		if summaries[i].Metadata == nil {
 			return false
 		}
 		if summaries[j].Metadata == nil {
 			return true
 		}
-		// Higher score is better (combines LOC and recent activity)
 		return summaries[i].Metadata.Score > summaries[j].Metadata.Score
 	})
+}
 
-	anchorDate := time.Now()
-	rankHistoryFile := filepath.Join(g.workDir, rankHistoryFilename)
-	rankHistoryStore, err := loadRankHistory(rankHistoryFile)
-	if err != nil {
-		return fmt.Errorf("failed to load rank history: %w", err)
-	}
-
-	// Only full showcase runs should update ranking snapshots.
+// updateRankHistory upserts today's ranking snapshot (only for full showcase
+// runs — a single-repo update via repoFilter must not perturb the shared
+// weekly snapshot) and then annotates summaries with their RankHistory field.
+func (g *Generator) updateRankHistory(repoFilter []string, summaries []ProjectSummary, anchorDate time.Time) error {
 	if len(repoFilter) == 0 {
-		upsertSnapshotForDate(rankHistoryStore, anchorDate, buildCurrentRanks(summaries))
-		if err := saveRankHistory(rankHistoryFile, rankHistoryStore); err != nil {
-			return fmt.Errorf("failed to save rank history: %w", err)
+		if err := g.cache.UpdateRankHistorySnapshot(anchorDate, summaries); err != nil {
+			return err
 		}
 	}
+	return g.cache.ApplyRankHistory(summaries, anchorDate)
+}
 
-	applyRankHistoryToSummaries(summaries, rankHistoryStore, anchorDate, rankHistoryPoints)
-
-	// When filtering (single repo), we need to update existing showcase.
-	// updateShowcaseFile merges the new summary with all cached ones and returns
-	// the complete, sorted list so we can regenerate the SVG consistently.
-	var allSummaries []ProjectSummary
+// writeShowcaseOutput regenerates and writes the Gemtext showcase file: a
+// single-repo update (repoFilter set) merges into the cached full project
+// list via updateShowcaseFile, while a full run formats and writes summaries
+// directly. It returns the complete summary list used for the write so the
+// caller can also regenerate the SVG rank-history graph consistently.
+func (g *Generator) writeShowcaseOutput(repoFilter []string, summaries []ProjectSummary) ([]ProjectSummary, error) {
 	if len(repoFilter) > 0 {
-		allSummaries, err = g.updateShowcaseFile(summaries)
+		allSummaries, err := g.updateShowcaseFile(summaries)
 		if err != nil {
-			return fmt.Errorf("failed to update showcase file: %w", err)
+			return nil, fmt.Errorf("failed to update showcase file: %w", err)
 		}
-	} else {
-		// Full regeneration - format as Gemtext and write.
-		content := g.formatGemtext(summaries)
-		if err := g.writeShowcaseFile(content); err != nil {
-			return fmt.Errorf("failed to write showcase file: %w", err)
-		}
-		allSummaries = summaries
+		return allSummaries, nil
 	}
 
-	// Always regenerate the interactive SVG rank history alongside the text showcase.
-	if err := g.writeRankHistorySVGFile(allSummaries); err != nil {
-		// Non-fatal: log the warning but don't abort the showcase run.
-		fmt.Printf("Warning: failed to write rank history SVG: %v\n", err)
+	content := g.formatGemtext(summaries)
+	if err := g.writeShowcaseFile(content); err != nil {
+		return nil, fmt.Errorf("failed to write showcase file: %w", err)
 	}
-
-	return nil
+	return summaries, nil
 }
 
 // runCommandWithTimeout runs a command with a short timeout and returns trimmed stdout.
@@ -247,57 +286,6 @@ func (g *Generator) getRepositories() ([]string, error) {
 	return localrepos.ListLocalReposWithGitDir(g.workDir)
 }
 
-func (g *Generator) buildProjectLinks(repoName, repoPath string) (string, string, string) {
-	cfg := g.config
-	if cfg == nil {
-		cfg = &config.Config{}
-	}
-
-	codebergURL := ""
-	githubURL := ""
-	forgejoURL := ""
-
-	// Only link to Codeberg when Codeberg syncing is enabled, the repository
-	// is part of the configured sync set (the repositories allowlist), and the
-	// repository is actually wired up to sync with Codeberg (a Codeberg remote
-	// is configured in its local working copy). This prevents repos that merely
-	// have a leftover Codeberg remote (e.g. from before they were removed from
-	// the sync set) from displaying a Codeberg link.
-	if cfg.CodebergSyncEnabled() && cfg.IsSyncRepo(repoName) && repoHasCodebergRemote(repoPath) {
-		if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
-			codebergURL = fmt.Sprintf("https://codeberg.org/%s/%s", codebergOrg.Name, repoName)
-		}
-	}
-
-	if githubOrg := cfg.FindGitHubOrg(); githubOrg != nil {
-		githubURL = fmt.Sprintf("https://github.com/%s/%s", githubOrg.Name, repoName)
-	}
-	if forgejoOrg := cfg.FindForgejoOrg(); forgejoOrg != nil {
-		apiBase, err := url.Parse(forgejoOrg.ForgejoAPIBase)
-		if err == nil {
-			apiBase.Path = strings.TrimSuffix(strings.TrimRight(apiBase.Path, "/"), "/api/v1")
-			forgejoURL = fmt.Sprintf("%s/%s/%s", strings.TrimRight(apiBase.String(), "/"), forgejoOrg.ForgejoOwner, repoName)
-		}
-	}
-
-	return codebergURL, githubURL, forgejoURL
-}
-
-// repoHasCodebergRemote reports whether the working copy at repoPath has a git
-// remote pointing at codeberg.org, i.e. the repository is actually set up to
-// sync with Codeberg.
-func repoHasCodebergRemote(repoPath string) bool {
-	if repoPath == "" {
-		return false
-	}
-	cmd := exec.Command("git", "-C", repoPath, "remote", "-v")
-	output, err := cmd.Output()
-	if err != nil {
-		return false
-	}
-	return strings.Contains(string(output), "codeberg.org")
-}
-
 func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, func() error, error) {
 	if g.config == nil {
 		return repoPath, func() error { return nil }, nil
@@ -313,6 +301,29 @@ func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, fun
 		return "", nil, fmt.Errorf("failed to resolve showcase stats branch for %s: %w", repoName, err)
 	}
 
+	worktreePath, cleanup, err := createStatsWorktree(repoName, repoPath, branch, resolvedRef)
+	if err != nil {
+		return "", nil, err
+	}
+
+	if resolvedRef == branch {
+		fmt.Printf("Using showcase stats branch %q for %s\n", branch, repoName)
+	} else {
+		fmt.Printf("Using showcase stats branch %q for %s (resolved to %s)\n", branch, repoName, resolvedRef)
+	}
+
+	return worktreePath, cleanup, nil
+}
+
+// createStatsWorktree checks out resolvedRef into a fresh temporary detached
+// worktree under repoPath, so metadata/code-snippet extraction can read the
+// showcase stats branch without disturbing the caller's main checkout. It
+// returns the worktree path and a cleanup func that removes both the
+// worktree and its temporary root; callers must invoke the cleanup func
+// (typically via defer) once done with the worktree. branch is only used for
+// the error message (it's the configured branch name, before resolution to
+// resolvedRef) so failures are reported in terms the operator configured.
+func createStatsWorktree(repoName, repoPath, branch, resolvedRef string) (string, func() error, error) {
 	tempPrefix := strings.ReplaceAll(repoName, string(os.PathSeparator), "-")
 	tempRoot, err := os.MkdirTemp("", "gitsyncer-showcase-"+tempPrefix+"-")
 	if err != nil {
@@ -337,12 +348,6 @@ func (g *Generator) prepareStatsRepoPath(repoName, repoPath string) (string, fun
 		}
 
 		return nil
-	}
-
-	if resolvedRef == branch {
-		fmt.Printf("Using showcase stats branch %q for %s\n", branch, repoName)
-	} else {
-		fmt.Printf("Using showcase stats branch %q for %s (resolved to %s)\n", branch, repoName, resolvedRef)
 	}
 
 	return worktreePath, cleanup, nil
@@ -388,29 +393,10 @@ func resolveShowcaseStatsRef(repoPath, branch string) (string, error) {
 func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool) (*ProjectSummary, error) {
 	repoPath := filepath.Join(g.workDir, repoName)
 
-	// Check cache first
-	cacheDir := filepath.Join(g.workDir, ".gitsyncer-showcase-cache")
-	cacheFile := filepath.Join(cacheDir, repoName+".json")
-
-	// Try to load cached summary (but we'll still update metadata and images)
-	var cachedSummary string
-	var haveCachedSummary bool
-	if !forceRegenerate {
-		if cached, err := g.loadFromCache(cacheFile); err == nil {
-			fmt.Printf("Using cached AI summary (cache file: %s)\n", cacheFile)
-			cachedSummary = cached.Summary
-			haveCachedSummary = true
-		}
-	}
-
-	// Determine which AI tools to try (only if we need to run one at all; a
-	// cache hit skips AI invocation entirely). Prefers opencode when the
-	// configured tool is "" (aligns with the release-notes flow), then falls
-	// back through the rest of the chain that's actually installed.
-	var chain []aitool.Tool
-	if !haveCachedSummary {
-		chain = aitool.AvailableChain(g.aiTool, nil)
-	}
+	// Try to load a cached summary (but we'll still update metadata and
+	// images below regardless of cache hit/miss). On a miss, this also gives
+	// us the chain of AI tools to try.
+	cachedSummary, haveCachedSummary, chain := g.loadCachedSummaryOrChain(repoName, forceRegenerate)
 
 	readmeContent, _, readmeFound := findReadmeContent(repoPath)
 
@@ -442,8 +428,14 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		haveCachedSummary,
 	)
 
-	// Build URLs
-	codebergURL, githubURL, forgejoURL := g.buildProjectLinks(repoName, repoPath)
+	return g.assembleProjectSummary(repoName, repoPath, statsRepoPath, summary, metadata)
+}
+
+// assembleProjectSummary builds the final ProjectSummary from the pieces
+// gathered by generateProjectSummary (project links, images, code snippet),
+// persists it to the on-disk cache, and returns it.
+func (g *Generator) assembleProjectSummary(repoName, repoPath, statsRepoPath, summary string, metadata *RepoMetadata) (*ProjectSummary, error) {
+	codebergURL, githubURL, forgejoURL := g.linker.BuildLinks(repoName, repoPath)
 
 	images, codeSnippet, codeLanguage, err := g.collectAssets(repoName, repoPath, statsRepoPath, metadata)
 	if err != nil {
@@ -462,14 +454,38 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		CodeLanguage: codeLanguage,
 	}
 
-	// Save to cache
-	if err := g.saveToCache(cacheFile, projectSummary); err != nil {
-		fmt.Printf("Warning: Failed to save to cache: %v\n", err)
-	} else {
-		fmt.Printf("Summary cached at: %s\n", cacheFile)
-	}
+	g.saveSummaryToCache(repoName, projectSummary)
 
 	return projectSummary, nil
+}
+
+// loadCachedSummaryOrChain tries to load a cached AI summary for repoName
+// (skipped entirely when forceRegenerate is set). On a cache hit, it
+// returns the cached summary text and a nil chain, since no AI tool needs to
+// run. On a miss, it returns the chain of AI tools to try instead: this
+// prefers opencode when the configured tool is "" (aligns with the
+// release-notes flow), then falls back through the rest of the chain that's
+// actually installed.
+func (g *Generator) loadCachedSummaryOrChain(repoName string, forceRegenerate bool) (cachedSummary string, haveCachedSummary bool, chain []aitool.Tool) {
+	if !forceRegenerate {
+		if cached, err := g.cache.Load(repoName); err == nil {
+			fmt.Printf("Using cached AI summary (cache file: %s)\n", g.cache.FilePath(repoName))
+			return cached.Summary, true, nil
+		}
+	}
+
+	return "", false, aitool.AvailableChain(g.aiTool, nil)
+}
+
+// saveSummaryToCache persists projectSummary to the on-disk cache. A write
+// failure is logged as a warning rather than propagated: a showcase run
+// should still complete (and print the summary) even if caching fails.
+func (g *Generator) saveSummaryToCache(repoName string, projectSummary *ProjectSummary) {
+	if err := g.cache.Save(repoName, projectSummary); err != nil {
+		fmt.Printf("Warning: Failed to save to cache: %v\n", err)
+		return
+	}
+	fmt.Printf("Summary cached at: %s\n", g.cache.FilePath(repoName))
 }
 
 func (g *Generator) resolveSummary(
@@ -603,28 +619,17 @@ func (g *Generator) writeRankHistorySVGFile(summaries []ProjectSummary) error {
 // showcase file, and returns the complete sorted summary list so the caller
 // can also regenerate the SVG graph consistently.
 func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) ([]ProjectSummary, error) {
-	// Load all cached summaries from disk so the full project list is available.
-	existingSummaries := make(map[string]ProjectSummary)
-
 	// Load all existing cached summaries so the single-repo update does not
 	// accidentally truncate the full showcase to just the one regenerated project.
 	// If getRepositories fails (e.g. work directory temporarily unavailable),
 	// log a warning and continue — the overlay below will still write newSummaries,
 	// which is better than silently producing an empty/truncated output file.
+	existingSummaries := make(map[string]ProjectSummary)
 	repos, err := g.getRepositories()
 	if err != nil {
 		fmt.Printf("Warning: failed to list repositories for showcase update: %v (cached repos may be missing from output)\n", err)
 	} else {
-		cacheDir := filepath.Join(g.workDir, ".gitsyncer-showcase-cache")
-		for _, repo := range repos {
-			if g.isExcluded(repo) {
-				continue
-			}
-			cacheFile := filepath.Join(cacheDir, repo+".json")
-			if cached, err := g.loadFromCache(cacheFile); err == nil {
-				existingSummaries[repo] = *cached
-			}
-		}
+		existingSummaries = g.cache.LoadAll(repos, g.isExcluded)
 	}
 
 	// Overlay the freshly generated summaries onto the cached set.
@@ -637,22 +642,11 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) ([]Project
 	for _, summary := range existingSummaries {
 		allSummaries = append(allSummaries, summary)
 	}
-	sort.Slice(allSummaries, func(i, j int) bool {
-		if allSummaries[i].Metadata == nil {
-			return false
-		}
-		if allSummaries[j].Metadata == nil {
-			return true
-		}
-		return allSummaries[i].Metadata.Score > allSummaries[j].Metadata.Score
-	})
+	sortSummariesByScore(allSummaries)
 
-	rankHistoryFile := filepath.Join(g.workDir, rankHistoryFilename)
-	rankHistoryStore, err := loadRankHistory(rankHistoryFile)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load rank history: %w", err)
+	if err := g.cache.ApplyRankHistory(allSummaries, time.Now()); err != nil {
+		return nil, err
 	}
-	applyRankHistoryToSummaries(allSummaries, rankHistoryStore, time.Now(), rankHistoryPoints)
 
 	// Format and write the Gemtext showcase.
 	content := g.formatGemtext(allSummaries)
@@ -661,60 +655,6 @@ func (g *Generator) updateShowcaseFile(newSummaries []ProjectSummary) ([]Project
 	}
 
 	return allSummaries, nil
-}
-
-// loadFromCache loads a project summary from cache
-func (g *Generator) loadFromCache(cacheFile string) (*ProjectSummary, error) {
-	data, err := os.ReadFile(cacheFile)
-	if err != nil {
-		return nil, err
-	}
-
-	var summary ProjectSummary
-	if err := json.Unmarshal(data, &summary); err != nil {
-		return nil, err
-	}
-
-	return &summary, nil
-}
-
-// saveToCache saves a project summary to cache
-func (g *Generator) saveToCache(cacheFile string, summary *ProjectSummary) error {
-	// Create cache directory if it doesn't exist
-	cacheDir := filepath.Dir(cacheFile)
-	if err := os.MkdirAll(cacheDir, 0755); err != nil {
-		return err
-	}
-
-	// Marshal to JSON
-	data, err := json.MarshalIndent(summary, "", "  ")
-	if err != nil {
-		return err
-	}
-
-	// Write to file
-	return os.WriteFile(cacheFile, data, 0644)
-}
-
-// verifyImages checks if cached images still exist
-func (g *Generator) verifyImages(summary *ProjectSummary) error {
-	if len(summary.Images) == 0 {
-		return nil
-	}
-
-	showcaseDir, err := g.showcaseOutputDir()
-	if err != nil {
-		return err
-	}
-
-	for _, imgPath := range summary.Images {
-		fullPath := filepath.Join(showcaseDir, imgPath)
-		if _, err := os.Stat(fullPath); err != nil {
-			return fmt.Errorf("image not found: %s", imgPath)
-		}
-	}
-
-	return nil
 }
 
 // filterExcludedRepos filters out repositories that are in the exclusion list
