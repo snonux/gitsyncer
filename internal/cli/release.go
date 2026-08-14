@@ -85,50 +85,243 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 
 	// Track failed AI generations
 	failedAIGenerations := []string{}
-	var releaseTargets []releaseTarget
 
-	// Print summary at the end
-	defer func() {
-		if len(aiReleaseNotesCache) > initialCacheSize {
-			fmt.Printf("\nAI release notes cache updated: %d new entries added (total: %d entries)\n",
-				len(aiReleaseNotesCache)-initialCacheSize, len(aiReleaseNotesCache))
-			fmt.Printf("Cache file: %s\n", cacheFile)
-		}
+	// Print summary at the end. Args are captured now, but aiReleaseNotesCache
+	// (a map) and &failedAIGenerations (a pointer) stay live references, so
+	// the deferred call still sees every entry added during the run below.
+	defer printReleaseSummary(cacheFile, initialCacheSize, aiReleaseNotesCache, &failedAIGenerations)
 
-		if len(failedAIGenerations) > 0 {
-			fmt.Printf("\n⚠️  AI release notes generation failed for %d releases:\n", len(failedAIGenerations))
-			for _, failed := range failedAIGenerations {
-				fmt.Printf("  - %s\n", failed)
-			}
-			fmt.Println("\nThese releases were skipped. Their cache entries were cleared.")
-			fmt.Println("Run again to retry generation for these releases.")
-		}
-	}()
+	// Resolve GitHub/Codeberg tokens from config/env/file and build the list
+	// of forges to publish releases to.
+	releaseTargets := buildReleaseTargets(cfg)
 
-	// Set tokens from config with fallback to environment variables and files
-	githubOrg := cfg.FindGitHubOrg()
-	if githubOrg != nil {
-		fmt.Printf("Found GitHub org: %s\n", githubOrg.Name)
-
-		// Try config token first, then fallback to env var and file
-		token := resolveGitHubToken(githubOrg.GitHubToken)
-
-		ghClient := github.NewClient(token, githubOrg.Name)
-		if token == "" {
-			fmt.Println("WARNING: No GitHub token found - cannot create GitHub releases")
-		}
-
-		if githubOrg.Name != "" {
-			releaseTargets = append(releaseTargets, releaseTarget{
-				name:   "GitHub",
-				owner:  githubOrg.Name,
-				client: ghClient,
-			})
-		}
-	} else {
-		fmt.Println("No GitHub organization found in config")
+	// Process the specified repositories
+	for _, repoName := range repositories {
+		processReleasesForRepo(
+			cfg,
+			flags,
+			inspector,
+			notes,
+			releaseTargets,
+			repoName,
+			cacheFile,
+			aiReleaseNotesCache,
+			&failedAIGenerations,
+		)
 	}
 
+	return 0
+}
+
+// printReleaseSummary prints the end-of-run summary: how many AI release
+// notes cache entries were added, and which releases failed AI notes
+// generation (if any). failedAIGenerations is a pointer because it is
+// deferred before the run loop populates it.
+func printReleaseSummary(cacheFile string, initialCacheSize int, aiReleaseNotesCache map[string]string, failedAIGenerations *[]string) {
+	if len(aiReleaseNotesCache) > initialCacheSize {
+		fmt.Printf("\nAI release notes cache updated: %d new entries added (total: %d entries)\n",
+			len(aiReleaseNotesCache)-initialCacheSize, len(aiReleaseNotesCache))
+		fmt.Printf("Cache file: %s\n", cacheFile)
+	}
+
+	if len(*failedAIGenerations) > 0 {
+		fmt.Printf("\n⚠️  AI release notes generation failed for %d releases:\n", len(*failedAIGenerations))
+		for _, failed := range *failedAIGenerations {
+			fmt.Printf("  - %s\n", failed)
+		}
+		fmt.Println("\nThese releases were skipped. Their cache entries were cleared.")
+		fmt.Println("Run again to retry generation for these releases.")
+	}
+}
+
+// processReleasesForRepo checks release status for a single repository
+// against every applicable release target, creating any missing releases and
+// (when requested) updating existing ones. It is a no-op when the repository
+// is not cloned locally or has no version tags.
+func processReleasesForRepo(
+	cfg *config.Config,
+	flags *Flags,
+	inspector *release.GitInspector,
+	notes releaseNotesGenerator,
+	releaseTargets []releaseTarget,
+	repoName string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	fmt.Printf("\nChecking releases for repository: %s\n", repoName)
+
+	repoPath := filepath.Join(flags.WorkDir, repoName)
+	localTags, ok := localVersionTags(cfg, inspector, repoName, repoPath)
+	if !ok {
+		return
+	}
+
+	createMissingReleasesForRepo(
+		cfg, flags, inspector, notes, releaseTargets, repoName, repoPath, localTags,
+		cacheFile, aiReleaseNotesCache, failedAIGenerations,
+	)
+
+	if flags.UpdateReleases {
+		updateExistingReleasesForRepo(
+			cfg, flags, inspector, notes, releaseTargets, repoName, repoPath, localTags,
+			cacheFile, aiReleaseNotesCache, failedAIGenerations,
+		)
+	}
+}
+
+// localVersionTags checks that repoPath is cloned locally and has version
+// tags, logging the reason and returning ok=false when it is not cloned, tag
+// listing fails, or no tags exist. On success it also logs any configured
+// skip_releases entries for repoName before returning the tags.
+func localVersionTags(cfg *config.Config, inspector *release.GitInspector, repoName, repoPath string) ([]string, bool) {
+	if _, err := os.Stat(repoPath); os.IsNotExist(err) {
+		fmt.Printf("  Repository not found locally at %s, skipping...\n", repoPath)
+		return nil, false
+	}
+
+	localTags, err := inspector.GetLocalTags(repoPath)
+	if err != nil {
+		fmt.Printf("  Error getting local tags: %v\n", err)
+		return nil, false
+	}
+
+	if len(localTags) == 0 {
+		fmt.Println("  No version tags found")
+		return nil, false
+	}
+
+	fmt.Printf("  Found %d version tags: %s\n", len(localTags), strings.Join(localTags, ", "))
+	// Log configured skip rules for this repo, if any
+	if cfg.SkipReleases != nil {
+		if skipTags, ok := cfg.SkipReleases[repoName]; ok && len(skipTags) > 0 {
+			fmt.Printf("  Config skip_releases for %s: %s\n", repoName, strings.Join(skipTags, ", "))
+		}
+	}
+
+	return localTags, true
+}
+
+// createMissingReleasesForRepo creates, on every applicable release target,
+// any release tags present locally but missing on the forge.
+func createMissingReleasesForRepo(
+	cfg *config.Config,
+	flags *Flags,
+	inspector *release.GitInspector,
+	notes releaseNotesGenerator,
+	releaseTargets []releaseTarget,
+	repoName, repoPath string,
+	localTags []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	for _, target := range releaseTargets {
+		if !releaseTargetApplicable(target, cfg, repoName) {
+			continue
+		}
+		missingReleases := getMissingReleasesForTarget(cfg, inspector, target, repoName, localTags)
+		processCreateReleasesForTarget(
+			cfg,
+			flags,
+			inspector,
+			notes,
+			target,
+			repoName,
+			repoPath,
+			localTags,
+			missingReleases,
+			cacheFile,
+			aiReleaseNotesCache,
+			failedAIGenerations,
+		)
+	}
+}
+
+// updateExistingReleasesForRepo refreshes, on every applicable release
+// target, releases that already exist on the forge. Only called when the
+// caller has confirmed flags.UpdateReleases is set.
+func updateExistingReleasesForRepo(
+	cfg *config.Config,
+	flags *Flags,
+	inspector *release.GitInspector,
+	notes releaseNotesGenerator,
+	releaseTargets []releaseTarget,
+	repoName, repoPath string,
+	localTags []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	for _, target := range releaseTargets {
+		if !releaseTargetApplicable(target, cfg, repoName) {
+			continue
+		}
+		processUpdateReleasesForTarget(
+			flags,
+			inspector,
+			notes,
+			target,
+			repoName,
+			repoPath,
+			localTags,
+			cacheFile,
+			aiReleaseNotesCache,
+			failedAIGenerations,
+		)
+	}
+}
+
+// buildReleaseTargets resolves the GitHub and Codeberg tokens (from config,
+// falling back to environment variables and token files) and returns the
+// release targets releases should be published to. A forge is included only
+// when its organization is configured in cfg; Codeberg is additionally
+// skipped when Codeberg sync is disabled.
+func buildReleaseTargets(cfg *config.Config) []releaseTarget {
+	var targets []releaseTarget
+
+	if target, ok := buildGitHubReleaseTarget(cfg); ok {
+		targets = append(targets, target)
+	}
+	if target, ok := buildCodebergReleaseTarget(cfg); ok {
+		targets = append(targets, target)
+	}
+
+	return targets
+}
+
+// buildGitHubReleaseTarget resolves the GitHub org and token from cfg and
+// returns the corresponding release target. ok is false when no GitHub org
+// is configured, or the configured org has no name.
+func buildGitHubReleaseTarget(cfg *config.Config) (releaseTarget, bool) {
+	githubOrg := cfg.FindGitHubOrg()
+	if githubOrg == nil {
+		fmt.Println("No GitHub organization found in config")
+		return releaseTarget{}, false
+	}
+	fmt.Printf("Found GitHub org: %s\n", githubOrg.Name)
+
+	// Try config token first, then fallback to env var and file
+	token := resolveGitHubToken(githubOrg.GitHubToken)
+	if token == "" {
+		fmt.Println("WARNING: No GitHub token found - cannot create GitHub releases")
+	}
+
+	if githubOrg.Name == "" {
+		return releaseTarget{}, false
+	}
+	return releaseTarget{
+		name:   "GitHub",
+		owner:  githubOrg.Name,
+		client: github.NewClient(token, githubOrg.Name),
+	}, true
+}
+
+// buildCodebergReleaseTarget resolves the Codeberg org and token from cfg and
+// returns the corresponding release target. ok is false when no Codeberg org
+// is configured, Codeberg sync is disabled, or the configured org has no
+// name.
+func buildCodebergReleaseTarget(cfg *config.Config) (releaseTarget, bool) {
 	codebergOrg := cfg.FindCodebergOrg()
 	if codebergOrg != nil && !cfg.CodebergSyncEnabled() {
 		fmt.Println("Codeberg organization found in config but Codeberg sync is disabled (set \"sync_codeberg\": true to enable Codeberg releases)")
@@ -136,151 +329,68 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 	} else if codebergOrg == nil {
 		fmt.Println("No Codeberg organization found in config")
 	}
-	if codebergOrg != nil {
-		fmt.Printf("Found Codeberg org: %s\n", codebergOrg.Name)
-
-		// Try config token first, then fallback to env var and file
-		token := resolveCodebergToken(codebergOrg.CodebergToken)
-
-		cbClient := codeberg.NewClient(token, codebergOrg.Name)
-		if token != "" {
-			fmt.Printf("  Codeberg token loaded (length: %d)\n", len(token))
-		} else {
-			fmt.Println("WARNING: No Codeberg token found - cannot create Codeberg releases")
-		}
-
-		if codebergOrg.Name != "" {
-			releaseTargets = append(releaseTargets, releaseTarget{
-				name:             "Codeberg",
-				owner:            codebergOrg.Name,
-				client:           cbClient,
-				syncRepoRequired: true,
-			})
-		}
-	}
 	// codebergOrg is nil here either because no Codeberg org is configured or
 	// because Codeberg syncing is disabled in the config; the relevant
 	// message has already been printed above.
+	if codebergOrg == nil {
+		return releaseTarget{}, false
+	}
+	fmt.Printf("Found Codeberg org: %s\n", codebergOrg.Name)
 
-	// Process the specified repositories
-	for _, repoName := range repositories {
-		fmt.Printf("\nChecking releases for repository: %s\n", repoName)
-
-		// Check if the repository is cloned locally
-		repoPath := filepath.Join(flags.WorkDir, repoName)
-		if _, err := os.Stat(repoPath); os.IsNotExist(err) {
-			fmt.Printf("  Repository not found locally at %s, skipping...\n", repoPath)
-			continue
-		}
-
-		// Get local tags
-		localTags, err := inspector.GetLocalTags(repoPath)
-		if err != nil {
-			fmt.Printf("  Error getting local tags: %v\n", err)
-			continue
-		}
-
-		if len(localTags) == 0 {
-			fmt.Println("  No version tags found")
-			continue
-		}
-
-		fmt.Printf("  Found %d version tags: %s\n", len(localTags), strings.Join(localTags, ", "))
-		// Log configured skip rules for this repo, if any
-		if cfg.SkipReleases != nil {
-			if skipTags, ok := cfg.SkipReleases[repoName]; ok && len(skipTags) > 0 {
-				fmt.Printf("  Config skip_releases for %s: %s\n", repoName, strings.Join(skipTags, ", "))
-			}
-		}
-
-		for _, target := range releaseTargets {
-			if !releaseTargetApplicable(target, cfg, repoName) {
-				continue
-			}
-			missingReleases := getMissingReleasesForTarget(cfg, inspector, target, repoName, localTags)
-			processCreateReleasesForTarget(
-				cfg,
-				flags,
-				inspector,
-				notes,
-				target,
-				repoName,
-				repoPath,
-				localTags,
-				missingReleases,
-				cacheFile,
-				aiReleaseNotesCache,
-				&failedAIGenerations,
-			)
-		}
-
-		// Update existing releases if requested
-		if flags.UpdateReleases {
-			for _, target := range releaseTargets {
-				if !releaseTargetApplicable(target, cfg, repoName) {
-					continue
-				}
-				processUpdateReleasesForTarget(
-					flags,
-					inspector,
-					notes,
-					target,
-					repoName,
-					repoPath,
-					localTags,
-					cacheFile,
-					aiReleaseNotesCache,
-					&failedAIGenerations,
-				)
-			}
-		}
+	// Try config token first, then fallback to env var and file
+	token := resolveCodebergToken(codebergOrg.CodebergToken)
+	if token != "" {
+		fmt.Printf("  Codeberg token loaded (length: %d)\n", len(token))
+	} else {
+		fmt.Println("WARNING: No Codeberg token found - cannot create Codeberg releases")
 	}
 
-	return 0
+	if codebergOrg.Name == "" {
+		return releaseTarget{}, false
+	}
+	return releaseTarget{
+		name:             "Codeberg",
+		owner:            codebergOrg.Name,
+		client:           codeberg.NewClient(token, codebergOrg.Name),
+		syncRepoRequired: true,
+	}, true
+}
+
+// loadTokenWithFallback resolves a forge token from, in order: the config
+// value, the named environment variable, or a dotfile of tokenFileName under
+// the user's home directory. Config and env values are used as-is; only the
+// token file contents are trimmed. Returns "" when no source has a token
+// (including when the home directory or token file cannot be read). This is
+// the single cascade shared by resolveGitHubToken and resolveCodebergToken so
+// the config->env->file fallback logic exists in one place.
+func loadTokenWithFallback(configToken, envVar, tokenFileName string) string {
+	if configToken != "" {
+		return configToken
+	}
+	if token := os.Getenv(envVar); token != "" {
+		return token
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, tokenFileName))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
 }
 
 // resolveGitHubToken loads the GitHub token from config, the GITHUB_TOKEN env
-// var, or ~/.gitsyncer_github_token, in that order. Config and env values are
-// used as-is; only the token file is trimmed. Returns "" when no source has a
-// token.
+// var, or ~/.gitsyncer_github_token, in that order.
 func resolveGitHubToken(configToken string) string {
-	if configToken != "" {
-		return configToken
-	}
-	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
-		return token
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".gitsyncer_github_token"))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	return loadTokenWithFallback(configToken, "GITHUB_TOKEN", ".gitsyncer_github_token")
 }
 
-// resolveCodebergToken loads the Codeberg token from config, the CODEBERG_TOKEN
-// env var, or ~/.gitsyncer_codeberg_token, in that order. Config and env values
-// are used as-is; only the token file is trimmed. Returns "" when no source has
-// a token.
+// resolveCodebergToken loads the Codeberg token from config, the
+// CODEBERG_TOKEN env var, or ~/.gitsyncer_codeberg_token, in that order.
 func resolveCodebergToken(configToken string) string {
-	if configToken != "" {
-		return configToken
-	}
-	if token := os.Getenv("CODEBERG_TOKEN"); token != "" {
-		return token
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	data, err := os.ReadFile(filepath.Join(home, ".gitsyncer_codeberg_token"))
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	return loadTokenWithFallback(configToken, "CODEBERG_TOKEN", ".gitsyncer_codeberg_token")
 }
 
 // releaseTargetApplicable reports whether a release target should run for the
