@@ -38,7 +38,7 @@ type syncDecision struct {
 	SetNextAllowed bool
 }
 
-func evaluateSyncPolicy(repoName string, st *state.State, dryRun bool, force bool, throttle bool) syncDecision {
+func evaluateSyncPolicy(repoName, workDir string, st *state.State, dryRun bool, force bool, throttle bool) syncDecision {
 	if force {
 		return syncDecision{}
 	}
@@ -48,7 +48,7 @@ func evaluateSyncPolicy(repoName string, st *state.State, dryRun bool, force boo
 		return decision
 	}
 
-	return evaluateThrottle(repoName, st, dryRun)
+	return evaluateThrottle(repoName, workDir, st, dryRun)
 }
 
 func evaluateDailySync(repoName string, st *state.State, dryRun bool) syncDecision {
@@ -81,13 +81,13 @@ func evaluateDailySync(repoName string, st *state.State, dryRun bool) syncDecisi
 	return syncDecision{}
 }
 
-func evaluateThrottle(repoName string, st *state.State, dryRun bool) syncDecision {
+func evaluateThrottle(repoName, workDir string, st *state.State, dryRun bool) syncDecision {
 	syncAction := "Syncing"
 	if dryRun {
 		syncAction = "[DRY RUN] Would sync"
 	}
 
-	recent, err := hasRecentLocalCommits(repoName)
+	recent, err := hasRecentLocalCommits(workDir, repoName)
 	if err != nil {
 		actionMsg := "Sync will proceed"
 		if dryRun {
@@ -166,13 +166,14 @@ func randomThrottleDuration() time.Duration {
 	return time.Duration(days) * 24 * time.Hour
 }
 
-func hasRecentLocalCommits(repoName string) (bool, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return false, fmt.Errorf("failed to resolve home directory: %w", err)
-	}
-
-	repoPath := filepath.Join(home, "git", repoName)
+// hasRecentLocalCommits checks whether repoName's local clone under the
+// configured workDir (the same directory gitsyncer clones/syncs into, see
+// Flags.WorkDir) has commits within the last recentDays days. It previously
+// hardcoded ~/git/<repoName>, which meant a custom --work-dir/config work_dir
+// was silently ignored and every repo looked inactive, causing --throttle to
+// skip repos indefinitely.
+func hasRecentLocalCommits(workDir, repoName string) (bool, error) {
+	repoPath := filepath.Join(workDir, repoName)
 	info, err := os.Stat(repoPath)
 	if err != nil {
 		if os.IsNotExist(err) {

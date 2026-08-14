@@ -28,7 +28,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
 	}
 
-	decision := evaluateSyncPolicy(flags.SyncRepo, syncState, flags.DryRun, flags.Force, flags.Throttle)
+	decision := evaluateSyncPolicy(flags.SyncRepo, flags.WorkDir, syncState, flags.DryRun, flags.Force, flags.Throttle)
 	if decision.Message != "" {
 		fmt.Println(decision.Message)
 	}
@@ -120,7 +120,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	for i, repo := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repo)
 
-		decision := evaluateSyncPolicy(repo, syncState, flags.DryRun, flags.Force, flags.Throttle)
+		decision := evaluateSyncPolicy(repo, flags.WorkDir, syncState, flags.DryRun, flags.Force, flags.Throttle)
 		if decision.Message != "" {
 			fmt.Println(decision.Message)
 		}
@@ -462,7 +462,7 @@ func filterDryRunRepoNames(repoNames []string, flags *Flags) []string {
 
 	filtered := make([]string, 0, len(repoNames))
 	for _, repoName := range repoNames {
-		decision := evaluateSyncPolicy(repoName, syncState, true, flags.Force, flags.Throttle)
+		decision := evaluateSyncPolicy(repoName, flags.WorkDir, syncState, true, flags.Force, flags.Throttle)
 		if decision.Message != "" {
 			fmt.Println(decision.Message)
 		}
@@ -515,7 +515,7 @@ func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
 }
 
 func (e *syncExecution) maybeSkipRepo(repoName string, flags *Flags) bool {
-	decision := evaluateSyncPolicy(repoName, e.syncState, flags.DryRun, flags.Force, flags.Throttle)
+	decision := evaluateSyncPolicy(repoName, flags.WorkDir, e.syncState, flags.DryRun, flags.Force, flags.Throttle)
 	if decision.Message != "" {
 		fmt.Println(decision.Message)
 	}

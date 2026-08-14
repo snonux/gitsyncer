@@ -1,6 +1,9 @@
 package cli
 
 import (
+	"os"
+	"os/exec"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -12,7 +15,7 @@ func TestEvaluateSyncPolicy_SkipsRepoSyncedWithinDay(t *testing.T) {
 	st := &state.State{}
 	st.SetLastRepoSync("repo", time.Now().Add(-23*time.Hour))
 
-	decision := evaluateSyncPolicy("repo", st, false, false, false)
+	decision := evaluateSyncPolicy("repo", "", st, false, false, false)
 
 	if !decision.Skip {
 		t.Fatal("expected repo synced within 24 hours to be skipped")
@@ -26,7 +29,7 @@ func TestEvaluateSyncPolicy_AllowsRepoAfterDailyWindow(t *testing.T) {
 	st := &state.State{}
 	st.SetLastRepoSync("repo", time.Now().Add(-25*time.Hour))
 
-	decision := evaluateSyncPolicy("repo", st, false, false, false)
+	decision := evaluateSyncPolicy("repo", "", st, false, false, false)
 
 	if decision.Skip {
 		t.Fatalf("expected repo synced more than 24 hours ago to proceed, got %q", decision.Message)
@@ -34,13 +37,13 @@ func TestEvaluateSyncPolicy_AllowsRepoAfterDailyWindow(t *testing.T) {
 }
 
 func TestEvaluateSyncPolicy_ForceBypassesDailyAndThrottleLimits(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	workDir := t.TempDir()
 
 	st := &state.State{}
 	now := time.Now()
 	st.SetRepoSync("repo", now.Add(-1*time.Hour), now.Add(30*24*time.Hour))
 
-	decision := evaluateSyncPolicy("repo", st, false, true, true)
+	decision := evaluateSyncPolicy("repo", workDir, st, false, true, true)
 
 	if decision.Skip {
 		t.Fatalf("expected --force to bypass sync limits, got %q", decision.Message)
@@ -51,10 +54,12 @@ func TestEvaluateSyncPolicy_ForceBypassesDailyAndThrottleLimits(t *testing.T) {
 }
 
 func TestEvaluateSyncPolicy_ThrottleSetsWindowWhenRepoIsIdle(t *testing.T) {
-	t.Setenv("HOME", t.TempDir())
+	// No repo directory exists under workDir, so the repo is treated as
+	// having no local clone at all (i.e. definitely no recent commits).
+	workDir := t.TempDir()
 
 	start := time.Now()
-	decision := evaluateSyncPolicy("repo", &state.State{}, false, false, true)
+	decision := evaluateSyncPolicy("repo", workDir, &state.State{}, false, false, true)
 	end := time.Now()
 
 	if !decision.Skip {
@@ -69,6 +74,55 @@ func TestEvaluateSyncPolicy_ThrottleSetsWindowWhenRepoIsIdle(t *testing.T) {
 	if decision.NextAllowed.Before(minAllowed) || decision.NextAllowed.After(maxAllowed) {
 		t.Fatalf("expected throttle window between %s and %s, got %s", minAllowed, maxAllowed, decision.NextAllowed)
 	}
+}
+
+// TestEvaluateSyncPolicy_UsesConfiguredWorkDirForRecentCommits is a regression
+// test for the bug where hasRecentLocalCommits hardcoded ~/git/<repo> instead
+// of using the configured work directory. With a custom workDir (deliberately
+// not under ~/git) containing a repo with a commit from today, the throttle
+// check must detect that activity and NOT skip the repo.
+func TestEvaluateSyncPolicy_UsesConfiguredWorkDirForRecentCommits(t *testing.T) {
+	workDir := t.TempDir()
+	repoName := "custom-repo"
+	repoPath := filepath.Join(workDir, repoName)
+
+	initRepoWithCommit(t, repoPath)
+
+	decision := evaluateSyncPolicy(repoName, workDir, &state.State{}, false, false, true)
+
+	if decision.Skip {
+		t.Fatalf("expected repo with recent local commits under custom work dir to proceed, got %q", decision.Message)
+	}
+	if !strings.Contains(decision.Message, "recent local commits") {
+		t.Fatalf("expected message to mention recent local commits, got %q", decision.Message)
+	}
+}
+
+// initRepoWithCommit creates a git repository at repoPath with a single
+// commit dated now, so tests can exercise the "recent local commits" path
+// without depending on any real repository on disk.
+func initRepoWithCommit(t *testing.T, repoPath string) {
+	t.Helper()
+
+	if err := os.MkdirAll(repoPath, 0755); err != nil {
+		t.Fatalf("failed to create repo dir: %v", err)
+	}
+
+	runGit := func(args ...string) {
+		t.Helper()
+		cmd := exec.Command("git", args...)
+		cmd.Dir = repoPath
+		cmd.Env = append(os.Environ(),
+			"GIT_AUTHOR_NAME=Test", "GIT_AUTHOR_EMAIL=test@example.com",
+			"GIT_COMMITTER_NAME=Test", "GIT_COMMITTER_EMAIL=test@example.com",
+		)
+		if output, err := cmd.CombinedOutput(); err != nil {
+			t.Fatalf("git %v failed: %v\n%s", args, err, output)
+		}
+	}
+
+	runGit("init")
+	runGit("commit", "--allow-empty", "-m", "initial commit")
 }
 
 func TestRecordRepoSync_ClearsThrottleWindowWhenThrottleDisabled(t *testing.T) {
