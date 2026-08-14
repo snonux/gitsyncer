@@ -100,51 +100,47 @@ func (s *Syncer) analyzeAbandonedBranches() (*AbandonedBranchReport, error) {
 		return report, nil
 	}
 
-	// Analyze each branch
+	// Analyze each branch. Regular and excluded/ignored branches go through
+	// the same get-info/compare-against-sixMonthsAgo/append logic; only the
+	// reason-string suffix differs, so both calls share collectAbandoned.
 	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
 
-	for _, branch := range branches {
-		// Skip main/master branches
-		if branch == "main" || branch == "master" {
-			continue
-		}
-
-		branchInfo, err := s.getBranchInfo(branch)
-		if err != nil {
-			continue
-		}
-
-		// Check if branch is abandoned (no commits for 6+ months)
-		if branchInfo.LastCommit.Before(sixMonthsAgo) {
-			branchInfo.IsAbandoned = true
-			daysSinceCommit := int(time.Since(branchInfo.LastCommit).Hours() / 24)
-			branchInfo.AbandonReason = fmt.Sprintf("No commits for %d days", daysSinceCommit)
-			report.AbandonedBranches = append(report.AbandonedBranches, *branchInfo)
-		}
-	}
-
-	// Also analyze ignored branches for abandonment
-	for _, branch := range excludedBranches {
-		// Skip main/master branches even if they match exclusion patterns
-		if branch == "main" || branch == "master" {
-			continue
-		}
-
-		branchInfo, err := s.getBranchInfo(branch)
-		if err != nil {
-			continue
-		}
-
-		// Check if branch is abandoned (no commits for 6+ months)
-		if branchInfo.LastCommit.Before(sixMonthsAgo) {
-			branchInfo.IsAbandoned = true
-			daysSinceCommit := int(time.Since(branchInfo.LastCommit).Hours() / 24)
-			branchInfo.AbandonReason = fmt.Sprintf("No commits for %d days (ignored branch)", daysSinceCommit)
-			report.AbandonedIgnoredBranches = append(report.AbandonedIgnoredBranches, *branchInfo)
-		}
-	}
+	report.AbandonedBranches = s.collectAbandoned(branches, sixMonthsAgo, "")
+	report.AbandonedIgnoredBranches = s.collectAbandoned(excludedBranches, sixMonthsAgo, " (ignored branch)")
 
 	return filterProtectedAbandonedBranchReport(s.repoName, report), nil
+}
+
+// collectAbandoned inspects each named branch and returns the BranchInfo
+// entries whose last commit predates sixMonthsAgo (i.e. abandoned). It backs
+// both the regular and excluded-branch passes of analyzeAbandonedBranches;
+// reasonSuffix distinguishes the two in the resulting AbandonReason text
+// (e.g. " (ignored branch)" for excluded branches, "" for regular ones).
+// main/master branches are always skipped, even if present in names because
+// they match an exclusion pattern.
+func (s *Syncer) collectAbandoned(names []string, sixMonthsAgo time.Time, reasonSuffix string) []BranchInfo {
+	var abandoned []BranchInfo
+
+	for _, branch := range names {
+		if branch == "main" || branch == "master" {
+			continue
+		}
+
+		branchInfo, err := s.getBranchInfo(branch)
+		if err != nil {
+			continue
+		}
+
+		// Check if branch is abandoned (no commits for 6+ months)
+		if branchInfo.LastCommit.Before(sixMonthsAgo) {
+			branchInfo.IsAbandoned = true
+			daysSinceCommit := int(time.Since(branchInfo.LastCommit).Hours() / 24)
+			branchInfo.AbandonReason = fmt.Sprintf("No commits for %d days%s", daysSinceCommit, reasonSuffix)
+			abandoned = append(abandoned, *branchInfo)
+		}
+	}
+
+	return abandoned
 }
 
 // findMainBranch finds the main or master branch

@@ -2,11 +2,109 @@ package sync
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
+
+	"codeberg.org/snonux/gitsyncer/internal/config"
 )
+
+// TestCollectAbandoned_RegularAndExcludedBranches exercises the
+// collectAbandoned helper shared by analyzeAbandonedBranches' regular and
+// excluded-branch passes, confirming both categories apply the same
+// six-months-old cutoff and main/master skip, while only the reason-suffix
+// text differs between them.
+func TestCollectAbandoned_RegularAndExcludedBranches(t *testing.T) {
+	repoPath := t.TempDir()
+	initBranchAnalyzerTestRepo(t, repoPath)
+
+	oldTime := time.Now().AddDate(-1, 0, 0) // well past the six-month cutoff
+	newTime := time.Now()
+
+	commitOnBranch(t, repoPath, "old-feature", oldTime)
+	commitOnBranch(t, repoPath, "old-ignored", oldTime)
+	commitOnBranch(t, repoPath, "fresh-feature", newTime)
+
+	syncer := New(&config.Config{}, filepath.Dir(repoPath))
+	syncer.repoName = filepath.Base(repoPath)
+
+	sixMonthsAgo := time.Now().AddDate(0, -6, 0)
+
+	regular := syncer.collectAbandoned([]string{"old-feature", "fresh-feature", "main"}, sixMonthsAgo, "")
+	if len(regular) != 1 || regular[0].Name != "old-feature" {
+		t.Fatalf("expected only old-feature to be abandoned, got %#v", regular)
+	}
+	if !regular[0].IsAbandoned {
+		t.Fatalf("expected IsAbandoned to be true, got %#v", regular[0])
+	}
+	if !strings.HasPrefix(regular[0].AbandonReason, "No commits for ") || strings.Contains(regular[0].AbandonReason, "ignored") {
+		t.Fatalf("expected plain abandon reason without ignored suffix, got %q", regular[0].AbandonReason)
+	}
+
+	ignored := syncer.collectAbandoned([]string{"old-ignored", "main"}, sixMonthsAgo, " (ignored branch)")
+	if len(ignored) != 1 || ignored[0].Name != "old-ignored" {
+		t.Fatalf("expected only old-ignored to be abandoned, got %#v", ignored)
+	}
+	if !strings.HasSuffix(ignored[0].AbandonReason, "(ignored branch)") {
+		t.Fatalf("expected abandon reason to carry the ignored-branch suffix, got %q", ignored[0].AbandonReason)
+	}
+
+	// A branch with a recent commit must never be reported as abandoned,
+	// regardless of which reason suffix is requested.
+	fresh := syncer.collectAbandoned([]string{"fresh-feature"}, sixMonthsAgo, " (ignored branch)")
+	if len(fresh) != 0 {
+		t.Fatalf("expected fresh-feature to not be abandoned, got %#v", fresh)
+	}
+}
+
+// initBranchAnalyzerTestRepo creates a git repository with a "main" branch
+// containing a single initial commit, ready for commitOnBranch to add
+// feature branches with controlled commit dates on top of.
+func initBranchAnalyzerTestRepo(t *testing.T, repoPath string) {
+	t.Helper()
+
+	runGit(t, repoPath, "init")
+	runGit(t, repoPath, "checkout", "-b", "main")
+	runGit(t, repoPath, "config", "user.name", "Test User")
+	runGit(t, repoPath, "config", "user.email", "test@example.com")
+
+	readme := filepath.Join(repoPath, "README.md")
+	if err := os.WriteFile(readme, []byte("init"), 0o644); err != nil {
+		t.Fatalf("write README: %v", err)
+	}
+	runGit(t, repoPath, "add", "README.md")
+	runGit(t, repoPath, "commit", "-m", "initial commit")
+}
+
+// commitOnBranch creates a new branch off main with a single commit dated
+// "when" (via GIT_AUTHOR_DATE/GIT_COMMITTER_DATE), then returns to main so
+// getLastCommitTime("", branch) picks up a deterministic last-commit time.
+func commitOnBranch(t *testing.T, repoPath, branch string, when time.Time) {
+	t.Helper()
+
+	runGit(t, repoPath, "checkout", "-b", branch)
+
+	filePath := filepath.Join(repoPath, branch+".txt")
+	if err := os.WriteFile(filePath, []byte(branch), 0o644); err != nil {
+		t.Fatalf("write file for branch %s: %v", branch, err)
+	}
+	runGit(t, repoPath, "add", branch+".txt")
+
+	dateStr := when.Format(time.RFC3339)
+	cmd := exec.Command("git", "commit", "-m", "commit on "+branch)
+	cmd.Dir = repoPath
+	cmd.Env = append(os.Environ(),
+		"GIT_AUTHOR_DATE="+dateStr,
+		"GIT_COMMITTER_DATE="+dateStr,
+	)
+	if output, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("git commit on branch %s: %v\n%s", branch, err, output)
+	}
+
+	runGit(t, repoPath, "checkout", "main")
+}
 
 func TestFilterProtectedAbandonedBranchReport_SkipsProtectedBranches(t *testing.T) {
 	report := &AbandonedBranchReport{
