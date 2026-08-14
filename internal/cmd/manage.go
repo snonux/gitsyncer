@@ -67,8 +67,7 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 
 		// Check state unless forced
 		if !force {
-			stateManager := state.NewManager(workDir)
-			s, err := stateManager.Load()
+			stateManager, s, err := loadBatchRunState(workDir)
 			if err != nil {
 				fmt.Fprintf(os.Stderr, "Warning: Failed to load state: %v\n", err)
 			}
@@ -128,6 +127,23 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 
 		os.Exit(0)
 	},
+}
+
+// loadBatchRunState loads the persisted batch-run state, defaulting to a
+// zero-value *state.State whenever Load() fails (e.g. a missing or corrupted
+// .gitsyncer-state.json). Without this fallback, Load()'s nil *State would
+// flow into state.State.HasRunWithinWeek() and panic on the nil dereference,
+// crashing the weekly cron job. This mirrors loadSyncState's fallback in
+// internal/cli/throttle.go. The load error is still returned so the caller
+// can warn about it, but batch-run treats a failed load the same as "never
+// run before" and proceeds.
+func loadBatchRunState(workDir string) (*state.Manager, *state.State, error) {
+	stateManager := state.NewManager(workDir)
+	s, err := stateManager.Load()
+	if s == nil {
+		s = &state.State{}
+	}
+	return stateManager, s, err
 }
 
 func init() {
