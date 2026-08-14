@@ -3,33 +3,85 @@ package sync
 import (
 	"errors"
 	"fmt"
-	"net/http"
-	"net/http/httptest"
 	stdsync "sync"
 	"sync/atomic"
 	"testing"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
-func TestEnsureForgejoBackups_DryRunIssuesNoAPIMutations(t *testing.T) {
-	mutations := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method == http.MethodPost || r.Method == http.MethodPatch {
-			mutations++
-		}
-		w.WriteHeader(http.StatusNotFound)
-	}))
-	defer server.Close()
-	cfg := &config.Config{Organizations: []config.Organization{{
-		Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: server.URL, ForgejoOwner: "owner", BackupLocation: true,
+// fakePublicRepoEnsurer is a test double for forge.PublicRepoEnsurer. Since
+// ensureForgejoBackups now depends on that interface (injected via
+// SetForgejoBackupClientFactory) instead of constructing a concrete
+// codeberg.Client, tests can exercise the call/error paths without an HTTP
+// server standing in for a real Forgejo API.
+type fakePublicRepoEnsurer struct {
+	calls []fakeEnsureCall
+	err   error
+}
+
+type fakeEnsureCall struct {
+	name        string
+	description string
+}
+
+func (f *fakePublicRepoEnsurer) EnsurePublicRepo(name, description string) error {
+	f.calls = append(f.calls, fakeEnsureCall{name: name, description: description})
+	return f.err
+}
+
+func forgejoBackupOrgConfig() *config.Config {
+	return &config.Config{Organizations: []config.Organization{{
+		Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: "https://forgejo.example", ForgejoOwner: "owner", BackupLocation: true,
 	}}}
+}
+
+func TestEnsureForgejoBackups_DryRunDoesNotInvokeFactory(t *testing.T) {
+	fake := &fakePublicRepoEnsurer{}
+	cfg := forgejoBackupOrgConfig()
 	syncer := New(cfg, t.TempDir())
 	syncer.SetBackupEnabled(true)
 	syncer.SetDryRun(true)
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
 	syncer.ensureForgejoBackups("demo")
-	if mutations != 0 {
-		t.Fatalf("dry run issued %d Forgejo API mutations, want zero", mutations)
+	if len(fake.calls) != 0 {
+		t.Fatalf("dry run invoked EnsurePublicRepo %d times, want zero", len(fake.calls))
+	}
+}
+
+func TestEnsureForgejoBackups_NilFactoryIsNoOp(t *testing.T) {
+	cfg := forgejoBackupOrgConfig()
+	syncer := New(cfg, t.TempDir())
+	syncer.SetBackupEnabled(true)
+	// No factory injected: a Syncer built without cli's wiring must not panic.
+	syncer.ensureForgejoBackups("demo")
+}
+
+func TestEnsureForgejoBackups_CallsInjectedFactory(t *testing.T) {
+	fake := &fakePublicRepoEnsurer{}
+	cfg := forgejoBackupOrgConfig()
+	syncer := New(cfg, t.TempDir())
+	syncer.SetBackupEnabled(true)
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
+	syncer.ensureForgejoBackups("demo")
+	if len(fake.calls) != 1 {
+		t.Fatalf("expected exactly one EnsurePublicRepo call, got %d", len(fake.calls))
+	}
+	if got := fake.calls[0]; got.name != "demo" || got.description != "Mirror of demo" {
+		t.Fatalf("EnsurePublicRepo called with %+v, want {name:demo description:Mirror of demo}", got)
+	}
+}
+
+func TestEnsureForgejoBackups_FactoryErrorDisablesBackupForSession(t *testing.T) {
+	fake := &fakePublicRepoEnsurer{err: errors.New("boom")}
+	cfg := forgejoBackupOrgConfig()
+	syncer := New(cfg, t.TempDir())
+	syncer.SetBackupEnabled(true)
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
+	syncer.ensureForgejoBackups("demo")
+	if syncer.backupActive(syncer.getRemoteName(&cfg.Organizations[0])) {
+		t.Fatal("expected backup sync to be disabled after EnsurePublicRepo error")
 	}
 }
 

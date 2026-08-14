@@ -61,6 +61,7 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
 	syncer.SetDryRun(flags.DryRun)
+	syncer.SetForgejoBackupClientFactory(newForgejoBackupClient)
 	if err := syncer.SyncRepository(flags.SyncRepo); err != nil {
 		fmt.Printf("ERROR: Sync failed: %v\n", err)
 		return 1
@@ -113,6 +114,7 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
 	syncer.SetDryRun(flags.DryRun)
+	syncer.SetForgejoBackupClientFactory(newForgejoBackupClient)
 	successCount := 0
 	// Load descriptions cache
 	descCache := loadDescriptionCache(flags.WorkDir)
@@ -510,6 +512,7 @@ func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
 	}
 	execution.syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
 	execution.syncer.SetDryRun(flags.DryRun)
+	execution.syncer.SetForgejoBackupClientFactory(newForgejoBackupClient)
 
 	manager, st, err := loadSyncState(flags.WorkDir)
 	if err != nil {

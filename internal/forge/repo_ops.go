@@ -35,6 +35,17 @@ type RepoDescriptionClient interface {
 	UpdateRepoDescription(repoName, description string) error
 }
 
+// PublicRepoEnsurer is implemented by forge clients that can idempotently
+// ensure a public repository exists: create it if absent, or validate that
+// an existing repository is a compatible (public, same-name) target.
+// internal/sync depends on this narrow interface instead of importing a
+// concrete forge package (e.g. codeberg) directly, so the backup-repo
+// bootstrapping in ensureForgejoBackups stays decoupled from any single
+// forge implementation. codeberg.Client implements this method.
+type PublicRepoEnsurer interface {
+	EnsurePublicRepo(name, description string) error
+}
+
 // ReleaseClient defines release CRUD operations shared across forges. Each
 // forge (GitHub, Codeberg/Gitea) implements this against its own API so the
 // release pipeline can talk to any forge through a single abstraction

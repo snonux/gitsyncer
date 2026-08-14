@@ -8,8 +8,8 @@ import (
 	"strings"
 	stdsync "sync"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/forge"
 )
 
 type backupSessionState struct {
@@ -17,16 +17,27 @@ type backupSessionState struct {
 	disabled map[string]string
 }
 
+// ForgejoBackupClientFactory builds a forge.PublicRepoEnsurer for a given
+// Forgejo backup organization. internal/sync depends only on this factory
+// signature and the forge.PublicRepoEnsurer interface it returns; the
+// concrete client construction (which forge package, which token source)
+// lives in internal/cli, which injects it via SetForgejoBackupClientFactory.
+// This keeps internal/sync from importing any concrete forge package
+// directly, matching the abstraction boundary the rest of the package
+// maintains through forge.RepoClient.
+type ForgejoBackupClientFactory func(org *config.Organization) forge.PublicRepoEnsurer
+
 // Syncer handles repository synchronization between organizations
 type Syncer struct {
-	config           *config.Config
-	workDir          string
-	repoName         string
-	abandonedReports map[string]*AbandonedBranchReport // Collects reports across repos
-	branchFilter     *BranchFilter                     // Filter for excluding branches
-	backupEnabled    bool                              // Whether to sync to backup locations
-	dryRun           bool                              // Whether mutations should only be reported
-	backupSession    backupSessionState
+	config                     *config.Config
+	workDir                    string
+	repoName                   string
+	abandonedReports           map[string]*AbandonedBranchReport // Collects reports across repos
+	branchFilter               *BranchFilter                     // Filter for excluding branches
+	backupEnabled              bool                              // Whether to sync to backup locations
+	dryRun                     bool                              // Whether mutations should only be reported
+	backupSession              backupSessionState
+	forgejoBackupClientFactory ForgejoBackupClientFactory // Builds the client used by ensureForgejoBackups; injected by cli
 }
 
 // CLAUDE: Is there a reason, we return a pointer to Syncer?
@@ -57,6 +68,15 @@ func (s *Syncer) SetBackupEnabled(enabled bool) {
 // SetDryRun prevents remote repository creation and Git pushes.
 func (s *Syncer) SetDryRun(enabled bool) {
 	s.dryRun = enabled
+}
+
+// SetForgejoBackupClientFactory injects the factory used by
+// ensureForgejoBackups to build a forge.PublicRepoEnsurer per Forgejo backup
+// organization. Callers (internal/cli) construct this from a concrete forge
+// client (e.g. codeberg.NewForgejoClient); internal/sync never depends on
+// that concrete type itself.
+func (s *Syncer) SetForgejoBackupClientFactory(factory ForgejoBackupClientFactory) {
+	s.forgejoBackupClientFactory = factory
 }
 
 func (s *Syncer) backupActive(remoteName string) bool {
@@ -184,8 +204,14 @@ func (s *Syncer) SyncRepository(repoName string) error {
 	return nil
 }
 
+// ensureForgejoBackups creates (or validates) the backup repository on each
+// active Forgejo backup organization before syncing. It builds the client
+// through forgejoBackupClientFactory rather than a concrete forge package,
+// so this package depends only on forge.PublicRepoEnsurer. If no factory was
+// injected (e.g. a Syncer built without cli's wiring), this is a no-op,
+// matching dry-run behavior of issuing no API mutations.
 func (s *Syncer) ensureForgejoBackups(repoName string) {
-	if s.dryRun {
+	if s.dryRun || s.forgejoBackupClientFactory == nil {
 		return
 	}
 	for i := range s.config.Organizations {
@@ -193,7 +219,7 @@ func (s *Syncer) ensureForgejoBackups(repoName string) {
 		if !org.IsForgejo() || !s.backupActive(s.getRemoteName(org)) {
 			continue
 		}
-		client := codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType)
+		client := s.forgejoBackupClientFactory(org)
 		if err := client.EnsurePublicRepo(repoName, "Mirror of "+repoName); err != nil {
 			s.disableBackupForSession(s.getRemoteName(org), err)
 		}

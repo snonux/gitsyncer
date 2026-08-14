@@ -40,6 +40,7 @@ type Client struct {
 
 var _ forge.RepoClient = (*Client)(nil)
 var _ forge.RepoDescriptionClient = (*Client)(nil)
+var _ forge.PublicRepoEnsurer = (*Client)(nil)
 
 // NewClient creates a new Codeberg API client
 func NewClient(token, org string) *Client {

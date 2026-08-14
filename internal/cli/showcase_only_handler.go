@@ -21,6 +21,7 @@ func HandleShowcaseOnly(cfg *config.Config, flags *Flags) int {
 		// Ensure the repository is cloned
 		syncer := sync.New(cfg, flags.WorkDir)
 		syncer.SetBackupEnabled(false)
+		syncer.SetForgejoBackupClientFactory(newForgejoBackupClient)
 		if err := syncer.EnsureRepositoryCloned(repo); err != nil {
 			fmt.Printf("ERROR: Failed to clone %s: %v\n", repo, err)
 			return 1
@@ -55,6 +56,7 @@ func HandleShowcaseOnly(cfg *config.Config, flags *Flags) int {
 	// Create a minimal syncer just for cloning
 	syncer := sync.New(cfg, flags.WorkDir)
 	syncer.SetBackupEnabled(false) // Never use backup in showcase-only mode
+	syncer.SetForgejoBackupClientFactory(newForgejoBackupClient)
 
 	// Ensure repositories are cloned (but not synced)
 	fmt.Println("\nEnsuring repositories are cloned locally...")
