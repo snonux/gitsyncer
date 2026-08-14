@@ -170,8 +170,11 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("organization %d: forgejo_owner must be one safe path segment", i)
 			}
 			sshBase, err := url.Parse(org.Host)
-			if err != nil || sshBase.Scheme != "ssh" || sshBase.Hostname() == "" || sshBase.User == nil || sshBase.User.Username() == "" || sshBase.User.String() != sshBase.User.Username() || (sshBase.Path != "" && sshBase.Path != "/") || sshBase.RawQuery != "" || sshBase.Fragment != "" || !validPort(sshBase.Port()) {
-				return fmt.Errorf("organization %d: Forgejo host must be an absolute ssh:// URL with a user and host", i)
+			if err != nil {
+				return fmt.Errorf("organization %d: forgejo host: %v", i, err)
+			}
+			if err := validateForgejoHost(sshBase); err != nil {
+				return fmt.Errorf("organization %d: %w", i, err)
 			}
 			apiBase, err := url.Parse(org.ForgejoAPIBase)
 			if err != nil || (apiBase.Scheme != "http" && apiBase.Scheme != "https") || apiBase.Host == "" || !apiBase.IsAbs() || apiBase.User != nil || apiBase.RawQuery != "" || apiBase.Fragment != "" {
@@ -203,6 +206,43 @@ func (c *Config) Validate() error {
 		}
 	}
 
+	return nil
+}
+
+// validateForgejoHost checks that u (the already-parsed org.Host) is an
+// absolute ssh:// URL identifying exactly one user and host, with no
+// password, path beyond an optional trailing slash, query string, fragment,
+// or invalid port. Each condition is checked separately so a misconfigured
+// host reports specifically what is wrong instead of one opaque message
+// covering roughly ten different possible causes.
+func validateForgejoHost(u *url.URL) error {
+	if u.Scheme != "ssh" {
+		return fmt.Errorf("forgejo host: scheme must be ssh, got %q", u.Scheme)
+	}
+	if u.Hostname() == "" {
+		return fmt.Errorf("forgejo host: missing hostname")
+	}
+	if u.User == nil {
+		return fmt.Errorf("forgejo host: missing user")
+	}
+	if u.User.Username() == "" {
+		return fmt.Errorf("forgejo host: missing username")
+	}
+	if u.User.String() != u.User.Username() {
+		return fmt.Errorf("forgejo host: user must not include a password")
+	}
+	if u.Path != "" && u.Path != "/" {
+		return fmt.Errorf("forgejo host: path must be empty or %q, got %q", "/", u.Path)
+	}
+	if u.RawQuery != "" {
+		return fmt.Errorf("forgejo host: query string is not allowed")
+	}
+	if u.Fragment != "" {
+		return fmt.Errorf("forgejo host: fragment is not allowed")
+	}
+	if !validPort(u.Port()) {
+		return fmt.Errorf("forgejo host: invalid port %q", u.Port())
+	}
 	return nil
 }
 

@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/url"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -131,18 +132,23 @@ func TestValidate_ForgejoURLs(t *testing.T) {
 		owner   string
 		want    string
 	}{
-		{name: "scp-like host", host: "git@forgejo.example:repos", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
-		{name: "HTTP Git host", host: "https://forgejo.example", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
-		{name: "SSH host path", host: "ssh://git@forgejo.example:2022/owner", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "scp-like host", host: "git@forgejo.example:repos", apiBase: "https://forgejo.example/api/v1", want: "forgejo host: parse"},
+		{name: "HTTP Git host", host: "https://forgejo.example", apiBase: "https://forgejo.example/api/v1", want: "scheme must be ssh"},
+		{name: "SSH missing hostname", host: "ssh://git@", apiBase: "https://forgejo.example/api/v1", want: "missing hostname"},
+		{name: "SSH missing user", host: "ssh://forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", want: "missing user"},
+		{name: "SSH missing username", host: "ssh://@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", want: "missing username"},
+		{name: "SSH host path", host: "ssh://git@forgejo.example:2022/owner", apiBase: "https://forgejo.example/api/v1", want: "path must be empty"},
+		{name: "SSH host query", host: "ssh://git@forgejo.example:2022?x=1", apiBase: "https://forgejo.example/api/v1", want: "query string is not allowed"},
+		{name: "SSH host fragment", host: "ssh://git@forgejo.example:2022#frag", apiBase: "https://forgejo.example/api/v1", want: "fragment is not allowed"},
 		{name: "relative API base", host: "ssh://git@forgejo.example:2022", apiBase: "/api/v1", want: "absolute HTTP(S)"},
 		{name: "non-HTTP API base", host: "ssh://git@forgejo.example:2022", apiBase: "ftp://forgejo.example/api/v1", want: "absolute HTTP(S)"},
 		{name: "API base userinfo", host: "ssh://git@forgejo.example:2022", apiBase: "https://user@forgejo.example/api/v1", want: "absolute HTTP(S)"},
 		{name: "API base query", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1?token=bad", want: "absolute HTTP(S)"},
 		{name: "API base fragment", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1#bad", want: "absolute HTTP(S)"},
-		{name: "SSH password", host: "ssh://git:secret@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
-		{name: "nonnumeric SSH port", host: "ssh://git@forgejo.example:ssh", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
-		{name: "zero SSH port", host: "ssh://git@forgejo.example:0", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
-		{name: "out of range SSH port", host: "ssh://git@forgejo.example:65536", apiBase: "https://forgejo.example/api/v1", want: "absolute ssh://"},
+		{name: "SSH password", host: "ssh://git:secret@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", want: "user must not include a password"},
+		{name: "nonnumeric SSH port", host: "ssh://git@forgejo.example:ssh", apiBase: "https://forgejo.example/api/v1", want: "forgejo host: parse"},
+		{name: "zero SSH port", host: "ssh://git@forgejo.example:0", apiBase: "https://forgejo.example/api/v1", want: "invalid port"},
+		{name: "out of range SSH port", host: "ssh://git@forgejo.example:65536", apiBase: "https://forgejo.example/api/v1", want: "invalid port"},
 		{name: "owner slash", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", owner: "group/owner", want: "safe path segment"},
 		{name: "owner dot segment", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", owner: "..", want: "safe path segment"},
 		{name: "owner query trick", host: "ssh://git@forgejo.example:2022", apiBase: "https://forgejo.example/api/v1", owner: "owner?admin=1", want: "safe path segment"},
@@ -160,6 +166,61 @@ func TestValidate_ForgejoURLs(t *testing.T) {
 			if err == nil || !strings.Contains(err.Error(), tt.want) {
 				t.Fatalf("Validate() error = %v, want containing %q", err, tt.want)
 			}
+		})
+	}
+}
+
+// TestValidateForgejoHost exercises the extracted helper directly, one
+// sub-condition at a time, to confirm each failure mode reports its own
+// distinct message rather than sharing one opaque "must be an absolute
+// ssh:// URL" error.
+func TestValidateForgejoHost(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name string
+		raw  string
+		want string // substring expected in the error, or "" for success
+	}{
+		{name: "valid", raw: "ssh://git@forgejo.example:2022", want: ""},
+		{name: "valid trailing slash", raw: "ssh://git@forgejo.example:2022/", want: ""},
+		{name: "wrong scheme", raw: "https://git@forgejo.example:2022", want: "scheme must be ssh"},
+		{name: "missing hostname", raw: "ssh://git@", want: "missing hostname"},
+		{name: "missing user", raw: "ssh://forgejo.example:2022", want: "missing user"},
+		{name: "missing username", raw: "ssh://@forgejo.example:2022", want: "missing username"},
+		{name: "password in userinfo", raw: "ssh://git:secret@forgejo.example:2022", want: "must not include a password"},
+		{name: "extra path segment", raw: "ssh://git@forgejo.example:2022/owner", want: "path must be empty"},
+		{name: "query string", raw: "ssh://git@forgejo.example:2022?x=1", want: "query string is not allowed"},
+		{name: "fragment", raw: "ssh://git@forgejo.example:2022#frag", want: "fragment is not allowed"},
+		{name: "zero port", raw: "ssh://git@forgejo.example:0", want: "invalid port"},
+		{name: "out of range port", raw: "ssh://git@forgejo.example:65536", want: "invalid port"},
+	}
+
+	seenMessages := map[string]string{}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			u, err := url.Parse(tt.raw)
+			if err != nil {
+				t.Fatalf("url.Parse(%q) failed: %v", tt.raw, err)
+			}
+
+			err = validateForgejoHost(u)
+			if tt.want == "" {
+				if err != nil {
+					t.Fatalf("validateForgejoHost(%q) = %v, want nil", tt.raw, err)
+				}
+				return
+			}
+			if err == nil || !strings.Contains(err.Error(), tt.want) {
+				t.Fatalf("validateForgejoHost(%q) error = %v, want containing %q", tt.raw, err, tt.want)
+			}
+			// Each failure condition must produce a message distinct from
+			// every other failure condition's message, otherwise callers
+			// can't tell which check actually failed.
+			if other, ok := seenMessages[err.Error()]; ok {
+				t.Fatalf("validateForgejoHost(%q) error %q duplicates message from case %q", tt.raw, err.Error(), other)
+			}
+			seenMessages[err.Error()] = tt.name
 		})
 	}
 }
