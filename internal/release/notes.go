@@ -2,10 +2,42 @@ package release
 
 import (
 	"fmt"
+	"regexp"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/aitool"
 )
+
+// featCommitRE and fixCommitRE recognize Conventional Commit subjects for
+// features and fixes, with an optional (scope) between the type and the
+// colon (e.g. "feat(sync): add X", "fix(config): correct Y"). The scope
+// group is intentionally unconstrained ([^)]*) since callers may use any
+// text there (package name, component, etc). Matching is case-insensitive
+// so "Feat:" / "FIX:" style subjects are still recognized.
+var (
+	featCommitRE = regexp.MustCompile(`(?i)^(feat|feature)(\([^)]*\))?:`)
+	fixCommitRE  = regexp.MustCompile(`(?i)^(fix|bugfix)(\([^)]*\))?:`)
+)
+
+// categorizeCommits buckets commit subjects into features, fixes, and
+// everything else ("other") based on their Conventional Commit type prefix.
+// Both unscoped ("feat: add X") and scoped ("feat(sync): add X") subjects
+// are recognized; anything that doesn't match a known feat/fix prefix falls
+// into "other". Split out from GenerateReleaseNotes so the categorization
+// rules can be unit-tested independently of git/tag plumbing.
+func categorizeCommits(commits []string) (features, fixes, other []string) {
+	for _, commit := range commits {
+		switch {
+		case featCommitRE.MatchString(commit):
+			features = append(features, commit)
+		case fixCommitRE.MatchString(commit):
+			fixes = append(fixes, commit)
+		default:
+			other = append(other, commit)
+		}
+	}
+	return features, fixes, other
+}
 
 // NotesGenerator builds release notes from git history. It composes a
 // GitInspector for the commit/diff input and an AI tool chain for the prose
@@ -57,19 +89,8 @@ func (n *NotesGenerator) GenerateReleaseNotes(repoPath, tag string, allTags []st
 		return fmt.Sprintf("Release %s", tag)
 	}
 
-	// Group commits by type
-	var features, fixes, other []string
-
-	for _, commit := range commits {
-		lower := strings.ToLower(commit)
-		if strings.HasPrefix(lower, "feat:") || strings.HasPrefix(lower, "feature:") {
-			features = append(features, commit)
-		} else if strings.HasPrefix(lower, "fix:") || strings.HasPrefix(lower, "bugfix:") {
-			fixes = append(fixes, commit)
-		} else {
-			other = append(other, commit)
-		}
-	}
+	// Group commits by Conventional Commit type.
+	features, fixes, other := categorizeCommits(commits)
 
 	// Build release notes
 	var notes strings.Builder
