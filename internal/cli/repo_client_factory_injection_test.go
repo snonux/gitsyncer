@@ -364,6 +364,52 @@ func TestSyncGitHubRepos_DryRunCreateReposDispatchesNoMutations(t *testing.T) {
 	}
 }
 
+// TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync covers the
+// forgeSyncSpec.afterSync branch that is unique to syncCodebergRepos: when
+// SyncGitHubPublic is set, the full-sync separator should print after the
+// Codeberg->GitHub loop so combined log output reads as two phases.
+// syncGitHubRepos has no equivalent afterSync behavior (its spec always
+// returns 0 without printing), which TestSyncGitHubRepos_DryRunCreateReposDispatchesNoMutations
+// already exercises.
+func TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{}
+	flags := &Flags{DryRun: true, SyncGitHubPublic: true, WorkDir: t.TempDir()}
+	repos := []codeberg.Repository{{Name: "demo", Description: "demo repo"}}
+
+	out := captureStdout(t, func() {
+		if got := syncCodebergRepos(&config.Config{}, flags, repos, []string{"demo"}, factory); got != 0 {
+			t.Fatalf("syncCodebergRepos() = %d, want 0", got)
+		}
+	})
+
+	if !strings.Contains(out, "Continuing with GitHub to Codeberg sync") {
+		t.Fatalf("expected full-sync separator in output, got:\n%s", out)
+	}
+}
+
+// TestSyncCodebergRepos_NoSeparatorWithoutChainedGitHubSync confirms the
+// separator is only printed when SyncGitHubPublic chains into a follow-on
+// GitHub sync, not on every syncCodebergRepos call.
+func TestSyncCodebergRepos_NoSeparatorWithoutChainedGitHubSync(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{}
+	flags := &Flags{DryRun: true, SyncGitHubPublic: false, WorkDir: t.TempDir()}
+	repos := []codeberg.Repository{{Name: "demo", Description: "demo repo"}}
+
+	out := captureStdout(t, func() {
+		if got := syncCodebergRepos(&config.Config{}, flags, repos, []string{"demo"}, factory); got != 0 {
+			t.Fatalf("syncCodebergRepos() = %d, want 0", got)
+		}
+	})
+
+	if strings.Contains(out, "Continuing with GitHub to Codeberg sync") {
+		t.Fatalf("did not expect full-sync separator in output, got:\n%s", out)
+	}
+}
+
 func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 	t.Parallel()
 
@@ -429,6 +475,47 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 	}
 	if factory.codebergPublicToken != "cb-token" || factory.codebergPublicOrg != "acme" {
 		t.Fatalf("codeberg public client init args = (%q, %q), want (%q, %q)", factory.codebergPublicToken, factory.codebergPublicOrg, "cb-token", "acme")
+	}
+}
+
+// TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZero
+// covers the SyncGitHubPublic:true dry-run path. Before the l01 dedup, this
+// branch fell through the (now-removed) redundant `if !flags.SyncGitHubPublic
+// { return 0 }` check inside the dry-run block without ever reaching the
+// syncCodebergRepos dispatch; the observable result was always 0 either way.
+// This test locks in that the merged publicSyncPipeline.run preserves that
+// same outcome.
+func TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZero(t *testing.T) {
+	t.Parallel()
+
+	factory := &stubRepoClientFactory{
+		codebergPublicClient: &stubCodebergPublicRepoClient{
+			orgRepos: []codeberg.Repository{{Name: "demo"}},
+		},
+	}
+	cfg := &config.Config{
+		Organizations: []config.Organization{
+			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
+		},
+		SyncCodeberg: true,
+	}
+	flags := &Flags{
+		DryRun:           true,
+		SyncGitHubPublic: true,
+		WorkDir:          t.TempDir(),
+	}
+
+	out := captureStdout(t, func() {
+		if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
+			t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0", got)
+		}
+	})
+
+	if !strings.Contains(out, "[DRY RUN] Would sync 1 repositories from Codeberg to GitHub") {
+		t.Fatalf("expected dry-run summary in output, got:\n%s", out)
+	}
+	if factory.codebergPublicCalls != 1 {
+		t.Fatalf("expected exactly one injected Codeberg public client creation, got %d", factory.codebergPublicCalls)
 	}
 }
 

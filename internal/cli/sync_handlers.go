@@ -192,6 +192,11 @@ func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
 	return handleSyncCodebergPublicWithFactory(cfg, flags, cliRepoClientFactory)
 }
 
+// handleSyncCodebergPublicWithFactory discovers Codeberg's public repositories
+// and hands them to the shared fetch+allowlist+dryrun+shuffle pipeline
+// (publicSyncPipeline.run). Only the Codeberg-specific bits live here: the
+// sync_codeberg config gate, org lookup, client construction, and the
+// org-then-user listing fallback that Codeberg's API requires.
 func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
 	if !cfg.CodebergSyncEnabled() {
 		fmt.Println("Codeberg sync is disabled in config (set \"sync_codeberg\": true to enable)")
@@ -223,45 +228,16 @@ func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, facto
 		}
 	}
 
-	repoNames := codeberg.GetRepoNames(repos)
-	fmt.Printf("Found %d public repositories on Codeberg\n", len(repoNames))
-
-	if before := len(repoNames); before > 0 {
-		repoNames = cfg.FilterSyncRepos(repoNames)
-		if len(repoNames) < before {
-			fmt.Printf("Restricted to %d configured repositories (allowlist)\n", len(repoNames))
-		}
+	pipeline := publicSyncPipeline{
+		sourceLabel:  "Codeberg",
+		targetLabel:  "GitHub",
+		createTarget: flags.CreateGitHubRepos,
+		sync: func(repoNames []string) int {
+			return syncCodebergRepos(cfg, flags, repos, repoNames, factory)
+		},
 	}
 
-	if len(repoNames) == 0 {
-		fmt.Println("No public repositories found")
-		return 0
-	}
-
-	if flags.DryRun {
-		repoNames = filterDryRunRepoNames(repoNames, flags)
-	}
-
-	repoNames = shuffledRepoNames(repoNames)
-
-	// Show the repositories that will be synced
-	showReposToSync(repoNames)
-
-	if flags.DryRun {
-		fmt.Printf("\n[DRY RUN] Would sync %d repositories from Codeberg to GitHub\n", len(repoNames))
-		if flags.CreateGitHubRepos {
-			fmt.Println("Would create missing GitHub repositories")
-		}
-		if !flags.SyncGitHubPublic {
-			return 0
-		}
-	}
-
-	if !flags.DryRun {
-		return syncCodebergRepos(cfg, flags, repos, repoNames, factory)
-	}
-
-	return 0
+	return pipeline.run(cfg, flags, codeberg.GetRepoNames(repos))
 }
 
 // HandleSyncGitHubPublic handles syncing all public GitHub repositories
@@ -269,6 +245,10 @@ func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
 	return handleSyncGitHubPublicWithFactory(cfg, flags, cliRepoClientFactory)
 }
 
+// handleSyncGitHubPublicWithFactory mirrors handleSyncCodebergPublicWithFactory
+// for GitHub: it resolves the GitHub org, requires a token (GitHub's public
+// listing API needs one even for public repos, unlike Codeberg's), fetches the
+// repos, then delegates the shared post-processing to publicSyncPipeline.run.
 func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg == nil {
@@ -295,8 +275,39 @@ func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory
 		return 1
 	}
 
-	repoNames := github.GetRepoNames(repos)
-	fmt.Printf("Found %d public repositories on GitHub\n", len(repoNames))
+	pipeline := publicSyncPipeline{
+		sourceLabel:  "GitHub",
+		targetLabel:  "Codeberg",
+		createTarget: flags.CreateCodebergRepos,
+		sync: func(repoNames []string) int {
+			return syncGitHubRepos(cfg, flags, repos, repoNames, factory)
+		},
+	}
+
+	return pipeline.run(cfg, flags, github.GetRepoNames(repos))
+}
+
+// publicSyncPipeline is the fetch+allowlist+dryrun+shuffle pipeline shared by
+// handleSyncCodebergPublicWithFactory and handleSyncGitHubPublicWithFactory.
+// Each caller has already fetched its platform-specific repo list; this type
+// only handles the identical post-processing: reporting the fetch count,
+// restricting to the configured allowlist, filtering out throttled repos on
+// dry runs, shuffling sync order, printing the repo list, and either printing
+// a dry-run summary or dispatching to the platform's sync function.
+//
+// Note: the original Codeberg handler had a redundant `if !flags.SyncGitHubPublic
+// { return 0 }` inside its dry-run branch that always fell through to the same
+// `return 0` either way (nothing observable happened in between) - that dead
+// branch is dropped here since it had no behavioral effect.
+type publicSyncPipeline struct {
+	sourceLabel  string                       // e.g. "Codeberg"; used in log/dry-run messages
+	targetLabel  string                       // e.g. "GitHub"; the mirror destination
+	createTarget bool                         // flags.CreateGitHubRepos / flags.CreateCodebergRepos
+	sync         func(repoNames []string) int // dispatches to syncCodebergRepos/syncGitHubRepos
+}
+
+func (p publicSyncPipeline) run(cfg *config.Config, flags *Flags, repoNames []string) int {
+	fmt.Printf("Found %d public repositories on %s\n", len(repoNames), p.sourceLabel)
 
 	if before := len(repoNames); before > 0 {
 		repoNames = cfg.FilterSyncRepos(repoNames)
@@ -320,18 +331,14 @@ func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory
 	showReposToSync(repoNames)
 
 	if flags.DryRun {
-		fmt.Printf("\n[DRY RUN] Would sync %d repositories from GitHub to Codeberg\n", len(repoNames))
-		if flags.CreateCodebergRepos {
-			fmt.Println("Would create missing Codeberg repositories")
+		fmt.Printf("\n[DRY RUN] Would sync %d repositories from %s to %s\n", len(repoNames), p.sourceLabel, p.targetLabel)
+		if p.createTarget {
+			fmt.Printf("Would create missing %s repositories\n", p.targetLabel)
 		}
 		return 0
 	}
 
-	if !flags.DryRun {
-		return syncGitHubRepos(cfg, flags, repos, repoNames, factory)
-	}
-
-	return 0
+	return p.sync(repoNames)
 }
 
 // Helper functions
@@ -587,6 +594,99 @@ func printDeleteScript(syncer *sync.Syncer) {
 	}
 }
 
+// forgeSyncSpec parametrizes syncDiscoveredRepos by which forge sourced the
+// repo list and which forge (if any) mirror repos should be created on.
+// syncCodebergRepos and syncGitHubRepos each build one of these and delegate
+// the full per-repo sync loop (skip/throttle checks, optional mirror repo
+// creation, SyncRepository, state recording, description sync) to the shared
+// pipeline below.
+type forgeSyncSpec struct {
+	sourceLabel      string           // e.g. "Codeberg"; used in default mirror descriptions
+	targetLabel      string           // e.g. "GitHub"; used in create-repo log lines
+	createTarget     bool             // flags.CreateGitHubRepos / flags.CreateCodebergRepos
+	targetClient     forge.RepoClient // nil unless createTarget && !flags.DryRun
+	isCodebergSource bool             // selects which syncRepoDescriptions slot gets the discovered description
+
+	// afterSync runs once the loop finishes. Codeberg's sync optionally
+	// chains into a full GitHub sync and prints a separator; GitHub's sync
+	// has no such follow-on and just returns 0.
+	afterSync func(flags *Flags) int
+}
+
+// maybeCreateTargetRepo is the create-repo block that used to be duplicated
+// (with only the client/label/description swapped) in syncCodebergRepos and
+// syncGitHubRepos: if a mirror-creation client was configured, create the
+// repo using its known description, falling back to a generated
+// "Mirror of X from <source>" description when none is known.
+func (spec forgeSyncSpec) maybeCreateTargetRepo(repoName, description string) {
+	if spec.targetClient == nil || !spec.createTarget {
+		return
+	}
+	if description == "" {
+		description = fmt.Sprintf("Mirror of %s from %s", repoName, spec.sourceLabel)
+	}
+
+	fmt.Printf("Checking/creating %s repository %s...\n", spec.targetLabel, repoName)
+	if err := spec.targetClient.CreateRepo(repoName, description, false); err != nil {
+		fmt.Printf("Warning: Failed to create %s repo %s: %v\n", spec.targetLabel, repoName, err)
+	}
+}
+
+// syncDescriptions replays the discovered description into whichever
+// syncRepoDescriptions slot (knownCBDesc or knownGHDesc) matches the source
+// forge, preserving the original precedence rules from description_sync.go.
+func (spec forgeSyncSpec) syncDescriptions(cfg *config.Config, flags *Flags, execution *syncExecution, repoName, description string) {
+	if spec.isCodebergSource {
+		syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repoName, description, "", execution.descCache)
+		return
+	}
+	syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repoName, "", description, execution.descCache)
+}
+
+// syncDiscoveredRepos is the shared sync loop for repos discovered via a
+// public-repo listing (as opposed to the statically configured repos synced
+// by HandleSyncAll). It is parametrized by spec for the handful of things
+// that differ between the Codeberg->GitHub and GitHub->Codeberg directions:
+// which forge to mirror into, the default description text, and what runs
+// after the loop. repoDescriptions maps repo name to its known description on
+// the source forge (missing entries yield "", matching the original map
+// lookups which also treated a missing repo as an empty description).
+func syncDiscoveredRepos(cfg *config.Config, flags *Flags, repoNames []string, repoDescriptions map[string]string, spec forgeSyncSpec) int {
+	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
+
+	execution := newSyncExecution(cfg, flags)
+	successCount := 0
+
+	for i, repoName := range repoNames {
+		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
+
+		if execution.maybeSkipRepo(repoName, flags) {
+			continue
+		}
+
+		description := repoDescriptions[repoName]
+		spec.maybeCreateTargetRepo(repoName, description)
+
+		if err := execution.syncer.SyncRepository(repoName); err != nil {
+			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
+			fmt.Printf("Stopping sync due to error.\n")
+			return 1
+		}
+		execution.markRepoSynced(repoName, flags)
+		successCount++
+
+		// After syncing, sync descriptions according to precedence
+		spec.syncDescriptions(cfg, flags, execution, repoName, description)
+	}
+
+	execution.finishDiscoveredSync(successCount, flags)
+	return spec.afterSync(flags)
+}
+
+// syncCodebergRepos syncs repos discovered on Codeberg's public listing to
+// their GitHub mirrors, optionally creating missing GitHub repos first. It is
+// a thin wrapper around syncDiscoveredRepos; see forgeSyncSpec for what's
+// parametrized.
 func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string, factory repoClientFactory) int {
 	// Initialize GitHub client if needed
 	var githubClient forge.RepoClient
@@ -594,66 +694,29 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		githubClient = initGitHubClientWithFactory(cfg, factory)
 	}
 
-	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
-
-	execution := newSyncExecution(cfg, flags)
-	successCount := 0
-
-	// Create map for descriptions
-	repoMap := make(map[string]codeberg.Repository)
-	for _, repo := range repos {
-		repoMap[repo.Name] = repo
-	}
-
-	for i, repoName := range repoNames {
-		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
-
-		if execution.maybeSkipRepo(repoName, flags) {
-			continue
-		}
-
-		// Create GitHub repo if needed
-		if githubClient != nil && flags.CreateGitHubRepos {
-			codebergRepo := repoMap[repoName]
-			description := codebergRepo.Description
-			if description == "" {
-				description = fmt.Sprintf("Mirror of %s from Codeberg", repoName)
+	spec := forgeSyncSpec{
+		sourceLabel:      "Codeberg",
+		targetLabel:      "GitHub",
+		createTarget:     flags.CreateGitHubRepos,
+		targetClient:     githubClient,
+		isCodebergSource: true,
+		afterSync: func(flags *Flags) int {
+			if !flags.SyncGitHubPublic {
+				return 0
 			}
-
-			fmt.Printf("Checking/creating GitHub repository %s...\n", repoName)
-			err := githubClient.CreateRepo(repoName, description, false)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create GitHub repo %s: %v\n", repoName, err)
-			}
-		}
-
-		if err := execution.syncer.SyncRepository(repoName); err != nil {
-			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
-			fmt.Printf("Stopping sync due to error.\n")
-			return 1
-		}
-		execution.markRepoSynced(repoName, flags)
-		successCount++
-
-		// After syncing, sync descriptions according to precedence
-		if cbRepo, ok := repoMap[repoName]; ok {
-			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repoName, cbRepo.Description, "", execution.descCache)
-		} else {
-			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repoName, "", "", execution.descCache)
-		}
+			// Print separator for full sync
+			printFullSyncSeparator()
+			return 0
+		},
 	}
 
-	execution.finishDiscoveredSync(successCount, flags)
-
-	if !flags.SyncGitHubPublic {
-		return 0
-	}
-
-	// Print separator for full sync
-	printFullSyncSeparator()
-	return 0
+	return syncDiscoveredRepos(cfg, flags, repoNames, codebergRepoDescriptions(repos), spec)
 }
 
+// syncGitHubRepos syncs repos discovered on GitHub's public listing to their
+// Codeberg mirrors, optionally creating missing Codeberg repos first. It is a
+// thin wrapper around syncDiscoveredRepos; see forgeSyncSpec for what's
+// parametrized.
 func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string, factory repoClientFactory) int {
 	// Initialize Codeberg client if needed
 	var codebergClient forge.RepoClient
@@ -661,56 +724,36 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		codebergClient = initCodebergClientWithFactory(cfg, factory)
 	}
 
-	fmt.Printf("\nStarting sync of %d repositories...\n", len(repoNames))
+	spec := forgeSyncSpec{
+		sourceLabel:      "GitHub",
+		targetLabel:      "Codeberg",
+		createTarget:     flags.CreateCodebergRepos,
+		targetClient:     codebergClient,
+		isCodebergSource: false,
+		afterSync:        func(flags *Flags) int { return 0 },
+	}
 
-	execution := newSyncExecution(cfg, flags)
-	successCount := 0
+	return syncDiscoveredRepos(cfg, flags, repoNames, githubRepoDescriptions(repos), spec)
+}
 
-	// Create map for descriptions
-	repoMap := make(map[string]github.Repository)
+// codebergRepoDescriptions and githubRepoDescriptions adapt each forge's repo
+// listing into the plain name->description map that syncDiscoveredRepos
+// operates on. codeberg.Repository and github.Repository aren't the same
+// type, so a shared generic helper would need a type-parametrized accessor
+// for Name/Description; these two one-line loops are simpler than that
+// ceremony for two call sites.
+func codebergRepoDescriptions(repos []codeberg.Repository) map[string]string {
+	descriptions := make(map[string]string, len(repos))
 	for _, repo := range repos {
-		repoMap[repo.Name] = repo
+		descriptions[repo.Name] = repo.Description
 	}
+	return descriptions
+}
 
-	for i, repoName := range repoNames {
-		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repoName)
-
-		if execution.maybeSkipRepo(repoName, flags) {
-			continue
-		}
-
-		// Create Codeberg repo if needed
-		if codebergClient != nil && flags.CreateCodebergRepos {
-			githubRepo := repoMap[repoName]
-			description := githubRepo.Description
-			if description == "" {
-				description = fmt.Sprintf("Mirror of %s from GitHub", repoName)
-			}
-
-			fmt.Printf("Checking/creating Codeberg repository %s...\n", repoName)
-			err := codebergClient.CreateRepo(repoName, description, false)
-			if err != nil {
-				fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repoName, err)
-			}
-		}
-
-		if err := execution.syncer.SyncRepository(repoName); err != nil {
-			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
-			fmt.Printf("Stopping sync due to error.\n")
-			return 1
-		}
-		execution.markRepoSynced(repoName, flags)
-		successCount++
-
-		// After syncing, sync descriptions according to precedence
-		if ghRepo, ok := repoMap[repoName]; ok {
-			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repoName, "", ghRepo.Description, execution.descCache)
-		} else {
-			syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repoName, "", "", execution.descCache)
-		}
+func githubRepoDescriptions(repos []github.Repository) map[string]string {
+	descriptions := make(map[string]string, len(repos))
+	for _, repo := range repos {
+		descriptions[repo.Name] = repo.Description
 	}
-
-	execution.finishDiscoveredSync(successCount, flags)
-
-	return 0
+	return descriptions
 }
