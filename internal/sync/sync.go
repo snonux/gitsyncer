@@ -333,8 +333,10 @@ func (s *Syncer) fetchAll() error {
 	// from a previous run, so we explicitly skip it here.
 	disabledRemotes := s.disabledRemoteNames()
 
-	// Fetch from each remote
-	for remote := range remotes {
+	// Fetch from each remote, in sorted order so the fetch sequence is
+	// deterministic across runs instead of following Go's randomized map
+	// iteration order. See sortedRemoteNames in branch_sync.go.
+	for _, remote := range sortedRemoteNames(remotes) {
 		if disabledRemotes[remote] {
 			fmt.Printf("Skipping fetch from disabled remote %s\n", remote)
 			continue
