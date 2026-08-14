@@ -83,6 +83,96 @@ func TestNewClient_TrimsTokenFromFile(t *testing.T) {
 	}
 }
 
+// TestNewClient_AcceptsOwnerOnlyTokenFileModes exercises Client.loadToken's
+// file fallback, which now reads through forge.ReadProtectedTokenFile
+// instead of os.ReadFile. Owner-only modes must still work.
+func TestNewClient_AcceptsOwnerOnlyTokenFileModes(t *testing.T) {
+	for _, mode := range []os.FileMode{0600, 0400} {
+		t.Run(mode.String(), func(t *testing.T) {
+			t.Setenv("CODEBERG_TOKEN", "")
+			home := t.TempDir()
+			t.Setenv("HOME", home)
+
+			tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
+			if err := os.WriteFile(tokenFile, []byte("file-token"), mode); err != nil {
+				t.Fatalf("write token file: %v", err)
+			}
+			if err := os.Chmod(tokenFile, mode); err != nil {
+				t.Fatalf("set token file mode: %v", err)
+			}
+
+			client := NewClient("", "example-org")
+			if client.token != "file-token" {
+				t.Fatalf("loaded token = %q, want file token", client.token)
+			}
+		})
+	}
+}
+
+// TestNewClient_RejectsSymlinkTokenFile mirrors the same protection already
+// covered for loadForgejoToken: a symlink at the well-known token path must
+// not be followed.
+func TestNewClient_RejectsSymlinkTokenFile(t *testing.T) {
+	t.Setenv("CODEBERG_TOKEN", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	target := filepath.Join(home, "token-target")
+	if err := os.WriteFile(target, []byte("file-token"), 0600); err != nil {
+		t.Fatalf("write symlink target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(home, ".gitsyncer_codeberg_token")); err != nil {
+		t.Fatalf("create token symlink: %v", err)
+	}
+
+	client := NewClient("", "example-org")
+	if client.HasToken() {
+		t.Fatalf("loaded token = %q, want no token for symlinked token file", client.token)
+	}
+}
+
+// TestNewClient_RejectsOverlyPermissiveTokenFile mirrors the same
+// protection already covered for loadForgejoToken: a token file readable or
+// writable by group/other must be rejected.
+func TestNewClient_RejectsOverlyPermissiveTokenFile(t *testing.T) {
+	t.Setenv("CODEBERG_TOKEN", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
+	if err := os.WriteFile(tokenFile, []byte("file-token"), 0644); err != nil {
+		t.Fatalf("write token file: %v", err)
+	}
+	if err := os.Chmod(tokenFile, 0644); err != nil {
+		t.Fatalf("set token file mode: %v", err)
+	}
+
+	client := NewClient("", "example-org")
+	if client.HasToken() {
+		t.Fatalf("loaded token = %q, want no token for group/other readable token file", client.token)
+	}
+}
+
+// TestNewClient_RejectsNonRegularTokenFile mirrors the same protection
+// already covered for loadForgejoToken: a non-regular file (e.g. a unix
+// socket) at the token path must be rejected.
+func TestNewClient_RejectsNonRegularTokenFile(t *testing.T) {
+	t.Setenv("CODEBERG_TOKEN", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	listener, err := net.Listen("unix", filepath.Join(home, ".gitsyncer_codeberg_token"))
+	if err != nil {
+		t.Fatalf("create token socket: %v", err)
+	}
+	t.Cleanup(func() { _ = listener.Close() })
+
+	client := NewClient("", "example-org")
+	if client.HasToken() {
+		t.Fatalf("loaded token = %q, want no token for non-regular token file", client.token)
+	}
+}
+
 func TestNewClient_HasNoTokenWhenNoSourcesAvailable(t *testing.T) {
 	t.Setenv("CODEBERG_TOKEN", "")
 	t.Setenv("HOME", t.TempDir())

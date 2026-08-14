@@ -363,6 +363,11 @@ func buildCodebergReleaseTarget(cfg *config.Config) (releaseTarget, bool) {
 // (including when the home directory or token file cannot be read). This is
 // the single cascade shared by resolveGitHubToken and resolveCodebergToken so
 // the config->env->file fallback logic exists in one place.
+//
+// The token file is read via forge.ReadProtectedTokenFile rather than
+// os.ReadFile: a symlink or FIFO planted at the well-known dotfile path, or
+// a group/other-readable token file, must not be able to leak the token or
+// hang the process.
 func loadTokenWithFallback(configToken, envVar, tokenFileName string) string {
 	if configToken != "" {
 		return configToken
@@ -374,11 +379,11 @@ func loadTokenWithFallback(configToken, envVar, tokenFileName string) string {
 	if err != nil {
 		return ""
 	}
-	data, err := os.ReadFile(filepath.Join(home, tokenFileName))
+	token, err := forge.ReadProtectedTokenFile(filepath.Join(home, tokenFileName))
 	if err != nil {
 		return ""
 	}
-	return strings.TrimSpace(string(data))
+	return token
 }
 
 // resolveGitHubToken loads the GitHub token from config, the GITHUB_TOKEN env

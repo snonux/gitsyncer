@@ -96,22 +96,15 @@ func loadForgejoToken() string {
 	if err != nil {
 		return ""
 	}
+	// Read via the hardened opener: a symlink or FIFO planted at the
+	// well-known token path, or a group/other-readable token file, must not
+	// be able to leak the token or hang the process (see forge.ReadProtectedTokenFile).
 	tokenPath := filepath.Join(home, ".gitsyncer_forgejo_token")
-	tokenFile, err := openProtectedTokenFile(tokenPath)
+	token, err := forge.ReadProtectedTokenFile(tokenPath)
 	if err != nil {
 		return ""
 	}
-	defer func() { _ = tokenFile.Close() }()
-
-	info, err := tokenFile.Stat()
-	if err != nil || !info.Mode().IsRegular() || info.Mode().Perm()&0077 != 0 {
-		return ""
-	}
-	data, err := io.ReadAll(tokenFile)
-	if err != nil {
-		return ""
-	}
-	return strings.TrimSpace(string(data))
+	return token
 }
 
 // loadToken loads the Codeberg API token from config, env, or file. Every
@@ -131,12 +124,15 @@ func (c *Client) loadToken(tokenFromConfig string) {
 		return
 	}
 
-	// Check token file
+	// Check token file. Read via the hardened opener so a symlink or FIFO
+	// planted at this well-known path, or a group/other-readable token
+	// file, cannot leak the token or hang the process (see
+	// forge.ReadProtectedTokenFile); the result is already trimmed.
 	home, err := os.UserHomeDir()
 	if err == nil {
 		tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
-		if data, err := os.ReadFile(tokenFile); err == nil {
-			c.token = strings.TrimSpace(string(data))
+		if token, err := forge.ReadProtectedTokenFile(tokenFile); err == nil {
+			c.token = token
 		}
 	}
 }

@@ -54,13 +54,17 @@ func loadToken(token string) string {
 		return ""
 	}
 
+	// Read via the hardened opener: a symlink or FIFO planted at this
+	// well-known token path, or a group/other-readable token file, must not
+	// be able to leak the token or hang the process (see
+	// forge.ReadProtectedTokenFile). The result is already trimmed.
 	tokenFile := filepath.Join(home, ".gitsyncer_github_token")
-	data, err := os.ReadFile(tokenFile)
+	fileToken, err := forge.ReadProtectedTokenFile(tokenFile)
 	if err != nil {
 		return ""
 	}
 
-	return strings.TrimSpace(string(data))
+	return fileToken
 }
 
 // CreateRepoRequest represents the request to create a repository
