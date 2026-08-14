@@ -114,16 +114,20 @@ func loadForgejoToken() string {
 	return strings.TrimSpace(string(data))
 }
 
-// loadToken loads the Codeberg API token from config, env, or file
+// loadToken loads the Codeberg API token from config, env, or file. Every
+// branch trims the token, mirroring loadForgejoToken and github.loadToken,
+// because a trailing newline (common when a token is piped from a file or
+// secret store) would otherwise end up in the "Authorization: token <value>"
+// header and make every request fail.
 func (c *Client) loadToken(tokenFromConfig string) {
 	if tokenFromConfig != "" {
-		c.token = tokenFromConfig
+		c.token = strings.TrimSpace(tokenFromConfig)
 		return
 	}
 
 	// Check environment variable
 	if token := os.Getenv("CODEBERG_TOKEN"); token != "" {
-		c.token = token
+		c.token = strings.TrimSpace(token)
 		return
 	}
 

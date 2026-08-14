@@ -47,6 +47,42 @@ func TestNewClient_LoadsTokenFromEnvWhenConfigTokenMissing(t *testing.T) {
 	}
 }
 
+func TestNewClient_TrimsTokenFromConfig(t *testing.T) {
+	t.Setenv("CODEBERG_TOKEN", "")
+	t.Setenv("HOME", t.TempDir())
+
+	client := NewClient("config-token\n", "example-org")
+	if client.token != "config-token" {
+		t.Fatalf("expected trimmed config token, got %q", client.token)
+	}
+}
+
+func TestNewClient_TrimsTokenFromEnv(t *testing.T) {
+	t.Setenv("CODEBERG_TOKEN", "env-token\n")
+	t.Setenv("HOME", t.TempDir())
+
+	client := NewClient("", "example-org")
+	if client.token != "env-token" {
+		t.Fatalf("expected trimmed env token, got %q", client.token)
+	}
+}
+
+func TestNewClient_TrimsTokenFromFile(t *testing.T) {
+	t.Setenv("CODEBERG_TOKEN", "")
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
+	if err := os.WriteFile(tokenFile, []byte("file-token\n"), 0600); err != nil {
+		t.Fatalf("failed to write token file: %v", err)
+	}
+
+	client := NewClient("", "example-org")
+	if client.token != "file-token" {
+		t.Fatalf("expected trimmed file token, got %q", client.token)
+	}
+}
+
 func TestNewClient_HasNoTokenWhenNoSourcesAvailable(t *testing.T) {
 	t.Setenv("CODEBERG_TOKEN", "")
 	t.Setenv("HOME", t.TempDir())
