@@ -1,4 +1,4 @@
-package release
+package cli
 
 import (
 	"os"
@@ -20,9 +20,9 @@ func withStdin(t *testing.T, r *os.File, fn func()) {
 
 // TestPromptConfirmation_EmptyInputDeclines verifies that when Scanln
 // returns an error (e.g. a bare newline, which fmt.Scanln reports as
-// "unexpected newline"), PromptConfirmation still safely defaults to
+// "unexpected newline"), promptConfirmation still safely defaults to
 // declining rather than panicking or hanging - this is the discarded-error
-// behavior that PromptConfirmation's fmt.Scanln call relies on.
+// behavior that promptConfirmation's fmt.Scanln call relies on.
 func TestPromptConfirmation_EmptyInputDeclines(t *testing.T) {
 	r, w, err := os.Pipe()
 	if err != nil {
@@ -39,11 +39,11 @@ func TestPromptConfirmation_EmptyInputDeclines(t *testing.T) {
 
 	var got bool
 	withStdin(t, r, func() {
-		got = PromptConfirmation("Proceed?")
+		got = promptConfirmation("Proceed?")
 	})
 
 	if got {
-		t.Fatal("PromptConfirmation() = true for empty input, want false")
+		t.Fatal("promptConfirmation() = true for empty input, want false")
 	}
 }
 
@@ -65,10 +65,10 @@ func TestPromptConfirmation_YesInputConfirms(t *testing.T) {
 
 	var got bool
 	withStdin(t, r, func() {
-		got = PromptConfirmation("Proceed?")
+		got = promptConfirmation("Proceed?")
 	})
 
 	if !got {
-		t.Fatal("PromptConfirmation() = false for \"y\" input, want true")
+		t.Fatal("promptConfirmation() = false for \"y\" input, want true")
 	}
 }

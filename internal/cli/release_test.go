@@ -29,6 +29,59 @@ func (f *fakeReleaseNotesGenerator) GenerateReleaseNotes(_ string, _ string, _ [
 	return f.standardNotes
 }
 
+// fakeReleaseClient is a forge.ReleaseClient double used to drive the release
+// pipeline without touching any real HTTP. It also implements
+// forge.ReleasesEnabler so the ensure-releases path can be exercised.
+type fakeReleaseClient struct {
+	releases    []string
+	releasesErr error
+
+	created    []string
+	createErrs map[string]error // per-tag errors; nil error or missing tag -> success
+
+	updated    []releaseUpdate
+	updateErrs map[string]error // per-tag errors; nil error or missing tag -> success
+
+	ensureErr   error
+	ensureCalls int
+}
+
+func (f *fakeReleaseClient) GetReleases(_, _ string) ([]string, error) {
+	return f.releases, f.releasesErr
+}
+
+func (f *fakeReleaseClient) CreateRelease(_, _, tag, _ string) error {
+	f.created = append(f.created, tag)
+	if f.createErrs != nil {
+		if err, ok := f.createErrs[tag]; ok {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeReleaseClient) UpdateRelease(_, _, tag, notes string) error {
+	f.updated = append(f.updated, releaseUpdate{tag: tag, notes: notes})
+	if f.updateErrs != nil {
+		if err, ok := f.updateErrs[tag]; ok {
+			return err
+		}
+	}
+	return nil
+}
+
+func (f *fakeReleaseClient) EnsureReleasesEnabled(_, _ string) error {
+	f.ensureCalls++
+	return f.ensureErr
+}
+
+// releaseUpdate records the tag and notes passed to UpdateRelease so tests can
+// assert on the notes content.
+type releaseUpdate struct {
+	tag   string
+	notes string
+}
+
 func TestResolveReleaseNotes_CreateWithoutAIUsesStandardNotes(t *testing.T) {
 	gen := &fakeReleaseNotesGenerator{standardNotes: "standard notes"}
 	flags := &Flags{AIReleaseNotes: false}
@@ -271,16 +324,16 @@ func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
 			"demo": {"v1.0.0"},
 		},
 	}
-	releaseManager := release.NewManager("")
+	inspector := release.NewGitInspector()
 	target := releaseTarget{
 		name:  "GitHub",
 		owner: "owner",
-		getReleases: func(_ string, _ string) ([]string, error) {
-			return []string{"v0.9.0"}, nil
+		client: &fakeReleaseClient{
+			releases: []string{"v0.9.0"},
 		},
 	}
 
-	missing := getMissingReleasesForTarget(cfg, releaseManager, target, "demo", []string{"v0.9.0", "v1.0.0", "v1.1.0"})
+	missing := getMissingReleasesForTarget(cfg, inspector, target, "demo", []string{"v0.9.0", "v1.0.0", "v1.1.0"})
 
 	if len(missing) != 1 || missing[0] != "v1.1.0" {
 		t.Fatalf("expected only non-skipped missing release v1.1.0, got %#v", missing)
@@ -289,16 +342,16 @@ func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
 
 func TestGetMissingReleasesForTarget_GetReleasesErrorReturnsNil(t *testing.T) {
 	cfg := &config.Config{}
-	releaseManager := release.NewManager("")
+	inspector := release.NewGitInspector()
 	target := releaseTarget{
 		name:  "GitHub",
 		owner: "owner",
-		getReleases: func(_ string, _ string) ([]string, error) {
-			return nil, errors.New("upstream unavailable")
+		client: &fakeReleaseClient{
+			releasesErr: errors.New("upstream unavailable"),
 		},
 	}
 
-	missing := getMissingReleasesForTarget(cfg, releaseManager, target, "demo", []string{"v1.0.0"})
+	missing := getMissingReleasesForTarget(cfg, inspector, target, "demo", []string{"v1.0.0"})
 
 	if missing != nil {
 		t.Fatalf("expected nil missing releases on getReleases error, got %#v", missing)
@@ -308,25 +361,23 @@ func TestGetMissingReleasesForTarget_GetReleasesErrorReturnsNil(t *testing.T) {
 func TestProcessCreateReleasesForTarget_CreateErrorDoesNotStopOtherTags(t *testing.T) {
 	cfg := &config.Config{}
 	flags := &Flags{AutoCreateReleases: true}
-	releaseManager := release.NewManager("")
+	inspector := release.NewGitInspector()
+	notes := &fakeReleaseNotesGenerator{}
 
-	created := make([]string, 0, 2)
+	client := &fakeReleaseClient{
+		createErrs: map[string]error{"v1.0.0": errors.New("create failed")},
+	}
 	target := releaseTarget{
-		name:  "GitHub",
-		owner: "owner",
-		createRelease: func(_ string, _ string, tag string, _ string) error {
-			created = append(created, tag)
-			if tag == "v1.0.0" {
-				return errors.New("create failed")
-			}
-			return nil
-		},
+		name:   "GitHub",
+		owner:  "owner",
+		client: client,
 	}
 
 	processCreateReleasesForTarget(
 		cfg,
 		flags,
-		releaseManager,
+		inspector,
+		notes,
 		target,
 		"demo",
 		"/definitely/not/a/repo",
@@ -337,8 +388,8 @@ func TestProcessCreateReleasesForTarget_CreateErrorDoesNotStopOtherTags(t *testi
 		&[]string{},
 	)
 
-	if len(created) != 2 || created[0] != "v1.0.0" || created[1] != "v1.1.0" {
-		t.Fatalf("expected both releases to be attempted despite first failure, got %#v", created)
+	if len(client.created) != 2 || client.created[0] != "v1.0.0" || client.created[1] != "v1.1.0" {
+		t.Fatalf("expected both releases to be attempted despite first failure, got %#v", client.created)
 	}
 }
 
@@ -349,21 +400,20 @@ func TestProcessCreateReleasesForTarget_HonorsConfiguredSkip(t *testing.T) {
 		},
 	}
 	flags := &Flags{AutoCreateReleases: true}
-	releaseManager := release.NewManager("")
-	created := make([]string, 0, 1)
+	inspector := release.NewGitInspector()
+	notes := &fakeReleaseNotesGenerator{}
+	client := &fakeReleaseClient{}
 	target := releaseTarget{
-		name:  "Codeberg",
-		owner: "owner",
-		createRelease: func(_ string, _ string, tag string, _ string) error {
-			created = append(created, tag)
-			return nil
-		},
+		name:   "Codeberg",
+		owner:  "owner",
+		client: client,
 	}
 
 	processCreateReleasesForTarget(
 		cfg,
 		flags,
-		releaseManager,
+		inspector,
+		notes,
 		target,
 		"demo",
 		"/definitely/not/a/repo",
@@ -374,8 +424,8 @@ func TestProcessCreateReleasesForTarget_HonorsConfiguredSkip(t *testing.T) {
 		&[]string{},
 	)
 
-	if len(created) != 1 || created[0] != "v1.1.0" {
-		t.Fatalf("expected only non-skipped release creation attempt, got %#v", created)
+	if len(client.created) != 1 || client.created[0] != "v1.1.0" {
+		t.Fatalf("expected only non-skipped release creation attempt, got %#v", client.created)
 	}
 }
 
@@ -384,26 +434,21 @@ func TestProcessUpdateReleasesForTarget_UsesCachedAIAndSkipsNonVersionTags(t *te
 		AIReleaseNotes:     true,
 		AutoCreateReleases: true,
 	}
-	releaseManager := release.NewManager("")
-	updated := make([]string, 0, 1)
+	inspector := release.NewGitInspector()
+	notes := &fakeReleaseNotesGenerator{}
+	client := &fakeReleaseClient{
+		releases: []string{"latest", "1-beta", "v1.0.0"},
+	}
 	target := releaseTarget{
-		name:  "GitHub",
-		owner: "owner",
-		getReleases: func(_ string, _ string) ([]string, error) {
-			return []string{"latest", "1-beta", "v1.0.0"}, nil
-		},
-		updateRelease: func(_ string, _ string, tag string, notes string) error {
-			if notes != "cached ai notes" {
-				t.Fatalf("expected cached AI notes, got %q", notes)
-			}
-			updated = append(updated, tag)
-			return nil
-		},
+		name:   "GitHub",
+		owner:  "owner",
+		client: client,
 	}
 
 	processUpdateReleasesForTarget(
 		flags,
-		releaseManager,
+		inspector,
+		notes,
 		target,
 		"demo",
 		"/definitely/not/a/repo",
@@ -413,8 +458,11 @@ func TestProcessUpdateReleasesForTarget_UsesCachedAIAndSkipsNonVersionTags(t *te
 		&[]string{},
 	)
 
-	if len(updated) != 1 || updated[0] != "v1.0.0" {
-		t.Fatalf("expected exactly one version tag update, got %#v", updated)
+	if len(client.updated) != 1 || client.updated[0].tag != "v1.0.0" {
+		t.Fatalf("expected exactly one version tag update, got %#v", client.updated)
+	}
+	if client.updated[0].notes != "cached ai notes" {
+		t.Fatalf("expected cached AI notes, got %q", client.updated[0].notes)
 	}
 }
 
@@ -423,23 +471,21 @@ func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.
 		AIReleaseNotes:     true,
 		AutoCreateReleases: true,
 	}
-	releaseManager := release.NewManager("")
-	updateCalls := 0
+	inspector := release.NewGitInspector()
+	notes := &fakeReleaseNotesGenerator{}
+	client := &fakeReleaseClient{
+		releasesErr: errors.New("api error"),
+	}
 	target := releaseTarget{
-		name:  "Codeberg",
-		owner: "owner",
-		getReleases: func(_ string, _ string) ([]string, error) {
-			return nil, errors.New("api error")
-		},
-		updateRelease: func(_ string, _ string, _ string, _ string) error {
-			updateCalls++
-			return nil
-		},
+		name:   "Codeberg",
+		owner:  "owner",
+		client: client,
 	}
 
 	processUpdateReleasesForTarget(
 		flags,
-		releaseManager,
+		inspector,
+		notes,
 		target,
 		"demo",
 		"/definitely/not/a/repo",
@@ -449,41 +495,28 @@ func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.
 		&[]string{},
 	)
 
-	if updateCalls != 0 {
-		t.Fatalf("expected no update attempts when getReleases fails, got %d", updateCalls)
+	if len(client.updated) != 0 {
+		t.Fatalf("expected no update attempts when getReleases fails, got %#v", client.updated)
 	}
 }
 
 func TestProcessReleaseTargets_DryRunDispatchesNoMutations(t *testing.T) {
 	flags := &Flags{DryRun: true, AIReleaseNotes: true, AutoCreateReleases: true}
-	releaseManager := release.NewManager("")
-	createCalls := 0
-	updateCalls := 0
-	ensureCalls := 0
+	inspector := release.NewGitInspector()
+	notes := &fakeReleaseNotesGenerator{}
+	client := &fakeReleaseClient{
+		releases: []string{"v1.0.0"},
+	}
 	target := releaseTarget{
-		name:  "GitHub",
-		owner: "owner",
-		getReleases: func(_, _ string) ([]string, error) {
-			return []string{"v1.0.0"}, nil
-		},
-		createRelease: func(_, _, _, _ string) error {
-			createCalls++
-			return nil
-		},
-		updateRelease: func(_, _, _, _ string) error {
-			updateCalls++
-			return nil
-		},
-		ensureReleasesEnabled: func(_, _ string) error {
-			ensureCalls++
-			return nil
-		},
+		name:   "GitHub",
+		owner:  "owner",
+		client: client,
 	}
 
-	processCreateReleasesForTarget(&config.Config{}, flags, releaseManager, target, "demo", "/not/a/repo", []string{"v1.0.0"}, []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
-	processUpdateReleasesForTarget(flags, releaseManager, target, "demo", "/not/a/repo", []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
+	processCreateReleasesForTarget(&config.Config{}, flags, inspector, notes, target, "demo", "/not/a/repo", []string{"v1.0.0"}, []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
+	processUpdateReleasesForTarget(flags, inspector, notes, target, "demo", "/not/a/repo", []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
 
-	if createCalls != 0 || updateCalls != 0 || ensureCalls != 0 {
-		t.Fatalf("dry run dispatched release mutations: create=%d update=%d ensure=%d", createCalls, updateCalls, ensureCalls)
+	if len(client.created) != 0 || len(client.updated) != 0 || client.ensureCalls != 0 {
+		t.Fatalf("dry run dispatched release mutations: create=%d update=%d ensure=%d", len(client.created), len(client.updated), client.ensureCalls)
 	}
 }

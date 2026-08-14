@@ -11,8 +11,8 @@ import (
 func TestAvailableReleaseNotesTools_DefaultChainWithFallback(t *testing.T) {
 	t.Parallel()
 
-	manager := NewManager("")
-	got := manager.availableReleaseNotesTools(fakeLookPathRelease("ollama", "claude"))
+	gen := NewNotesGenerator("", nil)
+	got := gen.availableReleaseNotesTools(fakeLookPathRelease("ollama", "claude"))
 	want := []aitool.Tool{aitool.ToolOpencode, aitool.ToolClaude}
 
 	if !reflect.DeepEqual(got, want) {
@@ -23,10 +23,9 @@ func TestAvailableReleaseNotesTools_DefaultChainWithFallback(t *testing.T) {
 func TestAvailableReleaseNotesTools_HonorsConfiguredPreferenceWithFallback(t *testing.T) {
 	t.Parallel()
 
-	manager := NewManager("")
-	manager.SetAITool("hexai")
+	gen := NewNotesGenerator("hexai", nil)
 
-	got := manager.availableReleaseNotesTools(fakeLookPathRelease("claude", "amp"))
+	got := gen.availableReleaseNotesTools(fakeLookPathRelease("claude", "amp"))
 	want := []aitool.Tool{aitool.ToolClaude, aitool.ToolAmp}
 
 	if !reflect.DeepEqual(got, want) {
@@ -37,10 +36,9 @@ func TestAvailableReleaseNotesTools_HonorsConfiguredPreferenceWithFallback(t *te
 func TestAvailableReleaseNotesTools_AmpChainOnly(t *testing.T) {
 	t.Parallel()
 
-	manager := NewManager("")
-	manager.SetAITool("amp")
+	gen := NewNotesGenerator("amp", nil)
 
-	got := manager.availableReleaseNotesTools(fakeLookPathRelease("ollama", "amp"))
+	got := gen.availableReleaseNotesTools(fakeLookPathRelease("ollama", "amp"))
 	want := []aitool.Tool{aitool.ToolAmp}
 
 	if !reflect.DeepEqual(got, want) {

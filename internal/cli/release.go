@@ -7,7 +7,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"codeberg.org/snonux/gitsyncer/internal/github"
 	"codeberg.org/snonux/gitsyncer/internal/localrepos"
 	"codeberg.org/snonux/gitsyncer/internal/release"
 	"codeberg.org/snonux/gitsyncer/internal/version"
@@ -44,19 +47,18 @@ const (
 	releaseNotesModeUpdate
 )
 
+// releaseTarget pairs a forge release client with the owner that releases
+// should be created under. The client owns all HTTP/auth/404/409 handling; the
+// CLI only orchestrates which tags to create or update.
 type releaseTarget struct {
-	name                  string
-	owner                 string
-	getReleases           func(owner, repo string) ([]string, error)
-	createRelease         func(owner, repo, tag, releaseNotes string) error
-	updateRelease         func(owner, repo, tag, releaseNotes string) error
-	ensureReleasesEnabled func(owner, repo string) error
-	// syncRepoRequired marks targets that must only run for repos in the
-	// configured sync allowlist (e.g. Codeberg releases, which must not be
-	// created for repos that are not synced to Codeberg).
+	name             string
+	owner            string
+	client           forge.ReleaseClient
 	syncRepoRequired bool
 }
 
+// releaseNotesGenerator is the subset of the notes generator needed by the
+// release pipeline. It is an interface so tests can substitute a fake.
 type releaseNotesGenerator interface {
 	GenerateAIReleaseNotes(repoPath, repoName, tag string, allTags []string, commits []string) (string, error)
 	GenerateReleaseNotes(repoPath, tag string, allTags []string) string
@@ -69,8 +71,12 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		return 0
 	}
 
-	releaseManager := release.NewManager(flags.WorkDir)
-	releaseManager.SetAITool(flags.AITool)
+	// Git inspection and notes generation are split out of the old release
+	// manager god-object: the inspector reads git state, the notes generator
+	// turns commits/diffs into release notes, and per-forge clients handle the
+	// release CRUD.
+	inspector := release.NewGitInspector()
+	notes := release.NewNotesGenerator(flags.AITool, inspector)
 
 	// Load persistent AI release notes cache
 	cacheFile := filepath.Join(flags.WorkDir, ".gitsyncer-ai-release-notes-cache.json")
@@ -105,36 +111,18 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		fmt.Printf("Found GitHub org: %s\n", githubOrg.Name)
 
 		// Try config token first, then fallback to env var and file
-		token := githubOrg.GitHubToken
-		if token == "" {
-			// Try environment variable
-			token = os.Getenv("GITHUB_TOKEN")
-			if token == "" {
-				// Try token file
-				home, err := os.UserHomeDir()
-				if err == nil {
-					tokenFile := filepath.Join(home, ".gitsyncer_github_token")
-					data, err := os.ReadFile(tokenFile)
-					if err == nil {
-						token = strings.TrimSpace(string(data))
-					}
-				}
-			}
-		}
+		token := resolveGitHubToken(githubOrg.GitHubToken)
 
-		if token != "" {
-			releaseManager.SetGitHubToken(token)
-		} else {
+		ghClient := github.NewClient(token, githubOrg.Name)
+		if token == "" {
 			fmt.Println("WARNING: No GitHub token found - cannot create GitHub releases")
 		}
 
 		if githubOrg.Name != "" {
 			releaseTargets = append(releaseTargets, releaseTarget{
-				name:          "GitHub",
-				owner:         githubOrg.Name,
-				getReleases:   releaseManager.GetGitHubReleases,
-				createRelease: releaseManager.CreateGitHubRelease,
-				updateRelease: releaseManager.UpdateGitHubRelease,
+				name:   "GitHub",
+				owner:  githubOrg.Name,
+				client: ghClient,
 			})
 		}
 	} else {
@@ -152,25 +140,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		fmt.Printf("Found Codeberg org: %s\n", codebergOrg.Name)
 
 		// Try config token first, then fallback to env var and file
-		token := codebergOrg.CodebergToken
-		if token == "" {
-			// Try environment variable
-			token = os.Getenv("CODEBERG_TOKEN")
-			if token == "" {
-				// Try token file
-				home, err := os.UserHomeDir()
-				if err == nil {
-					tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
-					data, err := os.ReadFile(tokenFile)
-					if err == nil {
-						token = strings.TrimSpace(string(data))
-					}
-				}
-			}
-		}
+		token := resolveCodebergToken(codebergOrg.CodebergToken)
 
+		cbClient := codeberg.NewClient(token, codebergOrg.Name)
 		if token != "" {
-			releaseManager.SetCodebergToken(token)
 			fmt.Printf("  Codeberg token loaded (length: %d)\n", len(token))
 		} else {
 			fmt.Println("WARNING: No Codeberg token found - cannot create Codeberg releases")
@@ -178,13 +151,10 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 
 		if codebergOrg.Name != "" {
 			releaseTargets = append(releaseTargets, releaseTarget{
-				name:                  "Codeberg",
-				owner:                 codebergOrg.Name,
-				getReleases:           releaseManager.GetCodebergReleases,
-				createRelease:         releaseManager.CreateCodebergRelease,
-				updateRelease:         releaseManager.UpdateCodebergRelease,
-				ensureReleasesEnabled: releaseManager.EnsureCodebergReleasesEnabled,
-				syncRepoRequired:      true,
+				name:             "Codeberg",
+				owner:            codebergOrg.Name,
+				client:           cbClient,
+				syncRepoRequired: true,
 			})
 		}
 	}
@@ -204,7 +174,7 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 		}
 
 		// Get local tags
-		localTags, err := releaseManager.GetLocalTags(repoPath)
+		localTags, err := inspector.GetLocalTags(repoPath)
 		if err != nil {
 			fmt.Printf("  Error getting local tags: %v\n", err)
 			continue
@@ -227,11 +197,12 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 			if !releaseTargetApplicable(target, cfg, repoName) {
 				continue
 			}
-			missingReleases := getMissingReleasesForTarget(cfg, releaseManager, target, repoName, localTags)
+			missingReleases := getMissingReleasesForTarget(cfg, inspector, target, repoName, localTags)
 			processCreateReleasesForTarget(
 				cfg,
 				flags,
-				releaseManager,
+				inspector,
+				notes,
 				target,
 				repoName,
 				repoPath,
@@ -251,7 +222,8 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 				}
 				processUpdateReleasesForTarget(
 					flags,
-					releaseManager,
+					inspector,
+					notes,
 					target,
 					repoName,
 					repoPath,
@@ -267,6 +239,50 @@ func HandleCheckReleasesForRepos(cfg *config.Config, flags *Flags, repositories 
 	return 0
 }
 
+// resolveGitHubToken loads the GitHub token from config, the GITHUB_TOKEN env
+// var, or ~/.gitsyncer_github_token, in that order. Config and env values are
+// used as-is; only the token file is trimmed. Returns "" when no source has a
+// token.
+func resolveGitHubToken(configToken string) string {
+	if configToken != "" {
+		return configToken
+	}
+	if token := os.Getenv("GITHUB_TOKEN"); token != "" {
+		return token
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".gitsyncer_github_token"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
+// resolveCodebergToken loads the Codeberg token from config, the CODEBERG_TOKEN
+// env var, or ~/.gitsyncer_codeberg_token, in that order. Config and env values
+// are used as-is; only the token file is trimmed. Returns "" when no source has
+// a token.
+func resolveCodebergToken(configToken string) string {
+	if configToken != "" {
+		return configToken
+	}
+	if token := os.Getenv("CODEBERG_TOKEN"); token != "" {
+		return token
+	}
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	data, err := os.ReadFile(filepath.Join(home, ".gitsyncer_codeberg_token"))
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(data))
+}
+
 // releaseTargetApplicable reports whether a release target should run for the
 // given repository. Targets marked syncRepoRequired (e.g. Codeberg) only run
 // for repos in the configured sync allowlist, so releases are not created on
@@ -278,14 +294,23 @@ func releaseTargetApplicable(target releaseTarget, cfg *config.Config, repoName 
 	return cfg.IsSyncRepo(repoName)
 }
 
-func getMissingReleasesForTarget(cfg *config.Config, releaseManager *release.Manager, target releaseTarget, repoName string, localTags []string) []string {
-	releases, err := target.getReleases(target.owner, repoName)
+// releasesEnabler returns the target's ReleasesEnabler implementation, or nil
+// if the forge does not need per-repository release enabling (e.g. GitHub).
+func releasesEnabler(target releaseTarget) forge.ReleasesEnabler {
+	if enabler, ok := target.client.(forge.ReleasesEnabler); ok {
+		return enabler
+	}
+	return nil
+}
+
+func getMissingReleasesForTarget(cfg *config.Config, inspector *release.GitInspector, target releaseTarget, repoName string, localTags []string) []string {
+	releases, err := target.client.GetReleases(target.owner, repoName)
 	if err != nil {
 		fmt.Printf("  Error checking %s releases: %v\n", target.name, err)
 		return nil
 	}
 
-	missingReleases := releaseManager.FindMissingReleases(localTags, releases)
+	missingReleases := inspector.FindMissingReleases(localTags, releases)
 	if len(missingReleases) == 0 {
 		return missingReleases
 	}
@@ -312,7 +337,8 @@ func getMissingReleasesForTarget(cfg *config.Config, releaseManager *release.Man
 func processCreateReleasesForTarget(
 	cfg *config.Config,
 	flags *Flags,
-	releaseManager *release.Manager,
+	inspector *release.GitInspector,
+	notes releaseNotesGenerator,
 	target releaseTarget,
 	repoName, repoPath string,
 	localTags, missingReleases []string,
@@ -324,8 +350,8 @@ func processCreateReleasesForTarget(
 		return
 	}
 
-	if target.ensureReleasesEnabled != nil {
-		if err := target.ensureReleasesEnabled(target.owner, repoName); err != nil {
+	if enabler := releasesEnabler(target); enabler != nil {
+		if err := enabler.EnsureReleasesEnabled(target.owner, repoName); err != nil {
 			fmt.Printf("  Warning: Could not ensure %s releases are enabled: %v\n", target.name, err)
 		}
 	}
@@ -336,13 +362,13 @@ func processCreateReleasesForTarget(
 			continue
 		}
 
-		commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
+		commits, err := inspector.GetCommitsSinceTag(repoPath, "", tag)
 		if err != nil {
 			commits = []string{}
 		}
 
 		releaseNotes, ok := resolveReleaseNotes(
-			releaseManager,
+			notes,
 			flags,
 			repoPath,
 			repoName,
@@ -373,11 +399,11 @@ func processCreateReleasesForTarget(
 			fmt.Printf("  Auto-creating %s release for %s/%s tag %s\n", target.name, target.owner, repoName, tag)
 			createRelease = true
 		} else {
-			createRelease = release.PromptConfirmation(msg)
+			createRelease = promptConfirmation(msg)
 		}
 
 		if createRelease {
-			if err := target.createRelease(target.owner, repoName, tag, releaseNotes); err != nil {
+			if err := target.client.CreateRelease(target.owner, repoName, tag, releaseNotes); err != nil {
 				fmt.Printf("  Error creating %s release: %v\n", target.name, err)
 			} else {
 				fmt.Printf("  Created %s release for tag %s\n", target.name, tag)
@@ -388,7 +414,8 @@ func processCreateReleasesForTarget(
 
 func processUpdateReleasesForTarget(
 	flags *Flags,
-	releaseManager *release.Manager,
+	inspector *release.GitInspector,
+	notes releaseNotesGenerator,
 	target releaseTarget,
 	repoName, repoPath string,
 	localTags []string,
@@ -400,7 +427,7 @@ func processUpdateReleasesForTarget(
 		return
 	}
 
-	existingReleases, err := target.getReleases(target.owner, repoName)
+	existingReleases, err := target.client.GetReleases(target.owner, repoName)
 	if err != nil || len(existingReleases) == 0 {
 		return
 	}
@@ -411,13 +438,13 @@ func processUpdateReleasesForTarget(
 			continue
 		}
 
-		commits, err := releaseManager.GetCommitsSinceTag(repoPath, "", tag)
+		commits, err := inspector.GetCommitsSinceTag(repoPath, "", tag)
 		if err != nil {
 			commits = []string{}
 		}
 
 		releaseNotes, ok := resolveReleaseNotes(
-			releaseManager,
+			notes,
 			flags,
 			repoPath,
 			repoName,
@@ -448,11 +475,11 @@ func processUpdateReleasesForTarget(
 			fmt.Printf("  Auto-updating %s release for %s/%s tag %s\n", target.name, target.owner, repoName, tag)
 			updateRelease = true
 		} else {
-			updateRelease = release.PromptConfirmation(msg)
+			updateRelease = promptConfirmation(msg)
 		}
 
 		if updateRelease {
-			if err := target.updateRelease(target.owner, repoName, tag, releaseNotes); err != nil {
+			if err := target.client.UpdateRelease(target.owner, repoName, tag, releaseNotes); err != nil {
 				fmt.Printf("  Error updating %s release: %v\n", target.name, err)
 			} else {
 				fmt.Printf("  Updated %s release for tag %s\n", target.name, tag)
@@ -462,7 +489,7 @@ func processUpdateReleasesForTarget(
 }
 
 func resolveReleaseNotes(
-	releaseManager releaseNotesGenerator,
+	notes releaseNotesGenerator,
 	flags *Flags,
 	repoPath, repoName, tag string,
 	localTags, commits []string,
@@ -477,7 +504,7 @@ func resolveReleaseNotes(
 		if mode == releaseNotesModeUpdate {
 			return "", false
 		}
-		return releaseManager.GenerateReleaseNotes(repoPath, tag, localTags), true
+		return notes.GenerateReleaseNotes(repoPath, tag, localTags), true
 	}
 
 	cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
@@ -497,7 +524,7 @@ func resolveReleaseNotes(
 		fmt.Printf("  Generating AI release notes for %s...\n", tag)
 	}
 
-	aiNotes, err := releaseManager.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
+	aiNotes, err := notes.GenerateAIReleaseNotes(repoPath, repoName, tag, localTags, commits)
 	if err != nil {
 		fmt.Printf("  Warning: Failed to generate AI release notes: %v\n", err)
 		delete(aiReleaseNotesCache, cacheKey)
@@ -506,7 +533,7 @@ func resolveReleaseNotes(
 
 		if mode == releaseNotesModeCreate {
 			fmt.Printf("  Falling back to standard release notes\n")
-			return releaseManager.GenerateReleaseNotes(repoPath, tag, localTags), true
+			return notes.GenerateReleaseNotes(repoPath, tag, localTags), true
 		}
 		return "", false
 	}

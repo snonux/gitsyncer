@@ -32,6 +32,27 @@ type RepoDescriptionClient interface {
 	UpdateRepoDescription(repoName, description string) error
 }
 
+// ReleaseClient defines release CRUD operations shared across forges. Each
+// forge (GitHub, Codeberg/Gitea) implements this against its own API so the
+// release pipeline can talk to any forge through a single abstraction
+// instead of hand-rolled per-forge HTTP in the caller.
+type ReleaseClient interface {
+	// GetReleases returns the tag names of existing releases for the
+	// repository. A missing repository is reported as an empty slice and a
+	// nil error so callers can treat it as "no releases yet".
+	GetReleases(owner, repo string) ([]string, error)
+	CreateRelease(owner, repo, tag, releaseNotes string) error
+	UpdateRelease(owner, repo, tag, releaseNotes string) error
+}
+
+// ReleasesEnabler is optionally implemented by forges that require releases
+// to be enabled per-repository before release creation can succeed (e.g.
+// Codeberg/Gitea, where the repository's Releases feature may be disabled).
+// Callers check for this interface rather than assuming every forge needs it.
+type ReleasesEnabler interface {
+	EnsureReleasesEnabled(owner, repo string) error
+}
+
 // RepoExistsFunc checks if a repository exists.
 type RepoExistsFunc func(repoName string) (bool, error)
 

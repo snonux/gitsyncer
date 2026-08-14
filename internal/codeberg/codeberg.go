@@ -132,7 +132,7 @@ func (c *Client) loadToken(tokenFromConfig string) {
 	if err == nil {
 		tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
 		if data, err := os.ReadFile(tokenFile); err == nil {
-			c.token = string(data)
+			c.token = strings.TrimSpace(string(data))
 		}
 	}
 }

@@ -29,8 +29,8 @@ func TestGetLocalTags_FiltersToStrictVersionTags(t *testing.T) {
 	runGit(t, repoPath, "tag", "latest")
 	runGit(t, repoPath, "tag", "1-beta")
 
-	manager := NewManager("")
-	tags, err := manager.GetLocalTags(repoPath)
+	inspector := NewGitInspector()
+	tags, err := inspector.GetLocalTags(repoPath)
 	if err != nil {
 		t.Fatalf("GetLocalTags() error = %v", err)
 	}
