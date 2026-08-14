@@ -39,7 +39,10 @@ func (r hexaiRunner) Run(prompt, stdin string) (string, error) {
 
 // claudeRunner drives the claude CLI. Like opencode it only takes a single
 // positional prompt, so prompt and stdin are combined; CLAUDE_DEBUG=1 makes
-// failures more diagnosable in the combined output that runExec inspects.
+// failures more diagnosable by turning on debug logging. That logging goes
+// to stderr, which runExec routes to the process's own os.Stderr instead of
+// capturing it, so it's visible to whoever is watching this run without
+// polluting the stdout that becomes release notes or a showcase summary.
 type claudeRunner struct{ dir string }
 
 func (r claudeRunner) Run(prompt, stdin string) (string, error) {

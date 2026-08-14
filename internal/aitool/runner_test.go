@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"reflect"
 	"runtime"
+	"strings"
 	"testing"
 )
 
@@ -71,6 +72,26 @@ func TestRunners_EmptyOutputIsError(t *testing.T) {
 	_, err := NewRunner(ToolAmp, "").Run("prompt", "")
 	if err == nil {
 		t.Fatal("expected error for empty output")
+	}
+}
+
+// TestRunners_StderrNoiseNotCapturedInOutput is a regression test for the
+// bug where CLAUDE_DEBUG=1 debug logging on stderr got merged (via
+// CombinedOutput) into the captured "output" and ended up published as
+// release notes. The fake claude script writes debug noise to stderr and
+// clean output to stdout; Run() must return only the stdout content.
+func TestRunners_StderrNoiseNotCapturedInOutput(t *testing.T) {
+	withFakeBinary(t, "claude", "echo '[DEBUG] noisy diagnostic line' >&2\necho 'clean release notes'")
+
+	got, err := NewRunner(ToolClaude, "").Run("prompt", "")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got != "clean release notes" {
+		t.Fatalf("Run() = %q, want %q (stderr debug noise must not be captured)", got, "clean release notes")
+	}
+	if strings.Contains(got, "DEBUG") {
+		t.Fatalf("Run() = %q, contains stderr debug noise", got)
 	}
 }
 

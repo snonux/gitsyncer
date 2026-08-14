@@ -2,6 +2,7 @@ package aitool
 
 import (
 	"fmt"
+	"os"
 	"os/exec"
 	"strings"
 )
@@ -75,13 +76,24 @@ func RunChain(chain []Tool, dir, prompt, stdin string) (output string, used Tool
 	return "", "", fmt.Errorf("all AI tools failed")
 }
 
-// runExec runs cmd and returns its trimmed combined (stdout+stderr) output.
-// It treats a non-zero exit, empty output, or an in-band error message (a
-// common way these CLIs report failure while still exiting 0) as a returned
-// error rather than a successful-but-useless result, so callers can uniformly
-// react with "try the next tool" regardless of how a given tool fails.
+// runExec runs cmd and returns its trimmed stdout only. stderr is routed to
+// the calling process's own os.Stderr rather than captured: some of these
+// CLIs (e.g. claude with CLAUDE_DEBUG=1) write diagnostic/debug logging to
+// stderr, and an earlier version of this code used CombinedOutput, which
+// merged that debug noise into the "output" that then got used verbatim as
+// release notes or a showcase summary. Keeping stderr separate means the
+// operator running the command still sees it live, but it never ends up in
+// the captured result. It treats a non-zero exit, empty output, or an
+// in-band error message (a common way these CLIs report failure while still
+// exiting 0) as a returned error rather than a successful-but-useless
+// result, so callers can uniformly react with "try the next tool" regardless
+// of how a given tool fails.
 func runExec(cmd *exec.Cmd, toolName string) (string, error) {
-	output, err := cmd.CombinedOutput()
+	if cmd.Stderr == nil {
+		cmd.Stderr = os.Stderr
+	}
+
+	output, err := cmd.Output()
 	if err != nil {
 		return "", fmt.Errorf("%s command failed: %w. Output: %s", toolName, err, string(output))
 	}
