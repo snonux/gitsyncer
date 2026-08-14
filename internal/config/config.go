@@ -15,6 +15,31 @@ import (
 
 var forgejoOwnerPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)
 
+// defaultAutoDeleteProtectedBranches lists repo/branch pairs that must never
+// be offered for automatic deletion by the abandoned-branch cleanup flow,
+// regardless of how stale the branch's history looks. This is a hard-coded
+// safety net (not currently exposed via config.json) for branches that carry
+// meaning beyond git history, e.g. a branch literally named "hosts". It lives
+// here rather than in internal/sync because it is a repository-wide policy
+// decision, not something specific to branch analysis.
+var defaultAutoDeleteProtectedBranches = map[string]map[string]struct{}{
+	"xerl": {
+		"hosts": {},
+	},
+}
+
+// IsProtectedFromAutoDelete reports whether branchName in repoName is exempt
+// from automatic abandoned-branch deletion under the built-in policy above.
+func IsProtectedFromAutoDelete(repoName, branchName string) bool {
+	branches, ok := defaultAutoDeleteProtectedBranches[repoName]
+	if !ok {
+		return false
+	}
+
+	_, ok = branches[branchName]
+	return ok
+}
+
 // Organization represents a git organization with its host and name
 type Organization struct {
 	Host                string          `json:"host"`

@@ -1,19 +1,12 @@
 package sync
 
 import (
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
-
-type failingWriter struct{}
-
-func (f failingWriter) Write(_ []byte) (int, error) {
-	return 0, errors.New("write failed")
-}
 
 func TestFilterProtectedAbandonedBranchReport_SkipsProtectedBranches(t *testing.T) {
 	report := &AbandonedBranchReport{
@@ -194,20 +187,5 @@ func TestGenerateDeleteScript_ReturnsErrorWhenWorkDirIsFile(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "failed to create script file") {
 		t.Fatalf("expected create-file error, got %v", err)
-	}
-}
-
-func TestWriteBranchDeletionBlock_ReturnsWriteError(t *testing.T) {
-	err := writeBranchDeletionBlock(
-		failingWriter{},
-		[]BranchInfo{{Name: "feature/broken", LastCommit: time.Date(2024, time.January, 3, 0, 0, 0, 0, time.UTC)}},
-		"regular",
-		"🔸 Deleting branch: ",
-	)
-	if err == nil {
-		t.Fatal("expected write error")
-	}
-	if !strings.Contains(err.Error(), "failed to write review mode condition") {
-		t.Fatalf("expected write context in error, got %v", err)
 	}
 }

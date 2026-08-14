@@ -1,30 +1,14 @@
 package sync
 
 import (
-	_ "embed"
 	"fmt"
-	"io"
-	"os"
-	"path/filepath"
 	"strconv"
 	"strings"
-	"text/template"
 	"time"
+
+	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/sync/deletescript"
 )
-
-//go:embed delete_script.tmpl
-var deleteScriptTemplateText string
-
-var deleteScriptTemplate = template.Must(template.New("deleteScript").Parse(deleteScriptTemplateText))
-
-type deleteScriptTemplateData struct {
-	GeneratedAt     string
-	TotalAbandoned  int
-	TotalIgnored    int
-	TotalBranches   int
-	RepositoryCount int
-	ScriptBaseName  string
-}
 
 // BranchInfo holds information about a branch
 type BranchInfo struct {
@@ -46,22 +30,11 @@ type AbandonedBranchReport struct {
 	TotalIgnoredBranches     int
 }
 
-var defaultAutoDeleteProtectedBranches = map[string]map[string]struct{}{
-	"xerl": {
-		"hosts": {},
-	},
-}
-
-func isProtectedFromAutoDelete(repoName, branchName string) bool {
-	branches, ok := defaultAutoDeleteProtectedBranches[repoName]
-	if !ok {
-		return false
-	}
-
-	_, ok = branches[branchName]
-	return ok
-}
-
+// filterProtectedBranchInfos drops branches that the config package's
+// auto-delete protection policy exempts for repoName (e.g. a branch that
+// carries meaning beyond its git history, such as "hosts" in "xerl"). The
+// policy itself lives in internal/config since it is a repo-wide safety
+// setting, not something specific to branch analysis.
 func filterProtectedBranchInfos(repoName string, branches []BranchInfo) []BranchInfo {
 	if len(branches) == 0 {
 		return branches
@@ -69,7 +42,7 @@ func filterProtectedBranchInfos(repoName string, branches []BranchInfo) []Branch
 
 	filtered := make([]BranchInfo, 0, len(branches))
 	for _, branch := range branches {
-		if isProtectedFromAutoDelete(repoName, branch.Name) {
+		if config.IsProtectedFromAutoDelete(repoName, branch.Name) {
 			continue
 		}
 		filtered = append(filtered, branch)
@@ -427,215 +400,46 @@ func (s *Syncer) GenerateDeleteCommands(report *AbandonedBranchReport, repoName 
 	return sb.String()
 }
 
-func writeDeleteScriptTemplate(writer io.Writer, templateName string, data deleteScriptTemplateData) error {
-	if err := deleteScriptTemplate.ExecuteTemplate(writer, templateName, data); err != nil {
-		return fmt.Errorf("failed to execute %s template: %w", templateName, err)
-	}
-
-	return nil
+// GenerateDeleteScript generates a shell script file to delete all abandoned
+// branches across every repository analyzed this session. Filtering
+// protected branches and turning the collected reports into the values the
+// deletescript package needs happens here; deletescript itself only knows
+// how to render bash from those values (see deleteScriptReports below).
+func (s *Syncer) GenerateDeleteScript() (string, error) {
+	return deletescript.Generate(s.workDir, s.deleteScriptReports())
 }
 
-func writeBranchDeletionBlock(writer io.Writer, branches []BranchInfo, reviewBranchType, deleteMessagePrefix string) error {
-	for _, branch := range branches {
-		if _, err := fmt.Fprintf(writer, "if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n"); err != nil {
-			return fmt.Errorf("failed to write review mode condition for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    if [[ -n \"$main_branch\" ]]; then\n"); err != nil {
-			return fmt.Errorf("failed to write main branch check for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        review_branch \"%s\" \"$main_branch\" \"%s\" \"%s\"\n", branch.Name, branch.LastCommit.Format("2006-01-02"), reviewBranchType); err != nil {
-			return fmt.Errorf("failed to write review command for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    fi\n"); err != nil {
-			return fmt.Errorf("failed to write review branch end for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "else\n"); err != nil {
-			return fmt.Errorf("failed to write delete branch condition for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    echo \"  %s%s (last commit: %s)\"\n", deleteMessagePrefix, branch.Name, branch.LastCommit.Format("2006-01-02")); err != nil {
-			return fmt.Errorf("failed to write delete message for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    # Check if we're on the branch to be deleted\n"); err != nil {
-			return fmt.Errorf("failed to write current branch comment for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    current_branch=$(git branch --show-current)\n"); err != nil {
-			return fmt.Errorf("failed to write current branch command for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    if [[ \"$current_branch\" == \"%s\" ]]; then\n", branch.Name); err != nil {
-			return fmt.Errorf("failed to write current branch condition for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        echo \"    Switching from %s to main/master branch before deletion...\"\n", branch.Name); err != nil {
-			return fmt.Errorf("failed to write branch switch message for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        main_branch=$(find_main_branch)\n"); err != nil {
-			return fmt.Errorf("failed to write find main branch command for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        if [[ -n \"$main_branch\" ]]; then\n"); err != nil {
-			return fmt.Errorf("failed to write branch switch check for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "            execute_cmd git checkout \"$main_branch\"\n"); err != nil {
-			return fmt.Errorf("failed to write checkout command for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        else\n"); err != nil {
-			return fmt.Errorf("failed to write missing main branch else block for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "            echo \"    ⚠️  No main/master branch found to switch to!\"\n"); err != nil {
-			return fmt.Errorf("failed to write missing main branch message for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "            echo \"    Skipping deletion of %s\"\n", branch.Name); err != nil {
-			return fmt.Errorf("failed to write skip branch message for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        fi\n"); err != nil {
-			return fmt.Errorf("failed to write main branch switch end for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    fi\n"); err != nil {
-			return fmt.Errorf("failed to write current branch condition end for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    # Skip to next branch if we couldn't switch\n"); err != nil {
-			return fmt.Errorf("failed to write skip comment for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    if [[ \"$current_branch\" == \"%s\" ]] && [[ -z \"$main_branch\" ]]; then\n", branch.Name); err != nil {
-			return fmt.Errorf("failed to write skip condition for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "        continue\n"); err != nil {
-			return fmt.Errorf("failed to write continue for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "    fi\n"); err != nil {
-			return fmt.Errorf("failed to write skip condition end for branch %s: %w", branch.Name, err)
-		}
-		for _, remote := range branch.RemotesWithBranch {
-			if _, err := fmt.Fprintf(writer, "    execute_cmd git push %s --delete \"%s\"\n", remote, branch.Name); err != nil {
-				return fmt.Errorf("failed to write remote delete command for branch %s: %w", branch.Name, err)
-			}
-		}
-		if _, err := fmt.Fprintf(writer, "    execute_cmd git branch -D \"%s\"\n", branch.Name); err != nil {
-			return fmt.Errorf("failed to write local delete command for branch %s: %w", branch.Name, err)
-		}
-		if _, err := fmt.Fprintf(writer, "fi\n\n"); err != nil {
-			return fmt.Errorf("failed to write branch block end for branch %s: %w", branch.Name, err)
-		}
-	}
-
-	return nil
-}
-
-// GenerateDeleteScript generates a shell script file to delete all abandoned branches.
-// The return value uses named results so that a failure to close the script file
-// (e.g. a delayed flush error on a lagging filesystem) is reported via err instead
-// of being silently discarded, without masking any earlier, more specific error.
-func (s *Syncer) GenerateDeleteScript() (scriptPath string, err error) {
-	if len(s.abandonedReports) == 0 {
-		return "", nil
-	}
-
-	// Count total abandoned branches
-	totalAbandoned := 0
-	totalIgnored := 0
-	for repoName, report := range s.abandonedReports {
-		report = filterProtectedAbandonedBranchReport(repoName, report)
-		totalAbandoned += len(report.AbandonedBranches)
-		totalIgnored += len(report.AbandonedIgnoredBranches)
-	}
-
-	if totalAbandoned == 0 && totalIgnored == 0 {
-		return "", nil
-	}
-
-	// Generate script filename with timestamp
-	timestamp := time.Now().Format("20060102_150405")
-	scriptPath = filepath.Join(s.workDir, fmt.Sprintf("delete_abandoned_branches_%s.sh", timestamp))
-	scriptBaseName := filepath.Base(scriptPath)
-
-	// Create the script file
-	file, err := os.Create(scriptPath)
-	if err != nil {
-		return "", fmt.Errorf("failed to create script file: %w", err)
-	}
-	defer func() {
-		if cerr := file.Close(); cerr != nil && err == nil {
-			err = fmt.Errorf("failed to close script file %s: %w", scriptPath, cerr)
-		}
-	}()
-
-	if err := writeDeleteScriptTemplate(file, "deleteScriptPreamble", deleteScriptTemplateData{
-		GeneratedAt:     time.Now().Format("2006-01-02 15:04:05"),
-		TotalAbandoned:  totalAbandoned,
-		TotalIgnored:    totalIgnored,
-		TotalBranches:   totalAbandoned + totalIgnored,
-		RepositoryCount: len(s.abandonedReports),
-		ScriptBaseName:  scriptBaseName,
-	}); err != nil {
-		return scriptPath, err
-	}
-
-	// Process each repository
+// deleteScriptReports converts the Syncer's collected abandoned-branch
+// reports into deletescript.RepoReport values, filtering out branches
+// protected from automatic deletion and skipping repositories left with
+// nothing to delete once that filtering is applied.
+func (s *Syncer) deleteScriptReports() []deletescript.RepoReport {
+	reports := make([]deletescript.RepoReport, 0, len(s.abandonedReports))
 	for repoName, report := range s.abandonedReports {
 		report = filterProtectedAbandonedBranchReport(repoName, report)
 		if len(report.AbandonedBranches) == 0 && len(report.AbandonedIgnoredBranches) == 0 {
 			continue
 		}
-
-		if err := writeDeleteScriptRepoHeader(file, s.workDir, repoName); err != nil {
-			return scriptPath, err
-		}
-
-		// Process regular abandoned branches
-		if len(report.AbandonedBranches) > 0 {
-			if _, err := fmt.Fprintf(file, "# Regular abandoned branches\n"); err != nil {
-				return scriptPath, fmt.Errorf("failed to write regular branches header for %s: %w", repoName, err)
-			}
-			if err := writeBranchDeletionBlock(file, report.AbandonedBranches, "regular", "🔸 Deleting branch: "); err != nil {
-				return scriptPath, err
-			}
-		}
-
-		// Process ignored abandoned branches
-		if len(report.AbandonedIgnoredBranches) > 0 {
-			if _, err := fmt.Fprintf(file, "# Ignored abandoned branches\n"); err != nil {
-				return scriptPath, fmt.Errorf("failed to write ignored branches header for %s: %w", repoName, err)
-			}
-			if err := writeBranchDeletionBlock(file, report.AbandonedIgnoredBranches, "ignored", "🔹 Deleting ignored branch: "); err != nil {
-				return scriptPath, err
-			}
-		}
+		reports = append(reports, deletescript.RepoReport{
+			RepoName: repoName,
+			Regular:  toDeleteScriptBranches(report.AbandonedBranches),
+			Ignored:  toDeleteScriptBranches(report.AbandonedIgnoredBranches),
+		})
 	}
-
-	if err := writeDeleteScriptTemplate(file, "deleteScriptFooter", deleteScriptTemplateData{
-		ScriptBaseName: scriptBaseName,
-	}); err != nil {
-		return scriptPath, err
-	}
-
-	// Make the script executable
-	if err := os.Chmod(scriptPath, 0755); err != nil {
-		return scriptPath, fmt.Errorf("failed to make script executable: %w", err)
-	}
-
-	return scriptPath, nil
+	return reports
 }
 
-// writeDeleteScriptRepoHeader writes the per-repository banner and the
-// review-mode main-branch check at the top of each repository's block in
-// the generated delete script.
-func writeDeleteScriptRepoHeader(file *os.File, workDir, repoName string) error {
-	lines := []string{
-		"# ======================================\n",
-		fmt.Sprintf("# Repository: %s\n", repoName),
-		"# ======================================\n",
-		"echo\n",
-		fmt.Sprintf("echo \"📁 Processing repository: %s\"\n", repoName),
-		fmt.Sprintf("cd \"%s/%s\" || { echo \"Failed to change to repository directory\"; exit 1; }\n\n", workDir, repoName),
-		"if [[ \"$MODE\" == \"review\" || \"$MODE\" == \"review-full\" ]]; then\n",
-		"    main_branch=$(find_main_branch)\n",
-		"    if [[ -z \"$main_branch\" ]]; then\n",
-		fmt.Sprintf("        echo -e \"${RED}⚠️  No main/master branch found in %s${NC}\"\n", repoName),
-		"    fi\n",
-		"fi\n\n",
+// toDeleteScriptBranches narrows BranchInfo down to the fields the
+// deletescript package needs (name, last commit, remotes), keeping that
+// package decoupled from the sync package's richer branch-analysis type.
+func toDeleteScriptBranches(branches []BranchInfo) []deletescript.BranchInfo {
+	out := make([]deletescript.BranchInfo, 0, len(branches))
+	for _, b := range branches {
+		out = append(out, deletescript.BranchInfo{
+			Name:              b.Name,
+			LastCommit:        b.LastCommit,
+			RemotesWithBranch: b.RemotesWithBranch,
+		})
 	}
-	for _, line := range lines {
-		if _, err := fmt.Fprint(file, line); err != nil {
-			return fmt.Errorf("failed to write repository header for %s: %w", repoName, err)
-		}
-	}
-	return nil
+	return out
 }
