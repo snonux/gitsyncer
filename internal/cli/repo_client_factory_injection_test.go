@@ -15,6 +15,15 @@ import (
 
 // captureStdout runs fn while redirecting os.Stdout, returning the captured
 // output. Used by handler tests that need to assert on user-facing messages.
+//
+// os.Stdout is a single process-global variable, so swapping it here is not
+// safe under concurrent use: if two tests call captureStdout at the same
+// time (e.g. both marked t.Parallel()), their swap/restore calls race and
+// each test can end up capturing a mix of its own and the other test's
+// output. There is no per-goroutine os.Stdout to scope this to, so callers
+// of captureStdout must not run in parallel with each other — do not add
+// t.Parallel() to tests that call this helper (see the callers below for
+// the reasoning inline).
 func captureStdout(t *testing.T, fn func()) string {
 	t.Helper()
 	orig := os.Stdout
@@ -372,7 +381,10 @@ func TestSyncGitHubRepos_DryRunCreateReposDispatchesNoMutations(t *testing.T) {
 // returns 0 without printing), which TestSyncGitHubRepos_DryRunCreateReposDispatchesNoMutations
 // already exercises.
 func TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): this test calls captureStdout, which swaps the
+	// process-global os.Stdout for the duration of fn(). Running it
+	// concurrently with another captureStdout-using test races on that
+	// global and cross-contaminates captured output between tests.
 
 	factory := &stubRepoClientFactory{}
 	flags := &Flags{DryRun: true, SyncGitHubPublic: true, WorkDir: t.TempDir()}
@@ -393,7 +405,10 @@ func TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync(t *testing.
 // separator is only printed when SyncGitHubPublic chains into a follow-on
 // GitHub sync, not on every syncCodebergRepos call.
 func TestSyncCodebergRepos_NoSeparatorWithoutChainedGitHubSync(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): see the comment in
+	// TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync above
+	// — this test also uses captureStdout, which is unsafe to run
+	// concurrently with other captureStdout callers.
 
 	factory := &stubRepoClientFactory{}
 	flags := &Flags{DryRun: true, SyncGitHubPublic: false, WorkDir: t.TempDir()}
@@ -486,7 +501,10 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 // This test locks in that the merged publicSyncPipeline.run preserves that
 // same outcome.
 func TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZero(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): see the comment in
+	// TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync above
+	// — this test also uses captureStdout, which is unsafe to run
+	// concurrently with other captureStdout callers.
 
 	factory := &stubRepoClientFactory{
 		codebergPublicClient: &stubCodebergPublicRepoClient{
@@ -520,7 +538,10 @@ func TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZe
 }
 
 func TestHandleSyncCodebergPublicWithFactory_RestrictsToConfiguredRepos(t *testing.T) {
-	t.Parallel()
+	// Not t.Parallel(): see the comment in
+	// TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync above
+	// — this test also uses captureStdout, which is unsafe to run
+	// concurrently with other captureStdout callers.
 
 	factory := &stubRepoClientFactory{
 		codebergPublicClient: &stubCodebergPublicRepoClient{
