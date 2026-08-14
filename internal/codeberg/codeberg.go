@@ -161,48 +161,39 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 	return nil
 }
 
-// ListPublicRepos lists all public repositories for an organization
+// ListPublicRepos lists all public repositories for an organization.
+// The pagination loop and public/non-fork/non-archived/non-empty filtering
+// live in listReposPaginated; this method only supplies the org endpoint's
+// URL template.
 func (c *Client) ListPublicRepos() ([]Repository, error) {
-	var allRepos []Repository
-	page := 1
-	perPage := 50
-
-	for {
-		url := fmt.Sprintf("%s/orgs/%s/repos?page=%d&limit=%d", c.baseURL, c.org, page, perPage)
-
-		repos, err := c.listReposPage(url)
-		if err != nil {
-			return nil, err
-		}
-
-		// Filter only public, non-fork, non-archived, non-empty repos
-		for _, repo := range repos {
-			if !repo.Private && !repo.Fork && !repo.Archived && !repo.Empty {
-				allRepos = append(allRepos, repo)
-			}
-		}
-
-		// If we got fewer repos than requested, we've reached the end
-		if len(repos) < perPage {
-			break
-		}
-
-		page++
-	}
-
-	return allRepos, nil
+	return c.listReposPaginated(func(page, perPage int) string {
+		return fmt.Sprintf("%s/orgs/%s/repos?page=%d&limit=%d", c.baseURL, c.org, page, perPage)
+	})
 }
 
-// ListUserPublicRepos lists all public repositories for a user
+// ListUserPublicRepos lists all public repositories for a user. Like
+// ListPublicRepos, it delegates to listReposPaginated and only differs in
+// the URL template (users/ instead of orgs/).
 func (c *Client) ListUserPublicRepos() ([]Repository, error) {
+	return c.listReposPaginated(func(page, perPage int) string {
+		return fmt.Sprintf("%s/users/%s/repos?page=%d&limit=%d", c.baseURL, c.org, page, perPage)
+	})
+}
+
+// listReposPaginated walks a paginated repo-listing endpoint page by page,
+// keeping only public, non-fork, non-archived, non-empty repos. urlBuilder
+// receives the page number and page size and returns the URL to fetch for
+// that page; it is the only thing that differs between ListPublicRepos
+// (orgs/ endpoint) and ListUserPublicRepos (users/ endpoint). Pagination
+// stops once a page returns fewer than perPage repos, matching the prior
+// per-method loops exactly.
+func (c *Client) listReposPaginated(urlBuilder func(page, perPage int) string) ([]Repository, error) {
 	var allRepos []Repository
 	page := 1
 	perPage := 50
 
 	for {
-		url := fmt.Sprintf("%s/users/%s/repos?page=%d&limit=%d", c.baseURL, c.org, page, perPage)
-
-		repos, err := c.listReposPage(url)
+		repos, err := c.listReposPage(urlBuilder(page, perPage))
 		if err != nil {
 			return nil, err
 		}

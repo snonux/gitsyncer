@@ -2,11 +2,13 @@ package codeberg
 
 import (
 	"encoding/json"
+	"fmt"
 	"net"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -500,4 +502,101 @@ func TestGiteaClient_EnsurePublicRepoReportsAPIFailure(t *testing.T) {
 	if err == nil || !strings.Contains(err.Error(), "status 503") {
 		t.Fatalf("EnsurePublicRepo() error = %v, want API status context", err)
 	}
+}
+
+// startPaginatedReposServer serves a two-page repo listing at
+// /<pathPrefix>/<org>/repos, exercising the shared listReposPaginated
+// pagination loop used by both ListPublicRepos (pathPrefix "orgs") and
+// ListUserPublicRepos (pathPrefix "users"). Page 1 has exactly 50 repos (the
+// hardcoded page size) so the loop fetches page 2; page 2 has fewer than 50
+// so pagination stops there. Both pages mix in private, fork, archived, and
+// empty repos that must be filtered out, alongside the repos that must be
+// kept.
+func startPaginatedReposServer(t *testing.T, pathPrefix, org string) *httptest.Server {
+	t.Helper()
+
+	page1 := make([]Repository, 0, 50)
+	page1 = append(page1, Repository{Name: "keep-page1-first"})
+	for i := 0; i < 45; i++ {
+		page1 = append(page1, Repository{Name: "private-" + strconv.Itoa(i), Private: true})
+	}
+	page1 = append(page1,
+		Repository{Name: "fork-excluded", Fork: true},
+		Repository{Name: "archived-excluded", Archived: true},
+		Repository{Name: "empty-excluded", Empty: true},
+		Repository{Name: "keep-page1-last"},
+	)
+	if len(page1) != 50 {
+		t.Fatalf("test setup: page1 has %d repos, want 50", len(page1))
+	}
+
+	page2 := []Repository{
+		{Name: "keep-page2"},
+		{Name: "private-page2", Private: true},
+	}
+
+	wantPath := fmt.Sprintf("/%s/%s/repos", pathPrefix, org)
+
+	return httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != wantPath {
+			t.Errorf("request path = %q, want %q", r.URL.Path, wantPath)
+		}
+		if got := r.URL.Query().Get("limit"); got != "50" {
+			t.Errorf("limit query = %q, want 50", got)
+		}
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_ = json.NewEncoder(w).Encode(page1)
+		case "2":
+			_ = json.NewEncoder(w).Encode(page2)
+		default:
+			t.Errorf("unexpected page query = %q", r.URL.Query().Get("page"))
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+}
+
+// assertKeptRepoNames checks that only the non-private, non-fork,
+// non-archived, non-empty repos survived filtering, in page order.
+func assertKeptRepoNames(t *testing.T, repos []Repository) {
+	t.Helper()
+	want := []string{"keep-page1-first", "keep-page1-last", "keep-page2"}
+	if len(repos) != len(want) {
+		t.Fatalf("got %d repos, want %d: %#v", len(repos), len(want), repos)
+	}
+	for i, name := range want {
+		if repos[i].Name != name {
+			t.Errorf("repos[%d].Name = %q, want %q", i, repos[i].Name, name)
+		}
+	}
+}
+
+func TestListPublicRepos_PaginatesFiltersAndUsesOrgEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const org = "snonux"
+	server := startPaginatedReposServer(t, "orgs", org)
+	defer server.Close()
+
+	client := NewGiteaClient(server.URL, "secret", org, "Forgejo", forge.OwnerTypeOrganization)
+	repos, err := client.ListPublicRepos()
+	if err != nil {
+		t.Fatalf("ListPublicRepos() error = %v", err)
+	}
+	assertKeptRepoNames(t, repos)
+}
+
+func TestListUserPublicRepos_PaginatesFiltersAndUsesUserEndpoint(t *testing.T) {
+	t.Parallel()
+
+	const org = "snonux"
+	server := startPaginatedReposServer(t, "users", org)
+	defer server.Close()
+
+	client := NewGiteaClient(server.URL, "secret", org, "Forgejo", forge.OwnerTypeUser)
+	repos, err := client.ListUserPublicRepos()
+	if err != nil {
+		t.Fatalf("ListUserPublicRepos() error = %v", err)
+	}
+	assertKeptRepoNames(t, repos)
 }
