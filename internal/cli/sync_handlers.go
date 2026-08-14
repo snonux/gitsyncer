@@ -83,7 +83,12 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 	return 0
 }
 
-// HandleSyncAll handles syncing all configured repositories
+// HandleSyncAll handles syncing all statically configured repositories. A
+// per-repo mirror-creation or SyncRepository failure is recorded and the
+// batch continues with the next repo (see syncExecution.recordFailure) -
+// only the config-level "no repositories configured" check above aborts
+// immediately, since that is an unrecoverable setup error rather than a
+// per-repo one. The final exit code reflects whether any repo failed.
 func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	if len(cfg.Repositories) == 0 {
 		fmt.Println("No repositories configured. Add repositories to the config file.")
@@ -91,100 +96,94 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 	}
 
 	repoNames := shuffledRepoNames(cfg.Repositories)
+	execution := newSyncExecution(cfg, flags)
+	githubClient, codebergClient := configuredRepoCreationClients(cfg, flags)
 
-	stateManager, syncState, err := loadSyncState(flags.WorkDir)
-	if err != nil {
-		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
-	}
-
-	// Initialize GitHub client if needed
-	var githubClient forge.RepoClient
-	if flags.CreateGitHubRepos && !flags.DryRun {
-		githubClient = initGitHubClient(cfg)
-	}
-
-	// Initialize Codeberg client if needed
-	var codebergClient forge.RepoClient
-	if flags.CreateCodebergRepos && !flags.DryRun {
-		codebergClient = initCodebergClient(cfg)
-	}
-
-	syncer := sync.New(cfg, flags.WorkDir)
-	syncer.SetBackupEnabled(shouldEnableBackupSync(flags))
-	syncer.SetDryRun(flags.DryRun)
-	syncer.SetForgejoBackupClientFactory(newForgejoBackupClient)
 	successCount := 0
-	// Load descriptions cache
-	descCache := loadDescriptionCache(flags.WorkDir)
-
 	for i, repo := range repoNames {
 		fmt.Printf("\n[%d/%d] Syncing %s...\n", i+1, len(repoNames), repo)
 
-		decision := evaluateSyncPolicy(repo, flags.WorkDir, syncState, flags.DryRun, flags.Force, flags.Throttle)
-		if decision.Message != "" {
-			fmt.Println(decision.Message)
-		}
-		if decision.SetNextAllowed && stateManager != nil && !flags.DryRun {
-			syncState.SetNextRepoSyncAllowed(repo, decision.NextAllowed)
-			if err := stateManager.Save(syncState); err != nil {
-				fmt.Printf("Warning: Failed to save sync state: %v\n", err)
-			}
-		}
-		if decision.Skip {
+		if execution.maybeSkipRepo(repo, flags) {
 			continue
 		}
 
-		// Create GitHub repo if needed
-		if githubClient != nil {
-			if err := createRepoWithClient(githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
-				fmt.Printf("ERROR: Failed to create GitHub repo %s: %v\n", repo, err)
-				fmt.Printf("Stopping sync due to error.\n")
-				return 1
-			}
-		}
+		createConfiguredMirrors(repo, githubClient, codebergClient)
 
-		// Create Codeberg repo if needed
-		if codebergClient != nil {
-			fmt.Printf("Checking/creating Codeberg repository %s...\n", repo)
-			if err := codebergClient.CreateRepo(repo, fmt.Sprintf("Mirror of %s", repo), false); err != nil {
-				fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repo, err)
-			}
+		if err := execution.syncer.SyncRepository(repo); err != nil {
+			execution.recordFailure(repo, err)
+			continue
 		}
-
-		if err := syncer.SyncRepository(repo); err != nil {
-			fmt.Printf("ERROR: Failed to sync %s: %v\n", repo, err)
-			fmt.Printf("Stopping sync due to error.\n")
-			return 1
-		}
-		if stateManager != nil && !flags.DryRun {
-			recordRepoSync(repo, syncState, flags.Throttle)
-			if err := stateManager.Save(syncState); err != nil {
-				fmt.Printf("Warning: Failed to save sync state: %v\n", err)
-			}
-		}
+		execution.markRepoSynced(repo, flags)
 		successCount++
+
 		// Sync descriptions after repo sync
-		syncRepoDescriptions(cfg, flags.DryRun, syncer.BackupActive, syncer.DisableBackup, repo, "", "", descCache)
+		syncRepoDescriptions(cfg, flags.DryRun, execution.syncer.BackupActive, execution.syncer.DisableBackup, repo, "", "", execution.descCache)
 	}
-	// Save descriptions cache
+
+	finishConfiguredSync(execution, successCount, flags)
+	return execution.exitCode()
+}
+
+// configuredRepoCreationClients initializes the optional GitHub/Codeberg
+// clients used to create missing mirror repos before syncing each
+// statically configured repository; nil when the corresponding
+// --create-*-repos flag wasn't set (or this is a dry run).
+func configuredRepoCreationClients(cfg *config.Config, flags *Flags) (githubClient, codebergClient forge.RepoClient) {
+	if flags.CreateGitHubRepos && !flags.DryRun {
+		githubClient = initGitHubClient(cfg)
+	}
+	if flags.CreateCodebergRepos && !flags.DryRun {
+		codebergClient = initCodebergClient(cfg)
+	}
+	return githubClient, codebergClient
+}
+
+// createConfiguredMirrors creates repo's GitHub/Codeberg mirror if the
+// corresponding client was configured. A creation failure is only a
+// warning: sync still proceeds to attempt SyncRepository for repo, since a
+// failed mirror-creation call is a recoverable per-repo issue, not the kind
+// of unrecoverable config/state error that should stop the whole batch.
+func createConfiguredMirrors(repo string, githubClient, codebergClient forge.RepoClient) {
+	if githubClient != nil {
+		if err := createRepoWithClient(githubClient, repo, fmt.Sprintf("Mirror of %s", repo)); err != nil {
+			fmt.Printf("Warning: Failed to create GitHub repo %s: %v\n", repo, err)
+		}
+	}
+
+	if codebergClient != nil {
+		fmt.Printf("Checking/creating Codeberg repository %s...\n", repo)
+		if err := codebergClient.CreateRepo(repo, fmt.Sprintf("Mirror of %s", repo), false); err != nil {
+			fmt.Printf("Warning: Failed to create Codeberg repo %s: %v\n", repo, err)
+		}
+	}
+}
+
+// finishConfiguredSync saves the description cache and prints the batch
+// summary (success count, any per-repo failures, abandoned branches, delete
+// script) once the configured-repos loop finishes. It mirrors
+// syncExecution.finishDiscoveredSync, which does the same for the
+// discovered-repos loop in syncDiscoveredRepos.
+func finishConfiguredSync(execution *syncExecution, successCount int, flags *Flags) {
 	if !flags.DryRun {
-		if err := saveDescriptionCache(flags.WorkDir, descCache); err != nil {
+		if err := saveDescriptionCache(flags.WorkDir, execution.descCache); err != nil {
 			fmt.Printf("Warning: Failed to save descriptions cache: %v\n", err)
 		}
 	}
 
-	fmt.Printf("\nSuccessfully synced all %d repositories!\n", successCount)
+	if len(execution.failedRepos) == 0 {
+		fmt.Printf("\nSuccessfully synced all %d repositories!\n", successCount)
+	} else {
+		fmt.Printf("\nSynced %d of %d repositories.\n", successCount, successCount+len(execution.failedRepos))
+	}
+	execution.printFailureSummary()
 
-	// Print abandoned branches summary
-	if summary := syncer.GenerateAbandonedBranchSummary(); summary != "" {
+	if summary := execution.syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
 	}
 
 	if !flags.DryRun {
-		printDeleteScript(syncer)
+		printDeleteScript(execution.syncer)
 	}
-
-	return 0
 }
 
 // HandleSyncCodebergPublic handles syncing all public Codeberg repositories
@@ -504,6 +503,7 @@ type syncExecution struct {
 	descCache    map[string]string
 	stateManager *state.Manager
 	syncState    *state.State
+	failedRepos  []string
 }
 
 func newSyncExecution(cfg *config.Config, flags *Flags) *syncExecution {
@@ -551,6 +551,37 @@ func (e *syncExecution) markRepoSynced(repoName string, flags *Flags) {
 	}
 }
 
+// recordFailure logs a per-repo sync failure and keeps it for the end-of-run
+// summary instead of aborting the batch - a single repo's transient error
+// (network blip, one bad branch, etc.) shouldn't leave every other
+// configured/discovered repo unsynced. Hard aborts are reserved for
+// unrecoverable config/state errors detected before the loop starts.
+func (e *syncExecution) recordFailure(repoName string, err error) {
+	fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
+	e.failedRepos = append(e.failedRepos, repoName)
+}
+
+// printFailureSummary lists the repos recorded via recordFailure, if any.
+func (e *syncExecution) printFailureSummary() {
+	if len(e.failedRepos) == 0 {
+		return
+	}
+	fmt.Printf("Failed to sync: %d repositories\n", len(e.failedRepos))
+	for _, repo := range e.failedRepos {
+		fmt.Printf("  - %s\n", repo)
+	}
+}
+
+// exitCode returns 1 if any repo failed during this execution, 0 otherwise -
+// the batch always runs to completion, but the process exit code still
+// reflects whether everything actually succeeded.
+func (e *syncExecution) exitCode() int {
+	if len(e.failedRepos) > 0 {
+		return 1
+	}
+	return 0
+}
+
 func (e *syncExecution) finishDiscoveredSync(successCount int, flags *Flags) {
 	if !flags.DryRun {
 		if err := saveDescriptionCache(flags.WorkDir, e.descCache); err != nil {
@@ -560,6 +591,7 @@ func (e *syncExecution) finishDiscoveredSync(successCount int, flags *Flags) {
 
 	fmt.Printf("\n=== Summary ===\n")
 	fmt.Printf("Successfully synced: %d repositories\n", successCount)
+	e.printFailureSummary()
 
 	if summary := e.syncer.GenerateAbandonedBranchSummary(); summary != "" {
 		fmt.Print(summary)
@@ -672,9 +704,8 @@ func syncDiscoveredRepos(cfg *config.Config, flags *Flags, repoNames []string, r
 		spec.maybeCreateTargetRepo(repoName, description)
 
 		if err := execution.syncer.SyncRepository(repoName); err != nil {
-			fmt.Printf("ERROR: Failed to sync %s: %v\n", repoName, err)
-			fmt.Printf("Stopping sync due to error.\n")
-			return 1
+			execution.recordFailure(repoName, err)
+			continue
 		}
 		execution.markRepoSynced(repoName, flags)
 		successCount++
@@ -684,7 +715,11 @@ func syncDiscoveredRepos(cfg *config.Config, flags *Flags, repoNames []string, r
 	}
 
 	execution.finishDiscoveredSync(successCount, flags)
-	return spec.afterSync(flags)
+	afterResult := spec.afterSync(flags)
+	if execution.exitCode() != 0 {
+		return execution.exitCode()
+	}
+	return afterResult
 }
 
 // syncCodebergRepos syncs repos discovered on Codeberg's public listing to
