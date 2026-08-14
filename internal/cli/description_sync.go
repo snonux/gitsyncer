@@ -17,10 +17,10 @@ import (
 // Precedence: Codeberg > GitHub; if Codeberg empty and GitHub has one, use GitHub.
 // knownCBDesc and knownGHDesc can be empty; the function fetches as needed.
 func syncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
-	syncRepoDescriptionsWithFactory(cfg, dryRun, backupActive, disableBackup, repoName, knownCBDesc, knownGHDesc, cache, cliRepoClientFactory)
+	syncRepoDescriptionsWithResolver(cfg, dryRun, backupActive, disableBackup, repoName, knownCBDesc, knownGHDesc, cache, ForgeClientResolver{})
 }
 
-func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string, factory repoClientFactory) {
+func syncRepoDescriptionsWithResolver(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string, resolver forgeClientResolver) {
 	// Load orgs
 	ghOrg := cfg.FindGitHubOrg()
 	cbOrg := cfg.FindCodebergOrg()
@@ -28,10 +28,10 @@ func syncRepoDescriptionsWithFactory(cfg *config.Config, dryRun bool, backupActi
 	var ghClient forge.RepoDescriptionClient
 	var cbClient forge.RepoDescriptionClient
 	if ghOrg != nil {
-		ghClient = factory.NewGitHubDescriptionClient(ghOrg.GitHubToken, ghOrg.Name)
+		ghClient, _ = resolver.ClientFor(ghOrg)
 	}
 	if cbOrg != nil && cfg.CodebergSyncEnabled() && cfg.IsSyncRepo(repoName) {
-		cbClient = factory.NewCodebergDescriptionClient(cbOrg.CodebergToken, cbOrg.Name)
+		cbClient, _ = resolver.ClientFor(cbOrg)
 	}
 
 	// Get current descriptions (use known if provided)

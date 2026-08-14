@@ -46,6 +46,39 @@ type PublicRepoEnsurer interface {
 	EnsurePublicRepo(name, description string) error
 }
 
+// PublicRepo is a forge-agnostic view of a repository returned by a public
+// repository listing. github.Client and codeberg.Client each list
+// repositories as their own concrete Repository DTO (with many
+// forge-specific fields); callers that only need name/description convert
+// into this shared type via a thin adapter (see internal/cli's
+// githubPublicRepoLister/codebergPublicRepoLister), so public-sync code
+// depends on this package instead of importing github/codeberg for their
+// concrete types.
+type PublicRepo struct {
+	Name        string
+	Description string
+}
+
+// PublicRepoLister lists public repositories for a forge account.
+// HasToken is part of the contract because GitHub's public-listing API
+// requires an auth token even for public repositories, unlike Codeberg's;
+// callers check it before calling ListPublicRepos.
+type PublicRepoLister interface {
+	HasToken() bool
+	ListPublicRepos() ([]PublicRepo, error)
+}
+
+// UserFallbackPublicRepoLister is implemented by forges (Codeberg/Gitea)
+// whose public-repo listing must retry as a user-scoped listing when the
+// organization-scoped listing fails, e.g. because the configured account is
+// a user rather than an organization. Unlike PublicRepoLister it has no
+// HasToken method because Codeberg's public listing does not require a
+// token.
+type UserFallbackPublicRepoLister interface {
+	ListPublicRepos() ([]PublicRepo, error)
+	ListUserPublicRepos() ([]PublicRepo, error)
+}
+
 // ReleaseClient defines release CRUD operations shared across forges. Each
 // forge (GitHub, Codeberg/Gitea) implements this against its own API so the
 // release pipeline can talk to any forge through a single abstraction

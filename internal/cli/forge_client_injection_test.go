@@ -7,10 +7,8 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/github"
 )
 
 // captureStdout runs fn while redirecting os.Stdout, returning the captured
@@ -57,6 +55,11 @@ type updateCall struct {
 	description string
 }
 
+// stubDescriptionRepoClient fakes the concrete client that
+// ForgeClientResolver.ClientFor would normally construct (github.Client or
+// codeberg.Client). Since ClientFor hands back the same forge.RepoDescriptionClient
+// value for every role (create/delete/exists, description get/update), a
+// single stub covers both roles instead of separate per-role stubs.
 type stubDescriptionRepoClient struct {
 	hasToken           bool
 	descriptionByRepo  map[string]string
@@ -101,97 +104,76 @@ func (s *stubDescriptionRepoClient) UpdateRepoDescription(repoName, description 
 	return nil
 }
 
-type stubGitHubPublicRepoClient struct {
+// stubForgeClientResolver fakes ForgeClientResolver, the seam replacing the
+// old repoClientFactory. Unlike the fat factory (which had a separate method
+// per forge x role combination), the resolver dispatches purely on
+// org.IsGitHub()/IsCodeberg()/IsForgejo() and hands back one client per org
+// regardless of which role (RepoClient vs RepoDescriptionClient) the caller
+// actually needs - so this stub only needs one client field per forge kind.
+type stubForgeClientResolver struct {
+	githubClient   forge.RepoDescriptionClient
+	codebergClient forge.RepoDescriptionClient
+	forgejoClient  forge.RepoDescriptionClient
+
+	githubCalls   int
+	codebergCalls int
+	githubToken   string
+	githubOrg     string
+	codebergToken string
+	codebergOrg   string
+}
+
+func (s *stubForgeClientResolver) ClientFor(org *config.Organization) (forge.RepoDescriptionClient, bool) {
+	switch {
+	case org.IsGitHub():
+		s.githubCalls++
+		s.githubToken = org.GitHubToken
+		s.githubOrg = org.Name
+		return s.githubClient, s.githubClient != nil
+	case org.IsCodeberg():
+		s.codebergCalls++
+		s.codebergToken = org.CodebergToken
+		s.codebergOrg = org.Name
+		return s.codebergClient, s.codebergClient != nil
+	case org.IsForgejo():
+		return s.forgejoClient, s.forgejoClient != nil
+	default:
+		return nil, false
+	}
+}
+
+// stubGitHubPublicRepoLister fakes the forge.PublicRepoLister that
+// newGitHubPublicRepoLister would normally build, returning forge-agnostic
+// forge.PublicRepo values instead of the concrete github.Repository DTO.
+type stubGitHubPublicRepoLister struct {
 	hasToken bool
-	repos    []github.Repository
+	repos    []forge.PublicRepo
 }
 
-func (s *stubGitHubPublicRepoClient) HasToken() bool {
-	return s.hasToken
-}
+func (s *stubGitHubPublicRepoLister) HasToken() bool { return s.hasToken }
 
-func (s *stubGitHubPublicRepoClient) ListPublicRepos() ([]github.Repository, error) {
+func (s *stubGitHubPublicRepoLister) ListPublicRepos() ([]forge.PublicRepo, error) {
 	return s.repos, nil
 }
 
-type stubCodebergPublicRepoClient struct {
-	orgRepos  []codeberg.Repository
-	userRepos []codeberg.Repository
+// stubCodebergPublicRepoLister fakes the forge.UserFallbackPublicRepoLister
+// that newCodebergPublicRepoLister would normally build.
+type stubCodebergPublicRepoLister struct {
+	orgRepos  []forge.PublicRepo
+	userRepos []forge.PublicRepo
 	orgErr    error
 	userErr   error
 }
 
-func (s *stubCodebergPublicRepoClient) ListPublicRepos() ([]codeberg.Repository, error) {
+func (s *stubCodebergPublicRepoLister) ListPublicRepos() ([]forge.PublicRepo, error) {
 	return s.orgRepos, s.orgErr
 }
 
-func (s *stubCodebergPublicRepoClient) ListUserPublicRepos() ([]codeberg.Repository, error) {
+func (s *stubCodebergPublicRepoLister) ListUserPublicRepos() ([]forge.PublicRepo, error) {
 	return s.userRepos, s.userErr
 }
 
-type stubRepoClientFactory struct {
-	githubRepoClient        forge.RepoClient
-	codebergRepoClient      forge.RepoClient
-	githubDescriptionClient forge.RepoDescriptionClient
-	codebergDescClient      forge.RepoDescriptionClient
-	githubPublicClient      githubPublicRepoClient
-	codebergPublicClient    codebergPublicRepoClient
-
-	githubRepoCalls       int
-	codebergRepoCalls     int
-	githubDescCalls       int
-	codebergDescCalls     int
-	githubPublicRepoCalls int
-	codebergPublicCalls   int
-	githubPublicToken     string
-	githubPublicOrg       string
-	codebergPublicToken   string
-	codebergPublicOrg     string
-	githubRepoToken       string
-	githubRepoOrg         string
-	codebergRepoToken     string
-	codebergRepoOrg       string
-}
-
-func (s *stubRepoClientFactory) NewGitHubRepoClient(token, org string) forge.RepoClient {
-	s.githubRepoCalls++
-	s.githubRepoToken = token
-	s.githubRepoOrg = org
-	return s.githubRepoClient
-}
-
-func (s *stubRepoClientFactory) NewCodebergRepoClient(token, org string) forge.RepoClient {
-	s.codebergRepoCalls++
-	s.codebergRepoToken = token
-	s.codebergRepoOrg = org
-	return s.codebergRepoClient
-}
-
-func (s *stubRepoClientFactory) NewGitHubDescriptionClient(_, _ string) forge.RepoDescriptionClient {
-	s.githubDescCalls++
-	return s.githubDescriptionClient
-}
-
-func (s *stubRepoClientFactory) NewCodebergDescriptionClient(_, _ string) forge.RepoDescriptionClient {
-	s.codebergDescCalls++
-	return s.codebergDescClient
-}
-
-func (s *stubRepoClientFactory) NewGitHubPublicRepoClient(token, org string) githubPublicRepoClient {
-	s.githubPublicRepoCalls++
-	s.githubPublicToken = token
-	s.githubPublicOrg = org
-	return s.githubPublicClient
-}
-
-func (s *stubRepoClientFactory) NewCodebergPublicRepoClient(token, org string) codebergPublicRepoClient {
-	s.codebergPublicCalls++
-	s.codebergPublicToken = token
-	s.codebergPublicOrg = org
-	return s.codebergPublicClient
-}
-
-func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
+func TestSyncRepoDescriptionsWithResolver_UsesInjectedClients(t *testing.T) {
 	t.Parallel()
 
 	githubClient := &stubDescriptionRepoClient{
@@ -202,9 +184,9 @@ func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
 		hasToken:          true,
 		descriptionByRepo: map[string]string{"demo": "from codeberg"},
 	}
-	factory := &stubRepoClientFactory{
-		githubDescriptionClient: githubClient,
-		codebergDescClient:      codebergClient,
+	resolver := &stubForgeClientResolver{
+		githubClient:   githubClient,
+		codebergClient: codebergClient,
 	}
 
 	cfg := &config.Config{
@@ -225,10 +207,10 @@ func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
 	}
 	cache := map[string]string{}
 
-	syncRepoDescriptionsWithFactory(cfg, false, nil, nil, "demo", "", "", cache, factory)
+	syncRepoDescriptionsWithResolver(cfg, false, nil, nil, "demo", "", "", cache, resolver)
 
-	if factory.githubDescCalls != 1 || factory.codebergDescCalls != 1 {
-		t.Fatalf("expected one injected description client creation per forge, got github=%d codeberg=%d", factory.githubDescCalls, factory.codebergDescCalls)
+	if resolver.githubCalls != 1 || resolver.codebergCalls != 1 {
+		t.Fatalf("expected one injected client resolution per forge, got github=%d codeberg=%d", resolver.githubCalls, resolver.codebergCalls)
 	}
 
 	if len(codebergClient.updatedDescription) != 0 {
@@ -247,14 +229,14 @@ func TestSyncRepoDescriptionsWithFactory_UsesInjectedClients(t *testing.T) {
 	}
 }
 
-func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
+func TestCreateRepoHelpersWithResolver_UseInjectedCreateClients(t *testing.T) {
 	t.Parallel()
 
 	githubClient := &stubDescriptionRepoClient{hasToken: true}
 	codebergClient := &stubDescriptionRepoClient{hasToken: true}
-	factory := &stubRepoClientFactory{
-		githubRepoClient:   githubClient,
-		codebergRepoClient: codebergClient,
+	resolver := &stubForgeClientResolver{
+		githubClient:   githubClient,
+		codebergClient: codebergClient,
 	}
 
 	cfg := &config.Config{
@@ -273,21 +255,21 @@ func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
 		SyncCodeberg: true,
 	}
 
-	if err := createGitHubRepoIfNeededWithFactory(cfg, "demo", false, factory); err != nil {
-		t.Fatalf("createGitHubRepoIfNeededWithFactory() error = %v", err)
+	if err := createGitHubRepoIfNeededWithResolver(cfg, "demo", false, resolver); err != nil {
+		t.Fatalf("createGitHubRepoIfNeededWithResolver() error = %v", err)
 	}
-	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", false, factory); err != nil {
-		t.Fatalf("createCodebergRepoIfNeededWithFactory() error = %v", err)
+	if err := createCodebergRepoIfNeededWithResolver(cfg, "demo", false, resolver); err != nil {
+		t.Fatalf("createCodebergRepoIfNeededWithResolver() error = %v", err)
 	}
 
-	if factory.githubRepoCalls != 1 || factory.codebergRepoCalls != 1 {
-		t.Fatalf("expected one injected create client per forge, got github=%d codeberg=%d", factory.githubRepoCalls, factory.codebergRepoCalls)
+	if resolver.githubCalls != 1 || resolver.codebergCalls != 1 {
+		t.Fatalf("expected one injected client resolution per forge, got github=%d codeberg=%d", resolver.githubCalls, resolver.codebergCalls)
 	}
-	if factory.githubRepoToken != "gh-token" || factory.githubRepoOrg != "acme" {
-		t.Fatalf("github repo client init args = (%q, %q), want (%q, %q)", factory.githubRepoToken, factory.githubRepoOrg, "gh-token", "acme")
+	if resolver.githubToken != "gh-token" || resolver.githubOrg != "acme" {
+		t.Fatalf("github client resolve args = (%q, %q), want (%q, %q)", resolver.githubToken, resolver.githubOrg, "gh-token", "acme")
 	}
-	if factory.codebergRepoToken != "cb-token" || factory.codebergRepoOrg != "acme" {
-		t.Fatalf("codeberg repo client init args = (%q, %q), want (%q, %q)", factory.codebergRepoToken, factory.codebergRepoOrg, "cb-token", "acme")
+	if resolver.codebergToken != "cb-token" || resolver.codebergOrg != "acme" {
+		t.Fatalf("codeberg client resolve args = (%q, %q), want (%q, %q)", resolver.codebergToken, resolver.codebergOrg, "cb-token", "acme")
 	}
 
 	if len(githubClient.createCalls) != 1 {
@@ -305,14 +287,14 @@ func TestCreateRepoHelpersWithFactory_UseInjectedCreateClients(t *testing.T) {
 	}
 }
 
-func TestCreateRepoHelpersWithFactory_DryRunDispatchesNoMutations(t *testing.T) {
+func TestCreateRepoHelpersWithResolver_DryRunDispatchesNoMutations(t *testing.T) {
 	t.Parallel()
 
 	githubClient := &stubDescriptionRepoClient{hasToken: true}
 	codebergClient := &stubDescriptionRepoClient{hasToken: true}
-	factory := &stubRepoClientFactory{
-		githubRepoClient:   githubClient,
-		codebergRepoClient: codebergClient,
+	resolver := &stubForgeClientResolver{
+		githubClient:   githubClient,
+		codebergClient: codebergClient,
 	}
 	cfg := &config.Config{
 		Organizations: []config.Organization{
@@ -323,17 +305,17 @@ func TestCreateRepoHelpersWithFactory_DryRunDispatchesNoMutations(t *testing.T) 
 		SyncCodeberg: true,
 	}
 
-	if err := createGitHubRepoIfNeededWithFactory(cfg, "demo", true, factory); err != nil {
+	if err := createGitHubRepoIfNeededWithResolver(cfg, "demo", true, resolver); err != nil {
 		t.Fatalf("dry-run GitHub create returned error: %v", err)
 	}
-	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", true, factory); err != nil {
+	if err := createCodebergRepoIfNeededWithResolver(cfg, "demo", true, resolver); err != nil {
 		t.Fatalf("dry-run Codeberg create returned error: %v", err)
 	}
 	if len(githubClient.createCalls) != 0 || len(codebergClient.createCalls) != 0 {
 		t.Fatalf("dry run dispatched create mutations: github=%d codeberg=%d", len(githubClient.createCalls), len(codebergClient.createCalls))
 	}
-	if factory.githubRepoCalls != 0 || factory.codebergRepoCalls != 0 {
-		t.Fatalf("dry run initialized mutation clients: github=%d codeberg=%d", factory.githubRepoCalls, factory.codebergRepoCalls)
+	if resolver.githubCalls != 0 || resolver.codebergCalls != 0 {
+		t.Fatalf("dry run resolved mutation clients: github=%d codeberg=%d", resolver.githubCalls, resolver.codebergCalls)
 	}
 }
 
@@ -341,14 +323,14 @@ func TestSyncCodebergRepos_DryRunCreateReposDispatchesNoMutations(t *testing.T) 
 	t.Parallel()
 
 	client := &stubDescriptionRepoClient{hasToken: true}
-	factory := &stubRepoClientFactory{githubRepoClient: client}
+	resolver := &stubForgeClientResolver{githubClient: client}
 	flags := &Flags{DryRun: true, CreateGitHubRepos: true, WorkDir: t.TempDir()}
 
-	if got := syncCodebergRepos(&config.Config{}, flags, nil, []string{"demo"}, factory); got != 0 {
+	if got := syncCodebergRepos(&config.Config{}, flags, nil, []string{"demo"}, resolver); got != 0 {
 		t.Fatalf("syncCodebergRepos() = %d, want 0", got)
 	}
-	if factory.githubRepoCalls != 0 {
-		t.Fatalf("dry run initialized %d GitHub mutation clients, want 0", factory.githubRepoCalls)
+	if resolver.githubCalls != 0 {
+		t.Fatalf("dry run resolved %d GitHub mutation clients, want 0", resolver.githubCalls)
 	}
 	if len(client.createCalls) != 0 {
 		t.Fatalf("dry run dispatched %d GitHub create calls, want 0", len(client.createCalls))
@@ -359,14 +341,14 @@ func TestSyncGitHubRepos_DryRunCreateReposDispatchesNoMutations(t *testing.T) {
 	t.Parallel()
 
 	client := &stubDescriptionRepoClient{hasToken: true}
-	factory := &stubRepoClientFactory{codebergRepoClient: client}
+	resolver := &stubForgeClientResolver{codebergClient: client}
 	flags := &Flags{DryRun: true, CreateCodebergRepos: true, WorkDir: t.TempDir()}
 
-	if got := syncGitHubRepos(&config.Config{}, flags, nil, []string{"demo"}, factory); got != 0 {
+	if got := syncGitHubRepos(&config.Config{}, flags, nil, []string{"demo"}, resolver); got != 0 {
 		t.Fatalf("syncGitHubRepos() = %d, want 0", got)
 	}
-	if factory.codebergRepoCalls != 0 {
-		t.Fatalf("dry run initialized %d Codeberg mutation clients, want 0", factory.codebergRepoCalls)
+	if resolver.codebergCalls != 0 {
+		t.Fatalf("dry run resolved %d Codeberg mutation clients, want 0", resolver.codebergCalls)
 	}
 	if len(client.createCalls) != 0 {
 		t.Fatalf("dry run dispatched %d Codeberg create calls, want 0", len(client.createCalls))
@@ -386,12 +368,12 @@ func TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync(t *testing.
 	// concurrently with another captureStdout-using test races on that
 	// global and cross-contaminates captured output between tests.
 
-	factory := &stubRepoClientFactory{}
+	resolver := &stubForgeClientResolver{}
 	flags := &Flags{DryRun: true, SyncGitHubPublic: true, WorkDir: t.TempDir()}
-	repos := []codeberg.Repository{{Name: "demo", Description: "demo repo"}}
+	repos := []forge.PublicRepo{{Name: "demo", Description: "demo repo"}}
 
 	out := captureStdout(t, func() {
-		if got := syncCodebergRepos(&config.Config{}, flags, repos, []string{"demo"}, factory); got != 0 {
+		if got := syncCodebergRepos(&config.Config{}, flags, repos, []string{"demo"}, resolver); got != 0 {
 			t.Fatalf("syncCodebergRepos() = %d, want 0", got)
 		}
 	})
@@ -410,12 +392,12 @@ func TestSyncCodebergRepos_NoSeparatorWithoutChainedGitHubSync(t *testing.T) {
 	// — this test also uses captureStdout, which is unsafe to run
 	// concurrently with other captureStdout callers.
 
-	factory := &stubRepoClientFactory{}
+	resolver := &stubForgeClientResolver{}
 	flags := &Flags{DryRun: true, SyncGitHubPublic: false, WorkDir: t.TempDir()}
-	repos := []codeberg.Repository{{Name: "demo", Description: "demo repo"}}
+	repos := []forge.PublicRepo{{Name: "demo", Description: "demo repo"}}
 
 	out := captureStdout(t, func() {
-		if got := syncCodebergRepos(&config.Config{}, flags, repos, []string{"demo"}, factory); got != 0 {
+		if got := syncCodebergRepos(&config.Config{}, flags, repos, []string{"demo"}, resolver); got != 0 {
 			t.Fatalf("syncCodebergRepos() = %d, want 0", got)
 		}
 	})
@@ -425,16 +407,20 @@ func TestSyncCodebergRepos_NoSeparatorWithoutChainedGitHubSync(t *testing.T) {
 	}
 }
 
-func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
+func TestHandleSyncGitHubPublicWithDeps_UsesInjectedLister(t *testing.T) {
 	t.Parallel()
 
-	factory := &stubRepoClientFactory{
-		githubPublicClient: &stubGitHubPublicRepoClient{
-			hasToken: true,
-			repos: []github.Repository{
-				{Name: "demo"},
-			},
-		},
+	lister := &stubGitHubPublicRepoLister{
+		hasToken: true,
+		repos:    []forge.PublicRepo{{Name: "demo"}},
+	}
+	var listerCalls int
+	var gotToken, gotOrg string
+	newLister := func(org config.Organization) forge.PublicRepoLister {
+		listerCalls++
+		gotToken = org.GitHubToken
+		gotOrg = org.Name
+		return lister
 	}
 
 	cfg := &config.Config{
@@ -447,27 +433,31 @@ func TestHandleSyncGitHubPublic_UsesInjectedFactoryClient(t *testing.T) {
 		WorkDir: t.TempDir(),
 	}
 
-	if got := handleSyncGitHubPublicWithFactory(cfg, flags, factory); got != 0 {
-		t.Fatalf("handleSyncGitHubPublicWithFactory() = %d, want 0", got)
+	if got := handleSyncGitHubPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 0 {
+		t.Fatalf("handleSyncGitHubPublicWithDeps() = %d, want 0", got)
 	}
-	if factory.githubPublicRepoCalls != 1 {
-		t.Fatalf("expected exactly one injected GitHub public client creation, got %d", factory.githubPublicRepoCalls)
+	if listerCalls != 1 {
+		t.Fatalf("expected exactly one injected GitHub lister construction, got %d", listerCalls)
 	}
-	if factory.githubPublicToken != "gh-token" || factory.githubPublicOrg != "acme" {
-		t.Fatalf("github public client init args = (%q, %q), want (%q, %q)", factory.githubPublicToken, factory.githubPublicOrg, "gh-token", "acme")
+	if gotToken != "gh-token" || gotOrg != "acme" {
+		t.Fatalf("github lister construction args = (%q, %q), want (%q, %q)", gotToken, gotOrg, "gh-token", "acme")
 	}
 }
 
-func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
+func TestHandleSyncCodebergPublicWithDeps_UsesInjectedLister(t *testing.T) {
 	t.Parallel()
 
-	factory := &stubRepoClientFactory{
-		codebergPublicClient: &stubCodebergPublicRepoClient{
-			orgErr: errors.New("org lookup failed"),
-			userRepos: []codeberg.Repository{
-				{Name: "demo"},
-			},
-		},
+	lister := &stubCodebergPublicRepoLister{
+		orgErr:    errors.New("org lookup failed"),
+		userRepos: []forge.PublicRepo{{Name: "demo"}},
+	}
+	var listerCalls int
+	var gotToken, gotOrg string
+	newLister := func(org config.Organization) forge.UserFallbackPublicRepoLister {
+		listerCalls++
+		gotToken = org.CodebergToken
+		gotOrg = org.Name
+		return lister
 	}
 
 	cfg := &config.Config{
@@ -482,35 +472,34 @@ func TestHandleSyncCodebergPublic_UsesInjectedFactoryClient(t *testing.T) {
 		WorkDir:          t.TempDir(),
 	}
 
-	if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
-		t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0", got)
+	if got := handleSyncCodebergPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 0 {
+		t.Fatalf("handleSyncCodebergPublicWithDeps() = %d, want 0", got)
 	}
-	if factory.codebergPublicCalls != 1 {
-		t.Fatalf("expected exactly one injected Codeberg public client creation, got %d", factory.codebergPublicCalls)
+	if listerCalls != 1 {
+		t.Fatalf("expected exactly one injected Codeberg lister construction, got %d", listerCalls)
 	}
-	if factory.codebergPublicToken != "cb-token" || factory.codebergPublicOrg != "acme" {
-		t.Fatalf("codeberg public client init args = (%q, %q), want (%q, %q)", factory.codebergPublicToken, factory.codebergPublicOrg, "cb-token", "acme")
+	if gotToken != "cb-token" || gotOrg != "acme" {
+		t.Fatalf("codeberg lister construction args = (%q, %q), want (%q, %q)", gotToken, gotOrg, "cb-token", "acme")
 	}
 }
 
-// TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZero
+// TestHandleSyncCodebergPublicWithDeps_DryRunChainedFullSyncStillReturnsZero
 // covers the SyncGitHubPublic:true dry-run path. Before the l01 dedup, this
 // branch fell through the (now-removed) redundant `if !flags.SyncGitHubPublic
 // { return 0 }` check inside the dry-run block without ever reaching the
 // syncCodebergRepos dispatch; the observable result was always 0 either way.
 // This test locks in that the merged publicSyncPipeline.run preserves that
 // same outcome.
-func TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZero(t *testing.T) {
+func TestHandleSyncCodebergPublicWithDeps_DryRunChainedFullSyncStillReturnsZero(t *testing.T) {
 	// Not t.Parallel(): see the comment in
 	// TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync above
 	// — this test also uses captureStdout, which is unsafe to run
 	// concurrently with other captureStdout callers.
 
-	factory := &stubRepoClientFactory{
-		codebergPublicClient: &stubCodebergPublicRepoClient{
-			orgRepos: []codeberg.Repository{{Name: "demo"}},
-		},
+	lister := &stubCodebergPublicRepoLister{
+		orgRepos: []forge.PublicRepo{{Name: "demo"}},
 	}
+	newLister := func(config.Organization) forge.UserFallbackPublicRepoLister { return lister }
 	cfg := &config.Config{
 		Organizations: []config.Organization{
 			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
@@ -524,34 +513,30 @@ func TestHandleSyncCodebergPublicWithFactory_DryRunChainedFullSyncStillReturnsZe
 	}
 
 	out := captureStdout(t, func() {
-		if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
-			t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0", got)
+		if got := handleSyncCodebergPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 0 {
+			t.Fatalf("handleSyncCodebergPublicWithDeps() = %d, want 0", got)
 		}
 	})
 
 	if !strings.Contains(out, "[DRY RUN] Would sync 1 repositories from Codeberg to GitHub") {
 		t.Fatalf("expected dry-run summary in output, got:\n%s", out)
 	}
-	if factory.codebergPublicCalls != 1 {
-		t.Fatalf("expected exactly one injected Codeberg public client creation, got %d", factory.codebergPublicCalls)
-	}
 }
 
-func TestHandleSyncCodebergPublicWithFactory_RestrictsToConfiguredRepos(t *testing.T) {
+func TestHandleSyncCodebergPublicWithDeps_RestrictsToConfiguredRepos(t *testing.T) {
 	// Not t.Parallel(): see the comment in
 	// TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync above
 	// — this test also uses captureStdout, which is unsafe to run
 	// concurrently with other captureStdout callers.
 
-	factory := &stubRepoClientFactory{
-		codebergPublicClient: &stubCodebergPublicRepoClient{
-			orgRepos: []codeberg.Repository{
-				{Name: "wanted"},
-				{Name: "also-wanted"},
-				{Name: "not-configured"},
-			},
+	lister := &stubCodebergPublicRepoLister{
+		orgRepos: []forge.PublicRepo{
+			{Name: "wanted"},
+			{Name: "also-wanted"},
+			{Name: "not-configured"},
 		},
 	}
+	newLister := func(config.Organization) forge.UserFallbackPublicRepoLister { return lister }
 	// Repositories acts as an allowlist: only "wanted" and "also-wanted"
 	// should be synced even though Codeberg reports a third public repo.
 	cfg := &config.Config{
@@ -564,8 +549,8 @@ func TestHandleSyncCodebergPublicWithFactory_RestrictsToConfiguredRepos(t *testi
 	flags := &Flags{DryRun: true, WorkDir: t.TempDir()}
 
 	out := captureStdout(t, func() {
-		if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
-			t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0", got)
+		if got := handleSyncCodebergPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 0 {
+			t.Fatalf("handleSyncCodebergPublicWithDeps() = %d, want 0", got)
 		}
 	})
 
@@ -580,13 +565,16 @@ func TestHandleSyncCodebergPublicWithFactory_RestrictsToConfiguredRepos(t *testi
 	}
 }
 
-func TestHandleSyncCodebergPublicWithFactory_SkipsWhenCodebergSyncDisabled(t *testing.T) {
+func TestHandleSyncCodebergPublicWithDeps_SkipsWhenCodebergSyncDisabled(t *testing.T) {
 	t.Parallel()
 
-	factory := &stubRepoClientFactory{
-		codebergPublicClient: &stubCodebergPublicRepoClient{
-			userRepos: []codeberg.Repository{{Name: "demo"}},
-		},
+	lister := &stubCodebergPublicRepoLister{
+		userRepos: []forge.PublicRepo{{Name: "demo"}},
+	}
+	var listerCalls int
+	newLister := func(config.Organization) forge.UserFallbackPublicRepoLister {
+		listerCalls++
+		return lister
 	}
 	// A Codeberg org is configured, but sync_codeberg is not enabled.
 	cfg := &config.Config{
@@ -596,19 +584,19 @@ func TestHandleSyncCodebergPublicWithFactory_SkipsWhenCodebergSyncDisabled(t *te
 	}
 	flags := &Flags{DryRun: true, WorkDir: t.TempDir()}
 
-	if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 0 {
-		t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 0 when Codeberg sync disabled", got)
+	if got := handleSyncCodebergPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 0 {
+		t.Fatalf("handleSyncCodebergPublicWithDeps() = %d, want 0 when Codeberg sync disabled", got)
 	}
-	if factory.codebergPublicCalls != 0 {
-		t.Fatalf("expected no Codeberg public client creation when disabled, got %d", factory.codebergPublicCalls)
+	if listerCalls != 0 {
+		t.Fatalf("expected no Codeberg lister construction when disabled, got %d", listerCalls)
 	}
 }
 
-func TestCreateCodebergRepoIfNeededWithFactory_SkipsWhenCodebergSyncDisabled(t *testing.T) {
+func TestCreateCodebergRepoIfNeededWithResolver_SkipsWhenCodebergSyncDisabled(t *testing.T) {
 	t.Parallel()
 
-	factory := &stubRepoClientFactory{
-		codebergRepoClient: &stubDescriptionRepoClient{hasToken: true},
+	resolver := &stubForgeClientResolver{
+		codebergClient: &stubDescriptionRepoClient{hasToken: true},
 	}
 	cfg := &config.Config{
 		Organizations: []config.Organization{
@@ -616,18 +604,18 @@ func TestCreateCodebergRepoIfNeededWithFactory_SkipsWhenCodebergSyncDisabled(t *
 		},
 	}
 
-	if err := createCodebergRepoIfNeededWithFactory(cfg, "demo", false, factory); err != nil {
-		t.Fatalf("createCodebergRepoIfNeededWithFactory() error = %v", err)
+	if err := createCodebergRepoIfNeededWithResolver(cfg, "demo", false, resolver); err != nil {
+		t.Fatalf("createCodebergRepoIfNeededWithResolver() error = %v", err)
 	}
-	if factory.codebergRepoCalls != 0 {
-		t.Fatalf("expected no Codeberg repo client creation when disabled, got %d", factory.codebergRepoCalls)
+	if resolver.codebergCalls != 0 {
+		t.Fatalf("expected no Codeberg client resolution when disabled, got %d", resolver.codebergCalls)
 	}
 }
 
-func TestHandleSyncGitHubPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilClient(t *testing.T) {
+func TestHandleSyncGitHubPublicWithDeps_ReturnsErrorWhenListerIsNil(t *testing.T) {
 	t.Parallel()
 
-	factory := &stubRepoClientFactory{githubPublicClient: nil}
+	newLister := func(config.Organization) forge.PublicRepoLister { return nil }
 	cfg := &config.Config{
 		Organizations: []config.Organization{
 			{Host: "git@github.com", Name: "acme", GitHubToken: "gh-token"},
@@ -638,18 +626,15 @@ func TestHandleSyncGitHubPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilClie
 		WorkDir: t.TempDir(),
 	}
 
-	if got := handleSyncGitHubPublicWithFactory(cfg, flags, factory); got != 1 {
-		t.Fatalf("handleSyncGitHubPublicWithFactory() = %d, want 1", got)
-	}
-	if factory.githubPublicRepoCalls != 1 {
-		t.Fatalf("expected one GitHub public client factory call, got %d", factory.githubPublicRepoCalls)
+	if got := handleSyncGitHubPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 1 {
+		t.Fatalf("handleSyncGitHubPublicWithDeps() = %d, want 1", got)
 	}
 }
 
-func TestHandleSyncCodebergPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilClient(t *testing.T) {
+func TestHandleSyncCodebergPublicWithDeps_ReturnsErrorWhenListerIsNil(t *testing.T) {
 	t.Parallel()
 
-	factory := &stubRepoClientFactory{codebergPublicClient: nil}
+	newLister := func(config.Organization) forge.UserFallbackPublicRepoLister { return nil }
 	cfg := &config.Config{
 		Organizations: []config.Organization{
 			{Host: "git@codeberg.org", Name: "acme", CodebergToken: "cb-token"},
@@ -662,15 +647,12 @@ func TestHandleSyncCodebergPublicWithFactory_ReturnsErrorWhenFactoryReturnsNilCl
 		WorkDir:          t.TempDir(),
 	}
 
-	if got := handleSyncCodebergPublicWithFactory(cfg, flags, factory); got != 1 {
-		t.Fatalf("handleSyncCodebergPublicWithFactory() = %d, want 1", got)
-	}
-	if factory.codebergPublicCalls != 1 {
-		t.Fatalf("expected one Codeberg public client factory call, got %d", factory.codebergPublicCalls)
+	if got := handleSyncCodebergPublicWithDeps(cfg, flags, newLister, &stubForgeClientResolver{}); got != 1 {
+		t.Fatalf("handleSyncCodebergPublicWithDeps() = %d, want 1", got)
 	}
 }
 
-func TestInitGitHubClientWithFactory_Branches(t *testing.T) {
+func TestInitGitHubClientWithResolver_Branches(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{
@@ -682,37 +664,37 @@ func TestInitGitHubClientWithFactory_Branches(t *testing.T) {
 	t.Run("returns client when token exists", func(t *testing.T) {
 		t.Parallel()
 		client := &stubDescriptionRepoClient{hasToken: true}
-		factory := &stubRepoClientFactory{githubRepoClient: client}
+		resolver := &stubForgeClientResolver{githubClient: client}
 
-		got := initGitHubClientWithFactory(cfg, factory)
+		got := initGitHubClientWithResolver(cfg, resolver)
 		if got == nil {
 			t.Fatal("expected GitHub client, got nil")
 		}
-		if factory.githubRepoCalls != 1 {
-			t.Fatalf("github repo factory calls = %d, want 1", factory.githubRepoCalls)
+		if resolver.githubCalls != 1 {
+			t.Fatalf("github client resolutions = %d, want 1", resolver.githubCalls)
 		}
 	})
 
 	t.Run("returns nil without token", func(t *testing.T) {
 		t.Parallel()
-		factory := &stubRepoClientFactory{githubRepoClient: &stubDescriptionRepoClient{hasToken: false}}
+		resolver := &stubForgeClientResolver{githubClient: &stubDescriptionRepoClient{hasToken: false}}
 
-		if got := initGitHubClientWithFactory(cfg, factory); got != nil {
+		if got := initGitHubClientWithResolver(cfg, resolver); got != nil {
 			t.Fatal("expected nil GitHub client when token is missing")
 		}
 	})
 
-	t.Run("returns nil when factory returns nil client", func(t *testing.T) {
+	t.Run("returns nil when resolver has no client", func(t *testing.T) {
 		t.Parallel()
-		factory := &stubRepoClientFactory{githubRepoClient: nil}
+		resolver := &stubForgeClientResolver{githubClient: nil}
 
-		if got := initGitHubClientWithFactory(cfg, factory); got != nil {
-			t.Fatal("expected nil GitHub client when factory returns nil")
+		if got := initGitHubClientWithResolver(cfg, resolver); got != nil {
+			t.Fatal("expected nil GitHub client when resolver returns none")
 		}
 	})
 }
 
-func TestInitCodebergClientWithFactory_Branches(t *testing.T) {
+func TestInitCodebergClientWithResolver_Branches(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{
@@ -725,32 +707,32 @@ func TestInitCodebergClientWithFactory_Branches(t *testing.T) {
 	t.Run("returns client when token exists", func(t *testing.T) {
 		t.Parallel()
 		client := &stubDescriptionRepoClient{hasToken: true}
-		factory := &stubRepoClientFactory{codebergRepoClient: client}
+		resolver := &stubForgeClientResolver{codebergClient: client}
 
-		got := initCodebergClientWithFactory(cfg, factory)
+		got := initCodebergClientWithResolver(cfg, resolver)
 		if got == nil {
 			t.Fatal("expected Codeberg client, got nil")
 		}
-		if factory.codebergRepoCalls != 1 {
-			t.Fatalf("codeberg repo factory calls = %d, want 1", factory.codebergRepoCalls)
+		if resolver.codebergCalls != 1 {
+			t.Fatalf("codeberg client resolutions = %d, want 1", resolver.codebergCalls)
 		}
 	})
 
 	t.Run("returns nil without token", func(t *testing.T) {
 		t.Parallel()
-		factory := &stubRepoClientFactory{codebergRepoClient: &stubDescriptionRepoClient{hasToken: false}}
+		resolver := &stubForgeClientResolver{codebergClient: &stubDescriptionRepoClient{hasToken: false}}
 
-		if got := initCodebergClientWithFactory(cfg, factory); got != nil {
+		if got := initCodebergClientWithResolver(cfg, resolver); got != nil {
 			t.Fatal("expected nil Codeberg client when token is missing")
 		}
 	})
 
-	t.Run("returns nil when factory returns nil client", func(t *testing.T) {
+	t.Run("returns nil when resolver has no client", func(t *testing.T) {
 		t.Parallel()
-		factory := &stubRepoClientFactory{codebergRepoClient: nil}
+		resolver := &stubForgeClientResolver{codebergClient: nil}
 
-		if got := initCodebergClientWithFactory(cfg, factory); got != nil {
-			t.Fatal("expected nil Codeberg client when factory returns nil")
+		if got := initCodebergClientWithResolver(cfg, resolver); got != nil {
+			t.Fatal("expected nil Codeberg client when resolver returns none")
 		}
 	})
 }

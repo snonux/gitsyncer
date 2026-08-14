@@ -5,10 +5,8 @@ import (
 	"math/rand"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
 	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/github"
 	"codeberg.org/snonux/gitsyncer/internal/state"
 	"codeberg.org/snonux/gitsyncer/internal/sync"
 )
@@ -191,15 +189,18 @@ func HandleSyncAll(cfg *config.Config, flags *Flags) int {
 
 // HandleSyncCodebergPublic handles syncing all public Codeberg repositories
 func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int {
-	return handleSyncCodebergPublicWithFactory(cfg, flags, cliRepoClientFactory)
+	return handleSyncCodebergPublicWithDeps(cfg, flags, newCodebergPublicRepoLister, ForgeClientResolver{})
 }
 
-// handleSyncCodebergPublicWithFactory discovers Codeberg's public repositories
+// handleSyncCodebergPublicWithDeps discovers Codeberg's public repositories
 // and hands them to the shared fetch+allowlist+dryrun+shuffle pipeline
 // (publicSyncPipeline.run). Only the Codeberg-specific bits live here: the
 // sync_codeberg config gate, org lookup, client construction, and the
-// org-then-user listing fallback that Codeberg's API requires.
-func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
+// org-then-user listing fallback that Codeberg's API requires. newLister
+// builds the public-repo-listing client (injected so tests can fake it);
+// resolver builds the mirror-side create/update client that
+// syncCodebergRepos may need if --create-github-repos is set.
+func handleSyncCodebergPublicWithDeps(cfg *config.Config, flags *Flags, newLister func(config.Organization) forge.UserFallbackPublicRepoLister, resolver forgeClientResolver) int {
 	if !cfg.CodebergSyncEnabled() {
 		fmt.Println("Codeberg sync is disabled in config (set \"sync_codeberg\": true to enable)")
 		return 0
@@ -213,7 +214,7 @@ func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, facto
 
 	fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
 
-	client := factory.NewCodebergPublicRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
+	client := newLister(*codebergOrg)
 	if client == nil {
 		fmt.Println("ERROR: Failed to initialize Codeberg public repository client")
 		return 1
@@ -235,23 +236,23 @@ func handleSyncCodebergPublicWithFactory(cfg *config.Config, flags *Flags, facto
 		targetLabel:  "GitHub",
 		createTarget: flags.CreateGitHubRepos,
 		sync: func(repoNames []string) int {
-			return syncCodebergRepos(cfg, flags, repos, repoNames, factory)
+			return syncCodebergRepos(cfg, flags, repos, repoNames, resolver)
 		},
 	}
 
-	return pipeline.run(cfg, flags, codeberg.GetRepoNames(repos))
+	return pipeline.run(cfg, flags, publicRepoNames(repos))
 }
 
 // HandleSyncGitHubPublic handles syncing all public GitHub repositories
 func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int {
-	return handleSyncGitHubPublicWithFactory(cfg, flags, cliRepoClientFactory)
+	return handleSyncGitHubPublicWithDeps(cfg, flags, newGitHubPublicRepoLister, ForgeClientResolver{})
 }
 
-// handleSyncGitHubPublicWithFactory mirrors handleSyncCodebergPublicWithFactory
+// handleSyncGitHubPublicWithDeps mirrors handleSyncCodebergPublicWithDeps
 // for GitHub: it resolves the GitHub org, requires a token (GitHub's public
 // listing API needs one even for public repos, unlike Codeberg's), fetches the
 // repos, then delegates the shared post-processing to publicSyncPipeline.run.
-func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory repoClientFactory) int {
+func handleSyncGitHubPublicWithDeps(cfg *config.Config, flags *Flags, newLister func(config.Organization) forge.PublicRepoLister, resolver forgeClientResolver) int {
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg == nil {
 		fmt.Println("No GitHub organization found in configuration")
@@ -260,7 +261,7 @@ func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory
 
 	fmt.Printf("Fetching public repositories from GitHub user/org: %s...\n", githubOrg.Name)
 
-	client := factory.NewGitHubPublicRepoClient(githubOrg.GitHubToken, githubOrg.Name)
+	client := newLister(*githubOrg)
 	if client == nil {
 		fmt.Println("ERROR: Failed to initialize GitHub public repository client")
 		return 1
@@ -282,11 +283,11 @@ func handleSyncGitHubPublicWithFactory(cfg *config.Config, flags *Flags, factory
 		targetLabel:  "Codeberg",
 		createTarget: flags.CreateCodebergRepos,
 		sync: func(repoNames []string) int {
-			return syncGitHubRepos(cfg, flags, repos, repoNames, factory)
+			return syncGitHubRepos(cfg, flags, repos, repoNames, resolver)
 		},
 	}
 
-	return pipeline.run(cfg, flags, github.GetRepoNames(repos))
+	return pipeline.run(cfg, flags, publicRepoNames(repos))
 }
 
 // publicSyncPipeline is the fetch+allowlist+dryrun+shuffle pipeline shared by
@@ -346,10 +347,10 @@ func (p publicSyncPipeline) run(cfg *config.Config, flags *Flags, repoNames []st
 // Helper functions
 
 func createGitHubRepoIfNeeded(cfg *config.Config, repoName string, dryRun bool) error {
-	return createGitHubRepoIfNeededWithFactory(cfg, repoName, dryRun, cliRepoClientFactory)
+	return createGitHubRepoIfNeededWithResolver(cfg, repoName, dryRun, ForgeClientResolver{})
 }
 
-func createGitHubRepoIfNeededWithFactory(cfg *config.Config, repoName string, dryRun bool, factory repoClientFactory) error {
+func createGitHubRepoIfNeededWithResolver(cfg *config.Config, repoName string, dryRun bool, resolver forgeClientResolver) error {
 	if dryRun {
 		return nil
 	}
@@ -359,8 +360,8 @@ func createGitHubRepoIfNeededWithFactory(cfg *config.Config, repoName string, dr
 	}
 
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
-	githubClient := factory.NewGitHubRepoClient(githubOrg.GitHubToken, githubOrg.Name)
-	if !githubClient.HasToken() {
+	githubClient, ok := resolver.ClientFor(githubOrg)
+	if !ok || !githubClient.HasToken() {
 		fmt.Println("Warning: No GitHub token found. Cannot create repository.")
 		return nil
 	}
@@ -370,10 +371,10 @@ func createGitHubRepoIfNeededWithFactory(cfg *config.Config, repoName string, dr
 }
 
 func createCodebergRepoIfNeeded(cfg *config.Config, repoName string, dryRun bool) error {
-	return createCodebergRepoIfNeededWithFactory(cfg, repoName, dryRun, cliRepoClientFactory)
+	return createCodebergRepoIfNeededWithResolver(cfg, repoName, dryRun, ForgeClientResolver{})
 }
 
-func createCodebergRepoIfNeededWithFactory(cfg *config.Config, repoName string, dryRun bool, factory repoClientFactory) error {
+func createCodebergRepoIfNeededWithResolver(cfg *config.Config, repoName string, dryRun bool, resolver forgeClientResolver) error {
 	if dryRun || !cfg.CodebergSyncEnabled() || !cfg.IsSyncRepo(repoName) {
 		return nil
 	}
@@ -384,8 +385,8 @@ func createCodebergRepoIfNeededWithFactory(cfg *config.Config, repoName string, 
 	}
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
-	codebergClient := factory.NewCodebergRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
-	if !codebergClient.HasToken() {
+	codebergClient, ok := resolver.ClientFor(codebergOrg)
+	if !ok || !codebergClient.HasToken() {
 		fmt.Println("Warning: No Codeberg token found. Cannot create repository.")
 		return nil
 	}
@@ -395,10 +396,10 @@ func createCodebergRepoIfNeededWithFactory(cfg *config.Config, repoName string, 
 }
 
 func initGitHubClient(cfg *config.Config) forge.RepoClient {
-	return initGitHubClientWithFactory(cfg, cliRepoClientFactory)
+	return initGitHubClientWithResolver(cfg, ForgeClientResolver{})
 }
 
-func initGitHubClientWithFactory(cfg *config.Config, factory repoClientFactory) forge.RepoClient {
+func initGitHubClientWithResolver(cfg *config.Config, resolver forgeClientResolver) forge.RepoClient {
 	githubOrg := cfg.FindGitHubOrg()
 	if githubOrg == nil {
 		fmt.Println("Warning: --create-github-repos specified but no GitHub organization found in config")
@@ -406,8 +407,8 @@ func initGitHubClientWithFactory(cfg *config.Config, factory repoClientFactory) 
 	}
 
 	fmt.Printf("Initializing GitHub client for organization: %s\n", githubOrg.Name)
-	githubClient := factory.NewGitHubRepoClient(githubOrg.GitHubToken, githubOrg.Name)
-	if githubClient == nil {
+	githubClient, ok := resolver.ClientFor(githubOrg)
+	if !ok {
 		fmt.Println("Warning: GitHub client initialization returned nil")
 		return nil
 	}
@@ -426,10 +427,10 @@ func createRepoWithClient(client forge.RepoClient, repoName, description string)
 }
 
 func initCodebergClient(cfg *config.Config) forge.RepoClient {
-	return initCodebergClientWithFactory(cfg, cliRepoClientFactory)
+	return initCodebergClientWithResolver(cfg, ForgeClientResolver{})
 }
 
-func initCodebergClientWithFactory(cfg *config.Config, factory repoClientFactory) forge.RepoClient {
+func initCodebergClientWithResolver(cfg *config.Config, resolver forgeClientResolver) forge.RepoClient {
 	if !cfg.CodebergSyncEnabled() {
 		fmt.Println("Warning: --create-codeberg-repos specified but Codeberg sync is disabled in config")
 		return nil
@@ -442,8 +443,8 @@ func initCodebergClientWithFactory(cfg *config.Config, factory repoClientFactory
 	}
 
 	fmt.Printf("Initializing Codeberg client for organization: %s\n", codebergOrg.Name)
-	codebergClient := factory.NewCodebergRepoClient(codebergOrg.CodebergToken, codebergOrg.Name)
-	if codebergClient == nil {
+	codebergClient, ok := resolver.ClientFor(codebergOrg)
+	if !ok {
 		fmt.Println("Warning: Codeberg client initialization returned nil")
 		return nil
 	}
@@ -690,11 +691,11 @@ func syncDiscoveredRepos(cfg *config.Config, flags *Flags, repoNames []string, r
 // their GitHub mirrors, optionally creating missing GitHub repos first. It is
 // a thin wrapper around syncDiscoveredRepos; see forgeSyncSpec for what's
 // parametrized.
-func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string, factory repoClientFactory) int {
+func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []forge.PublicRepo, repoNames []string, resolver forgeClientResolver) int {
 	// Initialize GitHub client if needed
 	var githubClient forge.RepoClient
 	if flags.CreateGitHubRepos && !flags.DryRun {
-		githubClient = initGitHubClientWithFactory(cfg, factory)
+		githubClient = initGitHubClientWithResolver(cfg, resolver)
 	}
 
 	spec := forgeSyncSpec{
@@ -713,18 +714,18 @@ func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Reposi
 		},
 	}
 
-	return syncDiscoveredRepos(cfg, flags, repoNames, codebergRepoDescriptions(repos), spec)
+	return syncDiscoveredRepos(cfg, flags, repoNames, publicRepoDescriptions(repos), spec)
 }
 
 // syncGitHubRepos syncs repos discovered on GitHub's public listing to their
 // Codeberg mirrors, optionally creating missing Codeberg repos first. It is a
 // thin wrapper around syncDiscoveredRepos; see forgeSyncSpec for what's
 // parametrized.
-func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string, factory repoClientFactory) int {
+func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []forge.PublicRepo, repoNames []string, resolver forgeClientResolver) int {
 	// Initialize Codeberg client if needed
 	var codebergClient forge.RepoClient
 	if flags.CreateCodebergRepos && !flags.DryRun {
-		codebergClient = initCodebergClientWithFactory(cfg, factory)
+		codebergClient = initCodebergClientWithResolver(cfg, resolver)
 	}
 
 	spec := forgeSyncSpec{
@@ -736,16 +737,17 @@ func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository
 		afterSync:        func(flags *Flags) int { return 0 },
 	}
 
-	return syncDiscoveredRepos(cfg, flags, repoNames, githubRepoDescriptions(repos), spec)
+	return syncDiscoveredRepos(cfg, flags, repoNames, publicRepoDescriptions(repos), spec)
 }
 
-// codebergRepoDescriptions and githubRepoDescriptions adapt each forge's repo
-// listing into the plain name->description map that syncDiscoveredRepos
-// operates on. codeberg.Repository and github.Repository aren't the same
-// type, so a shared generic helper would need a type-parametrized accessor
-// for Name/Description; these two one-line loops are simpler than that
-// ceremony for two call sites.
-func codebergRepoDescriptions(repos []codeberg.Repository) map[string]string {
+// publicRepoDescriptions adapts a forge-agnostic public-repo listing into the
+// plain name->description map that syncDiscoveredRepos operates on. Both
+// Codeberg's and GitHub's public listings are converted to []forge.PublicRepo
+// by their respective listers (see public_repo_lister.go) before reaching
+// here, so a single helper now covers both forges - previously this needed
+// two near-identical loops because codeberg.Repository and github.Repository
+// were different concrete types.
+func publicRepoDescriptions(repos []forge.PublicRepo) map[string]string {
 	descriptions := make(map[string]string, len(repos))
 	for _, repo := range repos {
 		descriptions[repo.Name] = repo.Description
@@ -753,10 +755,14 @@ func codebergRepoDescriptions(repos []codeberg.Repository) map[string]string {
 	return descriptions
 }
 
-func githubRepoDescriptions(repos []github.Repository) map[string]string {
-	descriptions := make(map[string]string, len(repos))
-	for _, repo := range repos {
-		descriptions[repo.Name] = repo.Description
+// publicRepoNames extracts just the repository names from a forge-agnostic
+// public-repo listing, replacing the previous per-forge
+// codeberg.GetRepoNames/github.GetRepoNames calls now that both listings
+// share the forge.PublicRepo DTO.
+func publicRepoNames(repos []forge.PublicRepo) []string {
+	names := make([]string, len(repos))
+	for i, repo := range repos {
+		names[i] = repo.Name
 	}
-	return descriptions
+	return names
 }

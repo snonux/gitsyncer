@@ -6,13 +6,16 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
-func TestNewRepoClientForOrg(t *testing.T) {
+func TestForgeClientResolver_ClientFor(t *testing.T) {
+	resolver := ForgeClientResolver{}
+
 	t.Run("github", func(t *testing.T) {
-		client, ok := newRepoClientForOrg(config.Organization{
+		org := config.Organization{
 			Host:        "git@github.com",
 			Name:        "acme",
 			GitHubToken: "token",
-		})
+		}
+		client, ok := resolver.ClientFor(&org)
 		if !ok {
 			t.Fatal("expected supported github client")
 		}
@@ -22,11 +25,12 @@ func TestNewRepoClientForOrg(t *testing.T) {
 	})
 
 	t.Run("codeberg", func(t *testing.T) {
-		client, ok := newRepoClientForOrg(config.Organization{
+		org := config.Organization{
 			Host:          "git@codeberg.org",
 			Name:          "acme",
 			CodebergToken: "token",
-		})
+		}
+		client, ok := resolver.ClientFor(&org)
 		if !ok {
 			t.Fatal("expected supported codeberg client")
 		}
@@ -37,12 +41,13 @@ func TestNewRepoClientForOrg(t *testing.T) {
 
 	t.Run("forgejo backup", func(t *testing.T) {
 		t.Setenv("FORGEJO_TOKEN", "token")
-		client, ok := newRepoClientForOrg(config.Organization{
+		org := config.Organization{
 			Host:           "ssh://git@code.f3s.buetow.org:2022",
 			ForgejoAPIBase: "https://code.f3s.buetow.org/api/v1",
 			ForgejoOwner:   "snonux",
 			BackupLocation: true,
-		})
+		}
+		client, ok := resolver.ClientFor(&org)
 		if !ok || !client.HasToken() {
 			t.Fatal("expected supported Forgejo client with environment token")
 		}
@@ -50,6 +55,7 @@ func TestNewRepoClientForOrg(t *testing.T) {
 
 	t.Run("github host variants", func(t *testing.T) {
 		t.Parallel()
+		resolver := ForgeClientResolver{}
 
 		variantHosts := []string{
 			"ssh://github.com",
@@ -63,11 +69,12 @@ func TestNewRepoClientForOrg(t *testing.T) {
 			t.Run(host, func(t *testing.T) {
 				t.Parallel()
 
-				client, ok := newRepoClientForOrg(config.Organization{
+				org := config.Organization{
 					Host:        host,
 					Name:        "acme",
 					GitHubToken: "token",
-				})
+				}
+				client, ok := resolver.ClientFor(&org)
 				if !ok {
 					t.Fatalf("expected supported github host variant %q", host)
 				}
@@ -80,6 +87,7 @@ func TestNewRepoClientForOrg(t *testing.T) {
 
 	t.Run("codeberg host variants", func(t *testing.T) {
 		t.Parallel()
+		resolver := ForgeClientResolver{}
 
 		variantHosts := []string{
 			"https://codeberg.org",
@@ -93,11 +101,12 @@ func TestNewRepoClientForOrg(t *testing.T) {
 			t.Run(host, func(t *testing.T) {
 				t.Parallel()
 
-				client, ok := newRepoClientForOrg(config.Organization{
+				org := config.Organization{
 					Host:          host,
 					Name:          "acme",
 					CodebergToken: "token",
-				})
+				}
+				client, ok := resolver.ClientFor(&org)
 				if !ok {
 					t.Fatalf("expected supported codeberg host variant %q", host)
 				}
@@ -110,6 +119,7 @@ func TestNewRepoClientForOrg(t *testing.T) {
 
 	t.Run("unsupported hosts", func(t *testing.T) {
 		t.Parallel()
+		resolver := ForgeClientResolver{}
 
 		unsupportedHosts := []string{
 			"ssh://example.org",
@@ -122,10 +132,11 @@ func TestNewRepoClientForOrg(t *testing.T) {
 			t.Run(host, func(t *testing.T) {
 				t.Parallel()
 
-				client, ok := newRepoClientForOrg(config.Organization{
+				org := config.Organization{
 					Host: host,
 					Name: "acme",
-				})
+				}
+				client, ok := resolver.ClientFor(&org)
 				if ok {
 					t.Fatalf("expected unsupported host %q", host)
 				}
