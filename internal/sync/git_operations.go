@@ -90,41 +90,6 @@ func mergeBranch(repoPath, remoteName, branch string) error {
 	return nil
 }
 
-// pushBranch pushes a branch to a remote
-func pushBranch(repoPath, remoteName, branch string, remoteHasBranch bool) error {
-	cmd := gitCommand(repoPath, "push", remoteName, branch, "--tags")
-	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		outputStr := string(output)
-		// Check if it's because the repository doesn't exist
-		if isRepositoryMissing(outputStr) {
-			fmt.Printf("    Note: Remote repository %s does not exist - must be created manually\n", remoteName)
-			fmt.Printf("    Skipping push to %s\n", remoteName)
-			return nil // Not an error, just skip
-		}
-
-		// Check if it's because the branch doesn't exist on the remote
-		if isBranchMissing(outputStr) {
-			fmt.Printf("    Creating new branch on %s\n", remoteName)
-			// Try again with -u flag to set upstream
-			cmd = gitCommand(repoPath, "push", "-u", remoteName, branch, "--tags")
-			if err := cmd.Run(); err != nil {
-				return fmt.Errorf("failed to push to %s: %w", remoteName, err)
-			}
-			return nil
-		}
-
-		return fmt.Errorf("failed to push to %s: %w\n%s", remoteName, err, outputStr)
-	}
-
-	if !remoteHasBranch {
-		fmt.Printf("    Successfully created branch %s on %s\n", branch, remoteName)
-	}
-
-	return nil
-}
-
 // isRepositoryMissing checks if the error indicates a missing repository
 func isRepositoryMissing(output string) bool {
 	return strings.Contains(output, "does not appear to be a git repository") ||
