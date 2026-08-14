@@ -1,6 +1,6 @@
 //go:build unix
 
-package cli
+package forge
 
 import (
 	"os"
@@ -10,11 +10,12 @@ import (
 	"time"
 )
 
-// TestLoadTokenWithFallback_FIFOHasNoTokenAndDoesNotBlock mirrors the
-// equivalent FIFO tests in the github and codeberg packages: a FIFO planted
-// at the token path must be rejected by the hardened opener rather than
-// blocking loadTokenWithFallback forever.
-func TestLoadTokenWithFallback_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {
+// TestResolveToken_FIFOHasNoTokenAndDoesNotBlock mirrors the equivalent FIFO
+// tests in the github and codeberg packages: a FIFO planted at the token path
+// must be rejected by the hardened opener rather than blocking ResolveToken
+// forever. This moved here from internal/cli's now-removed
+// loadTokenWithFallback test when task g01 consolidated the cascade.
+func TestResolveToken_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {
 	home := t.TempDir()
 	t.Setenv("HOME", home)
 	t.Setenv("GITSYNCER_TEST_TOKEN", "")
@@ -25,13 +26,13 @@ func TestLoadTokenWithFallback_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {
 
 	done := make(chan string, 1)
 	go func() {
-		done <- loadTokenWithFallback("", "GITSYNCER_TEST_TOKEN", ".gitsyncer_test_token")
+		done <- ResolveToken("", "GITSYNCER_TEST_TOKEN", ".gitsyncer_test_token")
 	}()
 
 	select {
 	case got := <-done:
 		if got != "" {
-			t.Fatalf("loadTokenWithFallback() = %q, want empty for FIFO", got)
+			t.Fatalf("ResolveToken() = %q, want empty for FIFO", got)
 		}
 	case <-time.After(2 * time.Second):
 		t.Fatal("loading token from FIFO blocked")

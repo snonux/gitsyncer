@@ -356,46 +356,22 @@ func buildCodebergReleaseTarget(cfg *config.Config) (releaseTarget, bool) {
 	}, true
 }
 
-// loadTokenWithFallback resolves a forge token from, in order: the config
-// value, the named environment variable, or a dotfile of tokenFileName under
-// the user's home directory. Config and env values are used as-is; only the
-// token file contents are trimmed. Returns "" when no source has a token
-// (including when the home directory or token file cannot be read). This is
-// the single cascade shared by resolveGitHubToken and resolveCodebergToken so
-// the config->env->file fallback logic exists in one place.
-//
-// The token file is read via forge.ReadProtectedTokenFile rather than
-// os.ReadFile: a symlink or FIFO planted at the well-known dotfile path, or
-// a group/other-readable token file, must not be able to leak the token or
-// hang the process.
-func loadTokenWithFallback(configToken, envVar, tokenFileName string) string {
-	if configToken != "" {
-		return configToken
-	}
-	if token := os.Getenv(envVar); token != "" {
-		return token
-	}
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	token, err := forge.ReadProtectedTokenFile(filepath.Join(home, tokenFileName))
-	if err != nil {
-		return ""
-	}
-	return token
-}
-
 // resolveGitHubToken loads the GitHub token from config, the GITHUB_TOKEN env
-// var, or ~/.gitsyncer_github_token, in that order.
+// var, or ~/.gitsyncer_github_token, in that order. The cascade itself lives
+// in forge.ResolveToken - the single source of truth shared with the GitHub
+// and Codeberg clients' own loadToken methods - so this is now a thin,
+// forge-specific wrapper rather than a reimplementation (task g01 removed
+// the release-pipeline-local loadTokenWithFallback that previously
+// duplicated this logic).
 func resolveGitHubToken(configToken string) string {
-	return loadTokenWithFallback(configToken, "GITHUB_TOKEN", ".gitsyncer_github_token")
+	return forge.ResolveToken(configToken, "GITHUB_TOKEN", ".gitsyncer_github_token")
 }
 
 // resolveCodebergToken loads the Codeberg token from config, the
-// CODEBERG_TOKEN env var, or ~/.gitsyncer_codeberg_token, in that order.
+// CODEBERG_TOKEN env var, or ~/.gitsyncer_codeberg_token, in that order, via
+// the shared forge.ResolveToken cascade (see resolveGitHubToken).
 func resolveCodebergToken(configToken string) string {
-	return loadTokenWithFallback(configToken, "CODEBERG_TOKEN", ".gitsyncer_codeberg_token")
+	return forge.ResolveToken(configToken, "CODEBERG_TOKEN", ".gitsyncer_codeberg_token")
 }
 
 // releaseTargetApplicable reports whether a release target should run for the

@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
@@ -85,56 +83,22 @@ func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client 
 	return NewGiteaClient(baseURL, loadForgejoToken(), owner, "Forgejo", ownerType)
 }
 
+// loadForgejoToken resolves the Forgejo token via the shared FORGEJO_TOKEN
+// env var -> ~/.gitsyncer_forgejo_token cascade in forge.ResolveToken (there
+// is no config-file source for Forgejo tokens, so the config slot is passed
+// empty and resolution always falls through to env, then file).
 func loadForgejoToken() string {
-	if token, ok := os.LookupEnv("FORGEJO_TOKEN"); ok {
-		if token = strings.TrimSpace(token); token != "" {
-			return token
-		}
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-	// Read via the hardened opener: a symlink or FIFO planted at the
-	// well-known token path, or a group/other-readable token file, must not
-	// be able to leak the token or hang the process (see forge.ReadProtectedTokenFile).
-	tokenPath := filepath.Join(home, ".gitsyncer_forgejo_token")
-	token, err := forge.ReadProtectedTokenFile(tokenPath)
-	if err != nil {
-		return ""
-	}
-	return token
+	return forge.ResolveToken("", "FORGEJO_TOKEN", ".gitsyncer_forgejo_token")
 }
 
-// loadToken loads the Codeberg API token from config, env, or file. Every
-// branch trims the token, mirroring loadForgejoToken and github.loadToken,
-// because a trailing newline (common when a token is piped from a file or
-// secret store) would otherwise end up in the "Authorization: token <value>"
-// header and make every request fail.
+// loadToken resolves the Codeberg API token via the shared config ->
+// CODEBERG_TOKEN env var -> ~/.gitsyncer_codeberg_token cascade in
+// forge.ResolveToken, which is the single source of truth for this
+// precedence (see its doc comment for why the cascade lives there rather
+// than being reimplemented per forge, and for the trimming rules that used
+// to differ between this method and its siblings).
 func (c *Client) loadToken(tokenFromConfig string) {
-	if tokenFromConfig != "" {
-		c.token = strings.TrimSpace(tokenFromConfig)
-		return
-	}
-
-	// Check environment variable
-	if token := os.Getenv("CODEBERG_TOKEN"); token != "" {
-		c.token = strings.TrimSpace(token)
-		return
-	}
-
-	// Check token file. Read via the hardened opener so a symlink or FIFO
-	// planted at this well-known path, or a group/other-readable token
-	// file, cannot leak the token or hang the process (see
-	// forge.ReadProtectedTokenFile); the result is already trimmed.
-	home, err := os.UserHomeDir()
-	if err == nil {
-		tokenFile := filepath.Join(home, ".gitsyncer_codeberg_token")
-		if token, err := forge.ReadProtectedTokenFile(tokenFile); err == nil {
-			c.token = token
-		}
-	}
+	c.token = forge.ResolveToken(tokenFromConfig, "CODEBERG_TOKEN", ".gitsyncer_codeberg_token")
 }
 
 // HasToken returns true if a token is loaded

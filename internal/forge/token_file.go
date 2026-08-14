@@ -3,6 +3,8 @@ package forge
 import (
 	"fmt"
 	"io"
+	"os"
+	"path/filepath"
 	"strings"
 )
 
@@ -47,4 +49,46 @@ func ReadProtectedTokenFile(path string) (string, error) {
 		return "", err
 	}
 	return strings.TrimSpace(string(data)), nil
+}
+
+// ResolveToken resolves a forge API token via the shared config -> env var ->
+// token file cascade. This is the single source of truth for token
+// precedence: it used to be reimplemented separately by the GitHub client's
+// loadToken, the Codeberg client's loadToken and loadForgejoToken, and the
+// CLI release pipeline's loadTokenWithFallback, with subtly different
+// trimming behavior between the copies (task g01 consolidated them here,
+// building on the shared ReadProtectedTokenFile extracted for task 901).
+//
+// Precedence, matching every caller's prior behavior:
+//  1. configToken, if non-empty (e.g. a value from gitsyncer's config file).
+//  2. The environment variable named envVar, if set and non-empty.
+//  3. A protected token file named tokenFileName under the user's home
+//     directory, read via ReadProtectedTokenFile.
+//
+// configToken and the environment variable are both trimmed here for
+// consistency with the token file (ReadProtectedTokenFile already trims its
+// result), since tokens are commonly copy-pasted or piped from a secret store
+// with a trailing newline.
+//
+// Returns "" if none of the three sources yield a non-empty token, including
+// when the home directory cannot be determined or the token file cannot be
+// read (missing, wrong permissions, etc.) - callers treat "" as "no token
+// configured" rather than a hard error, exactly as before consolidation.
+func ResolveToken(configToken, envVar, tokenFileName string) string {
+	if token := strings.TrimSpace(configToken); token != "" {
+		return token
+	}
+	if token := strings.TrimSpace(os.Getenv(envVar)); token != "" {
+		return token
+	}
+
+	home, err := os.UserHomeDir()
+	if err != nil {
+		return ""
+	}
+	token, err := ReadProtectedTokenFile(filepath.Join(home, tokenFileName))
+	if err != nil {
+		return ""
+	}
+	return token
 }

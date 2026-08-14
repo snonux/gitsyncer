@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/forge"
@@ -40,31 +38,12 @@ func NewClient(token, org string) *Client {
 	}
 }
 
+// loadToken resolves the GitHub token via the shared config -> GITHUB_TOKEN
+// env var -> ~/.gitsyncer_github_token cascade in forge.ResolveToken, which
+// is the single source of truth for this precedence (see its doc comment for
+// why the cascade lives there rather than being reimplemented per forge).
 func loadToken(token string) string {
-	if token != "" {
-		return strings.TrimSpace(token)
-	}
-
-	if envToken := os.Getenv("GITHUB_TOKEN"); envToken != "" {
-		return strings.TrimSpace(envToken)
-	}
-
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return ""
-	}
-
-	// Read via the hardened opener: a symlink or FIFO planted at this
-	// well-known token path, or a group/other-readable token file, must not
-	// be able to leak the token or hang the process (see
-	// forge.ReadProtectedTokenFile). The result is already trimmed.
-	tokenFile := filepath.Join(home, ".gitsyncer_github_token")
-	fileToken, err := forge.ReadProtectedTokenFile(tokenFile)
-	if err != nil {
-		return ""
-	}
-
-	return fileToken
+	return forge.ResolveToken(token, "GITHUB_TOKEN", ".gitsyncer_github_token")
 }
 
 // CreateRepoRequest represents the request to create a repository
