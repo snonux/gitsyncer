@@ -29,81 +29,104 @@ var functionKeywords = []string{
 	"static ", "async ", "procedure ", "sub ", "method ",
 }
 
-// extractCodeSnippet extracts a random code snippet from the repository
+// langExtensions maps each language name the detector can report to the
+// file extensions (or exact basenames, e.g. Makefile) that identify source
+// files written in that language. Declared once at package level since it
+// is static data shared by every extractCodeSnippet call.
+var langExtensions = map[string][]string{
+	"Go":         {".go"},
+	"Python":     {".py"},
+	"JavaScript": {".js"},
+	"TypeScript": {".ts"},
+	"Java":       {".java"},
+	"C":          {".c", ".h"},
+	"C++":        {".cpp", ".cc", ".cxx", ".hpp"},
+	"C/C++":      {".h"},
+	"C#":         {".cs"},
+	"Ruby":       {".rb"},
+	"PHP":        {".php"},
+	"Swift":      {".swift"},
+	"Kotlin":     {".kt"},
+	"Rust":       {".rs"},
+	"Shell":      {".sh", ".bash"},
+	"Perl":       {".pl", ".pm"},
+	"Raku":       {".raku", ".rakumod", ".p6", ".pm6"},
+	"Haskell":    {".hs"},
+	"Lua":        {".lua"},
+	"HTML":       {".html", ".htm"},
+	"CSS":        {".css"},
+	"SQL":        {".sql"},
+	"Make":       {"Makefile", "makefile", "GNUmakefile"},
+	"HCL":        {".tf", ".tfvars", ".hcl"},
+	"AWK":        {".awk", ".cgi"}, // .cgi files can be AWK scripts
+}
+
+// extractCodeSnippet extracts a random code snippet from the repository.
+// It is a thin orchestrator: resolveLanguageExtensions picks which language
+// to scan for, findCodeFiles walks the repo for candidate files, and
+// pickSnippet shuffles and tries candidates until one yields a snippet.
 func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, string, error) {
 	if len(languages) == 0 {
 		return "", "", fmt.Errorf("no programming languages found")
 	}
 
-	// Get the primary language (highest percentage)
+	primaryLang, extensions, err := resolveLanguageExtensions(languages)
+	if err != nil {
+		return "", "", err
+	}
+
+	codeFiles, err := findCodeFiles(repoPath, primaryLang, extensions)
+	if err != nil {
+		return "", "", err
+	}
+	if len(codeFiles) == 0 {
+		return "", "", fmt.Errorf("no code files found")
+	}
+
+	snippet, selectedFile, err := pickSnippet(codeFiles)
+	if err != nil {
+		return "", "", err
+	}
+
+	// Get relative path for display
+	relPath, _ := filepath.Rel(repoPath, selectedFile)
+
+	return snippet, fmt.Sprintf("%s from `%s`", primaryLang, relPath), nil
+}
+
+// resolveLanguageExtensions picks the primary language (the one with the
+// highest percentage) and returns its known file extensions. If the
+// primary language has no entry in langExtensions, it falls back to the
+// first language in the list that does.
+func resolveLanguageExtensions(languages []LanguageStats) (string, []string, error) {
 	primaryLang := languages[0].Name
 
-	// Define file extensions for each language
-	langExtensions := map[string][]string{
-		"Go":         {".go"},
-		"Python":     {".py"},
-		"JavaScript": {".js"},
-		"TypeScript": {".ts"},
-		"Java":       {".java"},
-		"C":          {".c", ".h"},
-		"C++":        {".cpp", ".cc", ".cxx", ".hpp"},
-		"C/C++":      {".h"},
-		"C#":         {".cs"},
-		"Ruby":       {".rb"},
-		"PHP":        {".php"},
-		"Swift":      {".swift"},
-		"Kotlin":     {".kt"},
-		"Rust":       {".rs"},
-		"Shell":      {".sh", ".bash"},
-		"Perl":       {".pl", ".pm"},
-		"Raku":       {".raku", ".rakumod", ".p6", ".pm6"},
-		"Haskell":    {".hs"},
-		"Lua":        {".lua"},
-		"HTML":       {".html", ".htm"},
-		"CSS":        {".css"},
-		"SQL":        {".sql"},
-		"Make":       {"Makefile", "makefile", "GNUmakefile"},
-		"HCL":        {".tf", ".tfvars", ".hcl"},
-		"AWK":        {".awk", ".cgi"}, // .cgi files can be AWK scripts
+	if extensions, ok := langExtensions[primaryLang]; ok {
+		return primaryLang, extensions, nil
 	}
 
-	// Get file extensions for the primary language
-	extensions, ok := langExtensions[primaryLang]
-	if !ok {
-		// Try other languages if primary doesn't have extensions defined
-		for _, lang := range languages {
-			if exts, exists := langExtensions[lang.Name]; exists {
-				extensions = exts
-				primaryLang = lang.Name
-				break
-			}
-		}
-		if len(extensions) == 0 {
-			return "", "", fmt.Errorf("no known file extensions for languages")
+	for _, lang := range languages {
+		if extensions, exists := langExtensions[lang.Name]; exists {
+			return lang.Name, extensions, nil
 		}
 	}
 
-	// Find all files matching the extensions
+	return "", nil, fmt.Errorf("no known file extensions for languages")
+}
+
+// findCodeFiles walks repoPath and returns the paths of files that match
+// extensions for primaryLang, skipping non-code directories, oversized
+// files, and test/generated files along the way.
+func findCodeFiles(repoPath, primaryLang string, extensions []string) ([]string, error) {
 	var codeFiles []string
+
 	err := filepath.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 
-		// Skip directories
 		if d.IsDir() {
-			name := d.Name()
-			// Skip hidden directories and common non-code directories
-			if strings.HasPrefix(name, ".") && name != "." ||
-				name == "node_modules" ||
-				name == "vendor" ||
-				name == "target" ||
-				name == "dist" ||
-				name == "build" ||
-				name == "__pycache__" {
-				return filepath.SkipDir
-			}
-			return nil
+			return skipNonCodeDir(d.Name())
 		}
 
 		// Only stat the file once we know it's a regular file worth
@@ -119,63 +142,95 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 			return nil
 		}
 
-		// Check if file matches extensions
-		basename := filepath.Base(path)
-		ext := filepath.Ext(path)
-
-		matched := false
-		for _, validExt := range extensions {
-			if validExt == basename || (strings.HasPrefix(validExt, ".") && ext == validExt) {
-				matched = true
-				break
-			}
-		}
-
-		// For executable files, also check shebang if primary language is AWK and file has .cgi extension
-		if !matched && primaryLang == "AWK" && ext == ".cgi" && info.Mode()&0111 != 0 {
-			if file, err := os.Open(path); err == nil {
-				scanner := bufio.NewScanner(file)
-				if scanner.Scan() {
-					firstLine := scanner.Text()
-					if strings.Contains(firstLine, "awk") || strings.Contains(firstLine, "gawk") {
-						matched = true
-					}
-				}
-				closeFile(file)
-			}
-		}
-
-		if matched {
-			// Skip test files and generated files
-			if !strings.Contains(basename, "_test") &&
-				!strings.Contains(basename, ".test.") &&
-				!strings.Contains(basename, ".min.") &&
-				!strings.Contains(path, "/test/") &&
-				!strings.Contains(path, "/tests/") {
-				codeFiles = append(codeFiles, path)
-			}
+		if matchesLanguage(path, info, primaryLang, extensions) && !isTestOrGeneratedFile(path) {
+			codeFiles = append(codeFiles, path)
 		}
 
 		return nil
 	})
 
+	return codeFiles, err
+}
+
+// skipNonCodeDir tells filepath.WalkDir to skip directories that never
+// hold interesting source code: hidden directories and common
+// vendored/generated/build trees.
+func skipNonCodeDir(name string) error {
+	if strings.HasPrefix(name, ".") && name != "." ||
+		name == "node_modules" ||
+		name == "vendor" ||
+		name == "target" ||
+		name == "dist" ||
+		name == "build" ||
+		name == "__pycache__" {
+		return filepath.SkipDir
+	}
+	return nil
+}
+
+// matchesLanguage reports whether path is a source file for primaryLang,
+// either because its basename/extension is in extensions, or - for AWK's
+// .cgi scripts, which carry no distinctive extension of their own - because
+// its shebang line names awk/gawk.
+func matchesLanguage(path string, info fs.FileInfo, primaryLang string, extensions []string) bool {
+	basename := filepath.Base(path)
+	ext := filepath.Ext(path)
+
+	for _, validExt := range extensions {
+		if validExt == basename || (strings.HasPrefix(validExt, ".") && ext == validExt) {
+			return true
+		}
+	}
+
+	// For executable files, also check shebang if primary language is AWK and file has .cgi extension
+	if primaryLang == "AWK" && ext == ".cgi" && info.Mode()&0111 != 0 {
+		return hasAwkShebang(path)
+	}
+
+	return false
+}
+
+// hasAwkShebang reports whether path's first line mentions awk or gawk,
+// used to detect AWK scripts hiding behind a .cgi extension.
+func hasAwkShebang(path string) bool {
+	file, err := os.Open(path)
 	if err != nil {
-		return "", "", err
+		return false
+	}
+	defer closeFile(file)
+
+	scanner := bufio.NewScanner(file)
+	if scanner.Scan() {
+		firstLine := scanner.Text()
+		return strings.Contains(firstLine, "awk") || strings.Contains(firstLine, "gawk")
 	}
 
-	if len(codeFiles) == 0 {
-		return "", "", fmt.Errorf("no code files found")
-	}
+	return false
+}
 
-	// Try multiple files to find one with good line lengths
+// isTestOrGeneratedFile reports whether path looks like a test file or
+// generated/minified output, which should be excluded from snippet
+// candidates so showcases don't quote boilerplate or machine-written code.
+func isTestOrGeneratedFile(path string) bool {
+	basename := filepath.Base(path)
+	return strings.Contains(basename, "_test") ||
+		strings.Contains(basename, ".test.") ||
+		strings.Contains(basename, ".min.") ||
+		strings.Contains(path, "/test/") ||
+		strings.Contains(path, "/tests/")
+}
+
+// pickSnippet shuffles codeFiles and tries up to 5 of them, returning the
+// first snippet whose lines all fit within 80 characters. If none of the
+// tried candidates has acceptable line lengths, the first successfully
+// extracted snippet is returned as a fallback.
+func pickSnippet(codeFiles []string) (string, string, error) {
 	rand.Shuffle(len(codeFiles), func(i, j int) {
 		codeFiles[i], codeFiles[j] = codeFiles[j], codeFiles[i]
 	})
 
-	var snippet string
-	var selectedFile string
+	var snippet, selectedFile string
 
-	// Try up to 5 files to find a good snippet
 	for i := 0; i < len(codeFiles) && i < 5; i++ {
 		candidateFile := codeFiles[i]
 		candidateSnippet, err := extractSnippetFromFile(candidateFile, 10, 15)
@@ -201,10 +256,7 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 		return "", "", fmt.Errorf("no valid code snippets found")
 	}
 
-	// Get relative path for display
-	relPath, _ := filepath.Rel(repoPath, selectedFile)
-
-	return snippet, fmt.Sprintf("%s from `%s`", primaryLang, relPath), nil
+	return snippet, selectedFile, nil
 }
 
 // extractSnippetFromFile extracts a code snippet from a file

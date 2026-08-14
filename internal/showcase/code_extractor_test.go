@@ -66,6 +66,115 @@ func TestExtractCodeSnippet_SkipsVendorDirAndOversizedFiles(t *testing.T) {
 	}
 }
 
+func TestResolveLanguageExtensions(t *testing.T) {
+	t.Parallel()
+
+	tests := []struct {
+		name        string
+		languages   []LanguageStats
+		wantLang    string
+		wantExtsLen int
+		wantErr     bool
+	}{
+		{
+			name:        "primary language known",
+			languages:   []LanguageStats{{Name: "Go", Percentage: 100}},
+			wantLang:    "Go",
+			wantExtsLen: 1,
+		},
+		{
+			name: "falls back to next known language",
+			languages: []LanguageStats{
+				{Name: "TotallyUnknownLang", Percentage: 60},
+				{Name: "Python", Percentage: 40},
+			},
+			wantLang:    "Python",
+			wantExtsLen: 1,
+		},
+		{
+			name:      "no known languages",
+			languages: []LanguageStats{{Name: "TotallyUnknownLang", Percentage: 100}},
+			wantErr:   true,
+		},
+	}
+
+	for _, tc := range tests {
+		tc := tc
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			gotLang, gotExts, err := resolveLanguageExtensions(tc.languages)
+			if (err != nil) != tc.wantErr {
+				t.Fatalf("resolveLanguageExtensions() error = %v, wantErr %v", err, tc.wantErr)
+			}
+			if tc.wantErr {
+				return
+			}
+			if gotLang != tc.wantLang {
+				t.Fatalf("resolveLanguageExtensions() lang = %q, want %q", gotLang, tc.wantLang)
+			}
+			if len(gotExts) != tc.wantExtsLen {
+				t.Fatalf("resolveLanguageExtensions() extensions = %v, want length %d", gotExts, tc.wantExtsLen)
+			}
+		})
+	}
+}
+
+// TestFindCodeFiles_SkipsVendorTestsAndOversizedFiles exercises findCodeFiles
+// directly (rather than through extractCodeSnippet) to confirm it applies
+// the directory-skip, size, and test/generated filters on its own.
+func TestFindCodeFiles_SkipsVendorTestsAndOversizedFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {}\n")
+	writeTestFile(t, filepath.Join(dir, "main_test.go"), "package main\n\nfunc TestMain(t *testing.T) {}\n")
+	writeTestFile(t, filepath.Join(dir, "vendor", "ignored.go"), "package vendor\n\nfunc Ignored() {}\n")
+
+	huge := "package huge\n\n// " + strings.Repeat("x", 2*1024*1024) + "\n"
+	writeTestFile(t, filepath.Join(dir, "huge.go"), huge)
+
+	files, err := findCodeFiles(dir, "Go", langExtensions["Go"])
+	if err != nil {
+		t.Fatalf("findCodeFiles() error = %v", err)
+	}
+
+	if len(files) != 1 || filepath.Base(files[0]) != "main.go" {
+		t.Fatalf("findCodeFiles() = %v, want only main.go", files)
+	}
+}
+
+func TestPickSnippet_ReturnsErrorForEmptyOrUnreadableCandidates(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	missing := filepath.Join(dir, "does-not-exist.go")
+
+	if _, _, err := pickSnippet([]string{missing}); err == nil {
+		t.Fatal("pickSnippet() error = nil, want error for unreadable candidate")
+	}
+}
+
+func TestPickSnippet_ExtractsFromCandidateFile(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+	path := filepath.Join(dir, "main.go")
+	writeTestFile(t, path, "package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n")
+
+	snippet, selected, err := pickSnippet([]string{path})
+	if err != nil {
+		t.Fatalf("pickSnippet() error = %v", err)
+	}
+	if selected != path {
+		t.Fatalf("pickSnippet() selected = %q, want %q", selected, path)
+	}
+	if snippet == "" {
+		t.Fatal("pickSnippet() returned empty snippet")
+	}
+}
+
 func TestStripComments_PreservesPreprocessorDirectives(t *testing.T) {
 	t.Parallel()
 
