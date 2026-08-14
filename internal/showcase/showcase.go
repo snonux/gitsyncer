@@ -232,61 +232,6 @@ func findReadmeContent(repoPath string) ([]byte, string, bool) {
 	return nil, "", false
 }
 
-func selectSummaryTool(aiTool string) string {
-	return selectSummaryToolWithLookPath(aiTool, nil)
-}
-
-func selectSummaryToolWithLookPath(aiTool string, lookPath aitool.LookPathFunc) string {
-	return string(aitool.FirstAvailable(aiTool, lookPath))
-}
-
-func runSummaryTool(selectedTool, prompt, repoPath, readmeFile string, readmeContent []byte, readmeFound bool) string {
-	var cmd *exec.Cmd
-
-	switch selectedTool {
-	case "opencode":
-		fmt.Printf("Running ollama launch opencode command\n")
-		if readmeFound {
-			fullPrompt := prompt + "\n\nREADME content:\n" + string(readmeContent)
-			fmt.Printf("  ollama launch opencode --model glm-5.2:cloud -y -- run \"...\"\n")
-			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", fullPrompt)
-		}
-	case "hexai":
-		fmt.Printf("Running hexai command (stdin payload)\n")
-		if readmeFound {
-			fmt.Printf("  echo <README content> | hexai \"%s\"\n", prompt)
-			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("hexai", prompt)
-			cmd.Stdin = strings.NewReader(string(readmeContent))
-		}
-	case "claude":
-		fmt.Printf("Running Claude command:\n")
-		fmt.Printf("  claude --model sonnet \"%s\"\n", prompt)
-		cmd = exec.Command("claude", "--model", "sonnet", prompt)
-	case "amp":
-		fmt.Printf("Running amp command (stdin payload)\n")
-		if readmeFound {
-			fmt.Printf("  echo <README content> | amp --execute \"%s\"\n", prompt)
-			fmt.Printf("  Using %s as input\n", readmeFile)
-			cmd = exec.Command("amp", "--execute", prompt)
-			cmd.Stdin = strings.NewReader(string(readmeContent))
-		}
-	}
-
-	if cmd == nil {
-		return ""
-	}
-
-	cmd.Dir = repoPath
-	output, err := cmd.Output()
-	if err != nil {
-		return ""
-	}
-
-	return strings.TrimSpace(string(output))
-}
-
 func fallbackSummary(repoName string, readmeContent []byte, readmeFound bool) string {
 	if readmeFound {
 		if summary := extractUsefulSummary(string(readmeContent), 1); summary != "" {
@@ -458,14 +403,16 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 		}
 	}
 
-	// Determine which AI tool to use (only if we need to run it)
-	// Prefer opencode if available when default tool is "" (aligns with release flow)
-	selectedTool := g.aiTool
+	// Determine which AI tools to try (only if we need to run one at all; a
+	// cache hit skips AI invocation entirely). Prefers opencode when the
+	// configured tool is "" (aligns with the release-notes flow), then falls
+	// back through the rest of the chain that's actually installed.
+	var chain []aitool.Tool
 	if !haveCachedSummary {
-		selectedTool = selectSummaryTool(g.aiTool)
+		chain = aitool.AvailableChain(g.aiTool, nil)
 	}
 
-	readmeContent, readmeFile, readmeFound := findReadmeContent(repoPath)
+	readmeContent, _, readmeFound := findReadmeContent(repoPath)
 
 	statsRepoPath, cleanupStatsRepoPath, err := g.prepareStatsRepoPath(repoName, repoPath)
 	if err != nil {
@@ -488,8 +435,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 	summary := g.resolveSummary(
 		repoName,
 		repoPath,
-		selectedTool,
-		readmeFile,
+		chain,
 		readmeContent,
 		readmeFound,
 		cachedSummary,
@@ -527,20 +473,32 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 }
 
 func (g *Generator) resolveSummary(
-	repoName, repoPath, selectedTool, readmeFile string,
+	repoName, repoPath string,
+	chain []aitool.Tool,
 	readmeContent []byte,
 	readmeFound bool,
 	cachedSummary string,
 	haveCachedSummary bool,
 ) string {
-	// Get the summary - either from cache or by running AI tool
+	// Get the summary - either from cache or by running the AI tool chain.
 	var summary string
 	if haveCachedSummary {
 		summary = cachedSummary
 		fmt.Printf("Using cached AI summary\n")
 	} else {
 		prompt := "Please provide a 1-2 paragraph summary of this project, explaining what it does, why it's useful, and how it's implemented. Focus on the key features and architecture. Be concise but informative."
-		summary = runSummaryTool(selectedTool, prompt, repoPath, readmeFile, readmeContent, readmeFound)
+
+		// README content (if any) rides along as the stdin payload; aitool
+		// runs prompt+repoPath through each available tool in chain until
+		// one succeeds, so this package doesn't need its own raw-string
+		// switch over tool names.
+		stdin := ""
+		if readmeFound {
+			stdin = string(readmeContent)
+		}
+		if aiSummary, _, err := aitool.RunChain(chain, repoPath, prompt, stdin); err == nil {
+			summary = aiSummary
+		}
 
 		// Fallback: create a minimal summary from README if AI unavailable/failed
 		if summary == "" {

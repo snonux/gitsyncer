@@ -2,8 +2,6 @@ package release
 
 import (
 	"fmt"
-	"os"
-	"os/exec"
 	"strings"
 
 	"codeberg.org/snonux/gitsyncer/internal/aitool"
@@ -159,79 +157,15 @@ func (n *NotesGenerator) GenerateAIReleaseNotes(repoPath, repoName, tag string, 
 	fmt.Printf("  Prompt includes: %d commits, %.1fKB of code changes\n", len(commits), float64(len(diff))/1024)
 	fmt.Printf("  Total prompt length: %d characters\n", len(instr.String())+len(input.String()))
 
-	// Build a full prompt string for tools that read a single argument
-	fullPrompt := instr.String() + "\n\n" + input.String()
-
-	var releaseNotes string
-
-	for _, tool := range n.availableReleaseNotesTools(nil) {
-		switch tool {
-		case aitool.ToolOpencode:
-			fmt.Println("  Running ollama launch opencode ...")
-			cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", fullPrompt)
-			cmd.Stderr = os.Stderr
-			out, err := cmd.Output()
-			if err != nil {
-				fmt.Printf("opencode ollama failed: %v\n", err)
-				continue
-			}
-			notes := strings.TrimSpace(string(out))
-			if notes == "" {
-				fmt.Println("  ollama opencode returned empty output; will try fallbacks...")
-				continue
-			}
-			releaseNotes = notes
-		case aitool.ToolHexAI:
-			fmt.Println("  Running hexai CLI command (stdin payload)...")
-			cmd := exec.Command("hexai", instr.String())
-			cmd.Stdin = strings.NewReader(input.String())
-			cmd.Stderr = os.Stderr
-			out, err := cmd.Output()
-			if err != nil {
-				fmt.Printf("  hexai CLI failed: %v\n", err)
-				continue
-			}
-			notes := strings.TrimSpace(string(out))
-			if notes == "" {
-				fmt.Println("  hexai returned empty output; will try fallbacks...")
-				continue
-			}
-			releaseNotes = notes
-		case aitool.ToolClaude:
-			fmt.Println("  Running claude CLI command...")
-			cmd := exec.Command("claude", "--model", "sonnet", fullPrompt)
-			cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
-			notes, err := n.executeAICommand(cmd, string(tool))
-			if err != nil {
-				fmt.Printf("  Claude CLI failed: %v\n", err)
-				continue
-			}
-			releaseNotes = notes
-		case aitool.ToolAmp:
-			// Note: print stderr to console, but only use stdout for notes
-			fmt.Println("  Running amp CLI command (stdin payload)...")
-			cmd := exec.Command("amp", "--execute", instr.String())
-			cmd.Stdin = strings.NewReader(input.String())
-			cmd.Stderr = os.Stderr
-			out, err := cmd.Output()
-			if err != nil {
-				fmt.Printf("  amp CLI failed: %v\n", err)
-				continue
-			}
-			notes := strings.TrimSpace(string(out))
-			if notes == "" {
-				fmt.Println("  amp returned empty output; will try fallbacks...")
-				continue
-			}
-			releaseNotes = notes
-		}
-
-		if releaseNotes != "" {
-			break
-		}
-	}
-
-	if releaseNotes == "" {
+	// Run each available AI tool in turn until one produces output. Command
+	// construction, stdin/argument conventions, and error screening for each
+	// tool live in aitool.RunChain/Runner so this package doesn't need a
+	// type switch over aitool.Tool: instr is the instructional prompt, input
+	// (commits + diff) is the payload, and each Runner decides for itself
+	// whether its underlying CLI wants that payload combined into a single
+	// argument (opencode, claude) or piped via stdin (hexai, amp).
+	releaseNotes, _, err := aitool.RunChain(n.availableReleaseNotesTools(nil), "", instr.String(), input.String())
+	if err != nil {
 		return "", fmt.Errorf("all AI tools failed to generate release notes")
 	}
 
@@ -241,30 +175,6 @@ func (n *NotesGenerator) GenerateAIReleaseNotes(repoPath, repoName, tag string, 
 	finalNotes.WriteString(releaseNotes)
 
 	return finalNotes.String(), nil
-}
-
-// executeAICommand executes an AI command and returns the trimmed output or an
-// error. It also screens the output for common error indicators so a tool that
-// exits 0 while printing an error is still treated as a failure.
-func (n *NotesGenerator) executeAICommand(cmd *exec.Cmd, toolName string) (string, error) {
-	output, err := cmd.CombinedOutput()
-	if err != nil {
-		return "", fmt.Errorf("%s command failed: %w. Output: %s", toolName, err, string(output))
-	}
-
-	content := strings.TrimSpace(string(output))
-	if content == "" {
-		return "", fmt.Errorf("received empty output from %s", toolName)
-	}
-
-	// Check for common error indicators in the output
-	if strings.HasPrefix(content, "Error:") ||
-		(toolName == "claude" && strings.Contains(content, "API Error")) ||
-		(toolName == "claude" && strings.Contains(content, "authentication_error")) {
-		return "", fmt.Errorf("%s returned an error: %s", toolName, content)
-	}
-
-	return content, nil
 }
 
 // availableReleaseNotesTools returns the AI tools from the configured chain

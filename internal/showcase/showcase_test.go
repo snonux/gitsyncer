@@ -367,8 +367,7 @@ func TestResolveSummary_CachedSummaryFallsBackToReadmeWhenNoUsefulParagraph(t *t
 	got := g.resolveSummary(
 		"repo",
 		t.TempDir(),
-		"opencode",
-		"README.md",
+		nil, // cache hit: the chain is never consulted
 		readmeContent,
 		true,
 		"* item one\n* item two",
@@ -388,8 +387,7 @@ func TestResolveSummary_NoCacheAndNoReadmeUsesGenericFallback(t *testing.T) {
 	got := g.resolveSummary(
 		"repo",
 		t.TempDir(),
-		"opencode",
-		"",
+		nil, // empty chain: RunChain fails immediately without invoking any real tool
 		nil,
 		false,
 		"",
@@ -508,32 +506,10 @@ func TestCollectAssets_UsesConfiguredShowcaseOutputDir(t *testing.T) {
 	}
 }
 
-func TestSelectSummaryTool_DefaultPrefersOpencode(t *testing.T) {
-	t.Parallel()
-
-	tool := selectSummaryToolWithLookPath("", fakeLookPathShowcase("ollama", "claude", "amp"))
-	if tool != "opencode" {
-		t.Fatalf("selectSummaryToolWithLookPath() = %q, want %q", tool, "opencode")
-	}
-}
-
-func TestSelectSummaryTool_HonorsConfiguredToolWithFallback(t *testing.T) {
-	t.Parallel()
-
-	tool := selectSummaryToolWithLookPath("hexai", fakeLookPathShowcase("claude", "amp"))
-	if tool != "claude" {
-		t.Fatalf("selectSummaryToolWithLookPath() = %q, want %q", tool, "claude")
-	}
-}
-
-func TestSelectSummaryTool_UsesAmpOnlyChain(t *testing.T) {
-	t.Parallel()
-
-	tool := selectSummaryToolWithLookPath("amp", fakeLookPathShowcase("ollama", "amp"))
-	if tool != "amp" {
-		t.Fatalf("selectSummaryToolWithLookPath() = %q, want %q", tool, "amp")
-	}
-}
+// AI-tool selection (Chain/AvailableChain/FirstAvailable) is now generic
+// logic that lives in and is tested by internal/aitool; this package only
+// consumes it (see generateProjectSummary/resolveSummary), so it no longer
+// needs its own copy of these selection tests.
 
 func TestExtractUsefulSummary_SkipsNonProseParagraphs(t *testing.T) {
 	t.Parallel()
@@ -692,20 +668,5 @@ func TestPrepareStatsRepoPath_UsesRemoteTrackingBranchWhenLocalBranchMissing(t *
 	currentBranch := strings.TrimSpace(runGit(t, cloneRepoPath, "branch", "--show-current"))
 	if currentBranch != "main" {
 		t.Fatalf("current branch = %q, want %q", currentBranch, "main")
-	}
-}
-
-func fakeLookPathShowcase(tools ...string) func(string) (string, error) {
-	available := make(map[string]struct{}, len(tools))
-	for _, tool := range tools {
-		available[tool] = struct{}{}
-	}
-
-	return func(file string) (string, error) {
-		if _, ok := available[file]; ok {
-			return "/usr/bin/" + file, nil
-		}
-
-		return "", exec.ErrNotFound
 	}
 }
