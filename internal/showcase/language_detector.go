@@ -3,6 +3,7 @@ package showcase
 import (
 	"bufio"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
@@ -147,15 +148,23 @@ func countLanguageLines(repoPath string) (languageLines map[string]int, document
 	languageLines = make(map[string]int)
 	documentationLines = make(map[string]int)
 
-	err = filepath.Walk(repoPath, func(path string, info os.FileInfo, walkErr error) error {
+	err = filepath.WalkDir(repoPath, func(path string, d fs.DirEntry, walkErr error) error {
 		if walkErr != nil {
 			return nil // Skip errors
 		}
 
-		if info.IsDir() {
-			if shouldSkipDir(info.Name()) {
+		if d.IsDir() {
+			if shouldSkipDir(d.Name()) {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+
+		// Only stat the file once we know it's a regular file worth
+		// inspecting - WalkDir avoids the stat for directories and any
+		// entries filtered out above.
+		info, err := d.Info()
+		if err != nil {
 			return nil
 		}
 

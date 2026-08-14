@@ -1,6 +1,10 @@
 package showcase
 
-import "testing"
+import (
+	"path/filepath"
+	"strings"
+	"testing"
+)
 
 func TestIsCommentLine(t *testing.T) {
 	t.Parallel()
@@ -30,6 +34,35 @@ func TestIsCommentLine(t *testing.T) {
 				t.Fatalf("isCommentLine(%q) = %v, want %v", tc.trimmed, got, tc.want)
 			}
 		})
+	}
+}
+
+// TestExtractCodeSnippet_SkipsVendorDirAndOversizedFiles exercises the
+// filepath.WalkDir-based walk in extractCodeSnippet: files under vendor/
+// must be skipped via the directory-skip rule, and files over 1MB must be
+// skipped via the per-file size check (which now requires an explicit
+// d.Info() call since WalkDir's fs.DirEntry doesn't carry size).
+func TestExtractCodeSnippet_SkipsVendorDirAndOversizedFiles(t *testing.T) {
+	t.Parallel()
+
+	dir := t.TempDir()
+
+	writeTestFile(t, filepath.Join(dir, "main.go"), "package main\n\nfunc main() {\n\tprintln(\"hi\")\n}\n")
+	writeTestFile(t, filepath.Join(dir, "vendor", "ignored.go"), "package vendor\n\nfunc Ignored() {}\n")
+
+	huge := "package huge\n\n// " + strings.Repeat("x", 2*1024*1024) + "\n"
+	writeTestFile(t, filepath.Join(dir, "huge.go"), huge)
+
+	_, desc, err := extractCodeSnippet(dir, []LanguageStats{{Name: "Go", Percentage: 100}})
+	if err != nil {
+		t.Fatalf("extractCodeSnippet() error = %v", err)
+	}
+
+	if !strings.Contains(desc, "main.go") {
+		t.Fatalf("extractCodeSnippet() description = %q, want it to reference main.go", desc)
+	}
+	if strings.Contains(desc, "vendor") || strings.Contains(desc, "huge.go") {
+		t.Fatalf("extractCodeSnippet() description = %q, vendor/oversized files must be skipped", desc)
 	}
 }
 

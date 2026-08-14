@@ -3,6 +3,7 @@ package showcase
 import (
 	"bufio"
 	"fmt"
+	"io/fs"
 	"math/rand"
 	"os"
 	"path/filepath"
@@ -84,14 +85,14 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 
 	// Find all files matching the extensions
 	var codeFiles []string
-	err := filepath.Walk(repoPath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(repoPath, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil
 		}
 
 		// Skip directories
-		if info.IsDir() {
-			name := info.Name()
+		if d.IsDir() {
+			name := d.Name()
 			// Skip hidden directories and common non-code directories
 			if strings.HasPrefix(name, ".") && name != "." ||
 				name == "node_modules" ||
@@ -102,6 +103,14 @@ func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, str
 				name == "__pycache__" {
 				return filepath.SkipDir
 			}
+			return nil
+		}
+
+		// Only stat the file once we know it's a regular file worth
+		// inspecting - WalkDir's whole point is avoiding this for
+		// directories and entries that get filtered out above.
+		info, err := d.Info()
+		if err != nil {
 			return nil
 		}
 
