@@ -1,12 +1,15 @@
-package cli
+package release
 
 import (
 	"errors"
 	"testing"
 
 	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/release"
 )
+
+// alwaysConfirm and neverConfirm are ConfirmFunc test doubles standing in
+// for internal/cli's interactive promptConfirmation.
+func alwaysConfirm(string) bool { return true }
 
 type fakeReleaseNotesGenerator struct {
 	aiNotes       string
@@ -84,14 +87,14 @@ type releaseUpdate struct {
 
 func TestResolveReleaseNotes_CreateWithoutAIUsesStandardNotes(t *testing.T) {
 	gen := &fakeReleaseNotesGenerator{standardNotes: "standard notes"}
-	flags := &Flags{AIReleaseNotes: false}
+	opts := Options{AIReleaseNotes: false}
 	cache := map[string]string{}
 	failed := []string{}
 	saveCalls := 0
 
 	notes, ok := resolveReleaseNotes(
 		gen,
-		flags,
+		opts,
 		"/tmp/repo",
 		"demo",
 		"v1.0.0",
@@ -127,13 +130,13 @@ func TestResolveReleaseNotes_CreateWithoutAIUsesStandardNotes(t *testing.T) {
 
 func TestResolveReleaseNotes_CreateWithForceStillUsesCachedAINotes(t *testing.T) {
 	gen := &fakeReleaseNotesGenerator{aiNotes: "new ai notes"}
-	flags := &Flags{AIReleaseNotes: true, Force: true}
+	opts := Options{AIReleaseNotes: true}
 	cache := map[string]string{"demo:v1.0.0": "cached ai notes"}
 	failed := []string{}
 
 	notes, ok := resolveReleaseNotes(
 		gen,
-		flags,
+		opts,
 		"/tmp/repo",
 		"demo",
 		"v1.0.0",
@@ -163,14 +166,14 @@ func TestResolveReleaseNotes_CreateAIFailureFallsBackAndClearsCache(t *testing.T
 		aiErr:         errors.New("ai unavailable"),
 		standardNotes: "fallback notes",
 	}
-	flags := &Flags{AIReleaseNotes: true, Force: true}
+	opts := Options{AIReleaseNotes: true}
 	cache := map[string]string{}
 	failed := []string{}
 	saveCalls := 0
 
 	notes, ok := resolveReleaseNotes(
 		gen,
-		flags,
+		opts,
 		"/tmp/repo",
 		"demo",
 		"v1.0.0",
@@ -209,14 +212,14 @@ func TestResolveReleaseNotes_UpdateAIFailureSkipsUpdate(t *testing.T) {
 		aiErr:         errors.New("ai unavailable"),
 		standardNotes: "unused fallback",
 	}
-	flags := &Flags{AIReleaseNotes: true, Force: true}
+	opts := Options{AIReleaseNotes: true}
 	cache := map[string]string{}
 	failed := []string{}
 	saveCalls := 0
 
 	notes, ok := resolveReleaseNotes(
 		gen,
-		flags,
+		opts,
 		"/tmp/repo",
 		"demo",
 		"v1.0.0",
@@ -255,13 +258,13 @@ func TestResolveReleaseNotes_UpdateAIFailureSkipsUpdate(t *testing.T) {
 
 func TestResolveReleaseNotes_CreateAISuccessContinuesOnCacheSaveError(t *testing.T) {
 	gen := &fakeReleaseNotesGenerator{aiNotes: "generated ai notes"}
-	flags := &Flags{AIReleaseNotes: true}
+	opts := Options{AIReleaseNotes: true}
 	cache := map[string]string{}
 	failed := []string{}
 
 	notes, ok := resolveReleaseNotes(
 		gen,
-		flags,
+		opts,
 		"/tmp/repo",
 		"demo",
 		"v1.0.0",
@@ -291,29 +294,29 @@ func TestResolveReleaseNotes_CreateAISuccessContinuesOnCacheSaveError(t *testing
 	}
 }
 
-func TestReleaseTargetApplicable_CodebergGatedByAllowlist(t *testing.T) {
+func TestTargetApplicable_CodebergGatedByAllowlist(t *testing.T) {
 	t.Parallel()
 
 	cfg := &config.Config{Repositories: []string{"cpuinfo"}, SyncCodeberg: true}
-	gh := releaseTarget{name: "GitHub"}
-	cb := releaseTarget{name: "Codeberg", syncRepoRequired: true}
+	gh := Target{Name: "GitHub"}
+	cb := Target{Name: "Codeberg", SyncRepoRequired: true}
 
 	// GitHub target runs for any repo.
-	if !releaseTargetApplicable(gh, cfg, "anything") {
+	if !TargetApplicable(gh, cfg, "anything") {
 		t.Fatal("GitHub target should be applicable to any repo")
 	}
 
 	// Codeberg target only runs for allowlisted repos.
-	if !releaseTargetApplicable(cb, cfg, "cpuinfo") {
+	if !TargetApplicable(cb, cfg, "cpuinfo") {
 		t.Fatal("Codeberg target should be applicable to allowlisted repo")
 	}
-	if releaseTargetApplicable(cb, cfg, "hypr") {
+	if TargetApplicable(cb, cfg, "hypr") {
 		t.Fatal("Codeberg target should NOT be applicable to non-allowlisted repo")
 	}
 
 	// Discovery mode (empty allowlist): Codeberg runs for any repo.
 	discovery := &config.Config{SyncCodeberg: true}
-	if !releaseTargetApplicable(cb, discovery, "anything") {
+	if !TargetApplicable(cb, discovery, "anything") {
 		t.Fatal("Codeberg target should be applicable to any repo in discovery mode")
 	}
 }
@@ -324,11 +327,11 @@ func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
 			"demo": {"v1.0.0"},
 		},
 	}
-	inspector := release.NewGitInspector()
-	target := releaseTarget{
-		name:  "GitHub",
-		owner: "owner",
-		client: &fakeReleaseClient{
+	inspector := NewGitInspector()
+	target := Target{
+		Name:  "GitHub",
+		Owner: "owner",
+		Client: &fakeReleaseClient{
 			releases: []string{"v0.9.0"},
 		},
 	}
@@ -342,11 +345,11 @@ func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
 
 func TestGetMissingReleasesForTarget_GetReleasesErrorReturnsNil(t *testing.T) {
 	cfg := &config.Config{}
-	inspector := release.NewGitInspector()
-	target := releaseTarget{
-		name:  "GitHub",
-		owner: "owner",
-		client: &fakeReleaseClient{
+	inspector := NewGitInspector()
+	target := Target{
+		Name:  "GitHub",
+		Owner: "owner",
+		Client: &fakeReleaseClient{
 			releasesErr: errors.New("upstream unavailable"),
 		},
 	}
@@ -360,22 +363,23 @@ func TestGetMissingReleasesForTarget_GetReleasesErrorReturnsNil(t *testing.T) {
 
 func TestProcessCreateReleasesForTarget_CreateErrorDoesNotStopOtherTags(t *testing.T) {
 	cfg := &config.Config{}
-	flags := &Flags{AutoCreateReleases: true}
-	inspector := release.NewGitInspector()
+	opts := Options{AutoCreateReleases: true}
+	inspector := NewGitInspector()
 	notes := &fakeReleaseNotesGenerator{}
 
 	client := &fakeReleaseClient{
 		createErrs: map[string]error{"v1.0.0": errors.New("create failed")},
 	}
-	target := releaseTarget{
-		name:   "GitHub",
-		owner:  "owner",
-		client: client,
+	target := Target{
+		Name:   "GitHub",
+		Owner:  "owner",
+		Client: client,
 	}
 
 	processCreateReleasesForTarget(
 		cfg,
-		flags,
+		opts,
+		alwaysConfirm,
 		inspector,
 		notes,
 		target,
@@ -399,19 +403,20 @@ func TestProcessCreateReleasesForTarget_HonorsConfiguredSkip(t *testing.T) {
 			"demo": {"v1.0.0"},
 		},
 	}
-	flags := &Flags{AutoCreateReleases: true}
-	inspector := release.NewGitInspector()
+	opts := Options{AutoCreateReleases: true}
+	inspector := NewGitInspector()
 	notes := &fakeReleaseNotesGenerator{}
 	client := &fakeReleaseClient{}
-	target := releaseTarget{
-		name:   "Codeberg",
-		owner:  "owner",
-		client: client,
+	target := Target{
+		Name:   "Codeberg",
+		Owner:  "owner",
+		Client: client,
 	}
 
 	processCreateReleasesForTarget(
 		cfg,
-		flags,
+		opts,
+		alwaysConfirm,
 		inspector,
 		notes,
 		target,
@@ -430,23 +435,24 @@ func TestProcessCreateReleasesForTarget_HonorsConfiguredSkip(t *testing.T) {
 }
 
 func TestProcessUpdateReleasesForTarget_UsesCachedAIAndSkipsNonVersionTags(t *testing.T) {
-	flags := &Flags{
+	opts := Options{
 		AIReleaseNotes:     true,
 		AutoCreateReleases: true,
 	}
-	inspector := release.NewGitInspector()
+	inspector := NewGitInspector()
 	notes := &fakeReleaseNotesGenerator{}
 	client := &fakeReleaseClient{
 		releases: []string{"latest", "1-beta", "v1.0.0"},
 	}
-	target := releaseTarget{
-		name:   "GitHub",
-		owner:  "owner",
-		client: client,
+	target := Target{
+		Name:   "GitHub",
+		Owner:  "owner",
+		Client: client,
 	}
 
 	processUpdateReleasesForTarget(
-		flags,
+		opts,
+		alwaysConfirm,
 		inspector,
 		notes,
 		target,
@@ -467,23 +473,24 @@ func TestProcessUpdateReleasesForTarget_UsesCachedAIAndSkipsNonVersionTags(t *te
 }
 
 func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.T) {
-	flags := &Flags{
+	opts := Options{
 		AIReleaseNotes:     true,
 		AutoCreateReleases: true,
 	}
-	inspector := release.NewGitInspector()
+	inspector := NewGitInspector()
 	notes := &fakeReleaseNotesGenerator{}
 	client := &fakeReleaseClient{
 		releasesErr: errors.New("api error"),
 	}
-	target := releaseTarget{
-		name:   "Codeberg",
-		owner:  "owner",
-		client: client,
+	target := Target{
+		Name:   "Codeberg",
+		Owner:  "owner",
+		Client: client,
 	}
 
 	processUpdateReleasesForTarget(
-		flags,
+		opts,
+		alwaysConfirm,
 		inspector,
 		notes,
 		target,
@@ -501,20 +508,20 @@ func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.
 }
 
 func TestProcessReleaseTargets_DryRunDispatchesNoMutations(t *testing.T) {
-	flags := &Flags{DryRun: true, AIReleaseNotes: true, AutoCreateReleases: true}
-	inspector := release.NewGitInspector()
+	opts := Options{DryRun: true, AIReleaseNotes: true, AutoCreateReleases: true}
+	inspector := NewGitInspector()
 	notes := &fakeReleaseNotesGenerator{}
 	client := &fakeReleaseClient{
 		releases: []string{"v1.0.0"},
 	}
-	target := releaseTarget{
-		name:   "GitHub",
-		owner:  "owner",
-		client: client,
+	target := Target{
+		Name:   "GitHub",
+		Owner:  "owner",
+		Client: client,
 	}
 
-	processCreateReleasesForTarget(&config.Config{}, flags, inspector, notes, target, "demo", "/not/a/repo", []string{"v1.0.0"}, []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
-	processUpdateReleasesForTarget(flags, inspector, notes, target, "demo", "/not/a/repo", []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
+	processCreateReleasesForTarget(&config.Config{}, opts, alwaysConfirm, inspector, notes, target, "demo", "/not/a/repo", []string{"v1.0.0"}, []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
+	processUpdateReleasesForTarget(opts, alwaysConfirm, inspector, notes, target, "demo", "/not/a/repo", []string{"v1.0.0"}, "/tmp/cache", map[string]string{}, &[]string{})
 
 	if len(client.created) != 0 || len(client.updated) != 0 || client.ensureCalls != 0 {
 		t.Fatalf("dry run dispatched release mutations: create=%d update=%d ensure=%d", len(client.created), len(client.updated), client.ensureCalls)
