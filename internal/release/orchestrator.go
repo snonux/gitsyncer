@@ -319,11 +319,7 @@ func processCreateReleasesForTarget(
 		return
 	}
 
-	if enabler := releasesEnabler(target); enabler != nil {
-		if err := enabler.EnsureReleasesEnabled(target.Owner, repoName); err != nil {
-			fmt.Printf("  Warning: Could not ensure %s releases are enabled: %v\n", target.Name, err)
-		}
-	}
+	ensureReleasesEnabledForTarget(target, repoName)
 
 	for _, tag := range missingReleases {
 		if cfg.ShouldSkipRelease(repoName, tag) {
@@ -331,54 +327,102 @@ func processCreateReleasesForTarget(
 			continue
 		}
 
-		commits, err := inspector.GetCommitsSinceTag(repoPath, "", tag)
-		if err != nil {
-			commits = []string{}
-		}
-
-		releaseNotes, ok := resolveReleaseNotes(
-			notes,
-			opts,
-			repoPath,
-			repoName,
-			tag,
-			localTags,
-			commits,
-			cacheFile,
-			aiReleaseNotesCache,
-			failedAIGenerations,
-			fmt.Sprintf("%s/%s:%s", target.Owner, repoName, tag),
-			releaseNotesModeCreate,
-			SaveAIReleaseNotesCache,
+		createReleaseForTag(
+			opts, confirm, inspector, notes, target, repoName, repoPath, tag,
+			localTags, cacheFile, aiReleaseNotesCache, failedAIGenerations,
 		)
-		if !ok {
-			continue
-		}
-
-		fmt.Printf("\n%s\n", strings.Repeat("=", 70))
-		fmt.Printf("Release Notes for %s/%s tag %s:\n", target.Owner, repoName, tag)
-		fmt.Printf("%s\n", strings.Repeat("-", 70))
-		fmt.Println(releaseNotes)
-		fmt.Printf("%s\n\n", strings.Repeat("=", 70))
-
-		msg := fmt.Sprintf("Create %s release for %s/%s tag %s?", target.Name, target.Owner, repoName, tag)
-
-		createRelease := false
-		if opts.AutoCreateReleases {
-			fmt.Printf("  Auto-creating %s release for %s/%s tag %s\n", target.Name, target.Owner, repoName, tag)
-			createRelease = true
-		} else {
-			createRelease = confirm(msg)
-		}
-
-		if createRelease {
-			if err := target.Client.CreateRelease(target.Owner, repoName, tag, releaseNotes); err != nil {
-				fmt.Printf("  Error creating %s release: %v\n", target.Name, err)
-			} else {
-				fmt.Printf("  Created %s release for tag %s\n", target.Name, tag)
-			}
-		}
 	}
+}
+
+// ensureReleasesEnabledForTarget calls the target's ReleasesEnabler (if the
+// forge implements one) before attempting to create releases, warning
+// rather than failing if it errors. Forges without this requirement (e.g.
+// GitHub) leave releasesEnabler nil and this is a no-op.
+func ensureReleasesEnabledForTarget(target Target, repoName string) {
+	enabler := releasesEnabler(target)
+	if enabler == nil {
+		return
+	}
+	if err := enabler.EnsureReleasesEnabled(target.Owner, repoName); err != nil {
+		fmt.Printf("  Warning: Could not ensure %s releases are enabled: %v\n", target.Name, err)
+	}
+}
+
+// createReleaseForTag resolves release notes for one missing tag, prints
+// them for review, confirms (or auto-confirms per opts.AutoCreateReleases),
+// and creates the release on target.
+func createReleaseForTag(
+	opts Options,
+	confirm ConfirmFunc,
+	inspector *GitInspector,
+	notes releaseNotesSource,
+	target Target,
+	repoName, repoPath, tag string,
+	localTags []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	commits, err := inspector.GetCommitsSinceTag(repoPath, "", tag)
+	if err != nil {
+		commits = []string{}
+	}
+
+	releaseNotes, ok := resolveReleaseNotes(
+		notes,
+		opts,
+		repoPath,
+		repoName,
+		tag,
+		localTags,
+		commits,
+		cacheFile,
+		aiReleaseNotesCache,
+		failedAIGenerations,
+		fmt.Sprintf("%s/%s:%s", target.Owner, repoName, tag),
+		releaseNotesModeCreate,
+		SaveAIReleaseNotesCache,
+	)
+	if !ok {
+		return
+	}
+
+	printReleaseNotesForReview("Release Notes", target.Owner, repoName, tag, releaseNotes)
+
+	msg := fmt.Sprintf("Create %s release for %s/%s tag %s?", target.Name, target.Owner, repoName, tag)
+	if !decideReleaseAction(opts, confirm, "creating", target, repoName, tag, msg) {
+		return
+	}
+
+	if err := target.Client.CreateRelease(target.Owner, repoName, tag, releaseNotes); err != nil {
+		fmt.Printf("  Error creating %s release: %v\n", target.Name, err)
+	} else {
+		fmt.Printf("  Created %s release for tag %s\n", target.Name, tag)
+	}
+}
+
+// decideReleaseAction reports whether a create/update mutation should
+// proceed: true automatically when opts.AutoCreateReleases is set (printing
+// an "Auto-<verb>ing" notice), otherwise whatever confirm(msg) returns.
+// actionVerb is "creating" or "updating", matching createReleaseForTag's and
+// updateReleaseForTag's respective log wording.
+func decideReleaseAction(opts Options, confirm ConfirmFunc, actionVerb string, target Target, repoName, tag, msg string) bool {
+	if opts.AutoCreateReleases {
+		fmt.Printf("  Auto-%s %s release for %s/%s tag %s\n", actionVerb, target.Name, target.Owner, repoName, tag)
+		return true
+	}
+	return confirm(msg)
+}
+
+// printReleaseNotesForReview prints notes framed by "====...===="/"----...--"
+// separators, shared by the create and update paths (which only differ in
+// the header text: "Release Notes" vs "Updated Release Notes").
+func printReleaseNotesForReview(header, owner, repoName, tag, notes string) {
+	fmt.Printf("\n%s\n", strings.Repeat("=", 70))
+	fmt.Printf("%s for %s/%s tag %s:\n", header, owner, repoName, tag)
+	fmt.Printf("%s\n", strings.Repeat("-", 70))
+	fmt.Println(notes)
+	fmt.Printf("%s\n\n", strings.Repeat("=", 70))
 }
 
 func processUpdateReleasesForTarget(
@@ -408,56 +452,73 @@ func processUpdateReleasesForTarget(
 			continue
 		}
 
-		commits, err := inspector.GetCommitsSinceTag(repoPath, "", tag)
-		if err != nil {
-			commits = []string{}
-		}
-
-		releaseNotes, ok := resolveReleaseNotes(
-			notes,
-			opts,
-			repoPath,
-			repoName,
-			tag,
-			localTags,
-			commits,
-			cacheFile,
-			aiReleaseNotesCache,
-			failedAIGenerations,
-			fmt.Sprintf("%s/%s:%s", target.Owner, repoName, tag),
-			releaseNotesModeUpdate,
-			SaveAIReleaseNotesCache,
+		updateReleaseForTag(
+			opts, confirm, inspector, notes, target, repoName, repoPath, tag,
+			localTags, cacheFile, aiReleaseNotesCache, failedAIGenerations,
 		)
-		if !ok {
-			continue
-		}
-
-		fmt.Printf("\n%s\n", strings.Repeat("=", 70))
-		fmt.Printf("Updated Release Notes for %s/%s tag %s:\n", target.Owner, repoName, tag)
-		fmt.Printf("%s\n", strings.Repeat("-", 70))
-		fmt.Println(releaseNotes)
-		fmt.Printf("%s\n\n", strings.Repeat("=", 70))
-
-		msg := fmt.Sprintf("Update %s release for %s/%s tag %s?", target.Name, target.Owner, repoName, tag)
-
-		updateRelease := false
-		if opts.AutoCreateReleases {
-			fmt.Printf("  Auto-updating %s release for %s/%s tag %s\n", target.Name, target.Owner, repoName, tag)
-			updateRelease = true
-		} else {
-			updateRelease = confirm(msg)
-		}
-
-		if updateRelease {
-			if err := target.Client.UpdateRelease(target.Owner, repoName, tag, releaseNotes); err != nil {
-				fmt.Printf("  Error updating %s release: %v\n", target.Name, err)
-			} else {
-				fmt.Printf("  Updated %s release for tag %s\n", target.Name, tag)
-			}
-		}
 	}
 }
 
+// updateReleaseForTag resolves (regenerating or reusing cached AI) release
+// notes for one existing tag, prints them for review, confirms (or
+// auto-confirms per opts.AutoCreateReleases), and updates the release on
+// target.
+func updateReleaseForTag(
+	opts Options,
+	confirm ConfirmFunc,
+	inspector *GitInspector,
+	notes releaseNotesSource,
+	target Target,
+	repoName, repoPath, tag string,
+	localTags []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+) {
+	commits, err := inspector.GetCommitsSinceTag(repoPath, "", tag)
+	if err != nil {
+		commits = []string{}
+	}
+
+	releaseNotes, ok := resolveReleaseNotes(
+		notes,
+		opts,
+		repoPath,
+		repoName,
+		tag,
+		localTags,
+		commits,
+		cacheFile,
+		aiReleaseNotesCache,
+		failedAIGenerations,
+		fmt.Sprintf("%s/%s:%s", target.Owner, repoName, tag),
+		releaseNotesModeUpdate,
+		SaveAIReleaseNotesCache,
+	)
+	if !ok {
+		return
+	}
+
+	printReleaseNotesForReview("Updated Release Notes", target.Owner, repoName, tag, releaseNotes)
+
+	msg := fmt.Sprintf("Update %s release for %s/%s tag %s?", target.Name, target.Owner, repoName, tag)
+	if !decideReleaseAction(opts, confirm, "updating", target, repoName, tag, msg) {
+		return
+	}
+
+	if err := target.Client.UpdateRelease(target.Owner, repoName, tag, releaseNotes); err != nil {
+		fmt.Printf("  Error updating %s release: %v\n", target.Name, err)
+	} else {
+		fmt.Printf("  Updated %s release for tag %s\n", target.Name, tag)
+	}
+}
+
+// resolveReleaseNotes picks the release notes to use for tag: standard
+// (non-AI) notes when AI notes are disabled, a cached AI notes entry when
+// one exists, or freshly generated AI notes otherwise (see
+// generateAIReleaseNotes). Force controls sync scheduling and must not
+// invalidate release-note cache entries, so no force/refresh path exists
+// here.
 func resolveReleaseNotes(
 	notes releaseNotesSource,
 	opts Options,
@@ -478,16 +539,47 @@ func resolveReleaseNotes(
 	}
 
 	cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
-	// Force controls sync scheduling and must not invalidate release-note cache entries.
 	if cachedNotes, exists := aiReleaseNotesCache[cacheKey]; exists {
-		if mode == releaseNotesModeUpdate {
-			fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
-		} else {
-			fmt.Printf("  Using cached AI release notes for %s\n", tag)
-		}
+		logCachedAIReleaseNotesUsed(tag, mode)
 		return cachedNotes, true
 	}
 
+	return generateAIReleaseNotes(
+		notes, opts, repoPath, repoName, tag, localTags, commits, cacheFile,
+		aiReleaseNotesCache, failedAIGenerations, failedTarget, mode, saveCache,
+	)
+}
+
+// logCachedAIReleaseNotesUsed prints the "using cached notes" message, with
+// wording that differs slightly between the create and update pipelines.
+func logCachedAIReleaseNotesUsed(tag string, mode releaseNotesMode) {
+	if mode == releaseNotesModeUpdate {
+		fmt.Printf("  Using cached AI release notes for existing release %s\n", tag)
+	} else {
+		fmt.Printf("  Using cached AI release notes for %s\n", tag)
+	}
+}
+
+// generateAIReleaseNotes calls the AI notes generator for a tag not already
+// in the cache. On success it caches the result; on failure it clears any
+// stale cache entry, records the failure in failedAIGenerations, and - for
+// new releases only (releaseNotesModeCreate) - falls back to standard
+// (non-AI) release notes so creation can still proceed. An update
+// (releaseNotesModeUpdate) has no such fallback: ok is false and the caller
+// skips that release.
+func generateAIReleaseNotes(
+	notes releaseNotesSource,
+	opts Options,
+	repoPath, repoName, tag string,
+	localTags, commits []string,
+	cacheFile string,
+	aiReleaseNotesCache map[string]string,
+	failedAIGenerations *[]string,
+	failedTarget string,
+	mode releaseNotesMode,
+	saveCache func(string, map[string]string) error,
+) (string, bool) {
+	cacheKey := fmt.Sprintf("%s:%s", repoName, tag)
 	if mode == releaseNotesModeUpdate {
 		fmt.Printf("  Generating AI release notes for existing release %s...\n", tag)
 	} else {
