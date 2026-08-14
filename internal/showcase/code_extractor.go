@@ -19,6 +19,15 @@ func closeFile(file *os.File) {
 	_ = file.Close()
 }
 
+// functionKeywords are the keywords that typically start a function/method
+// declaration across the languages this package scans. Declared once at
+// package level and shared by findSmallestCompleteFunction and
+// findCompleteFunctionOrMethod so the two searches can never drift apart.
+var functionKeywords = []string{
+	"func ", "function ", "def ", "public ", "private ", "protected ",
+	"static ", "async ", "procedure ", "sub ", "method ",
+}
+
 // extractCodeSnippet extracts a random code snippet from the repository
 func extractCodeSnippet(repoPath string, languages []LanguageStats) (string, string, error) {
 	if len(languages) == 0 {
@@ -268,13 +277,7 @@ func findSmallestCompleteFunction(lines []string) string {
 
 	var functions []functionInfo
 
-	// Keywords that typically start functions/methods
-	functionKeywords := []string{
-		"func ", "function ", "def ", "public ", "private ", "protected ",
-		"static ", "async ", "procedure ", "sub ", "method ",
-	}
-
-	// Find all complete functions
+	// Find all complete functions using the shared functionKeywords
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 
@@ -391,13 +394,8 @@ func findFunctionEnd(lines []string, start int) int {
 
 // findCompleteFunctionOrMethod finds a complete function or method within size constraints
 func findCompleteFunctionOrMethod(lines []string, minLines, maxLines int) (int, int) {
-	// Keywords that typically start functions/methods
-	functionKeywords := []string{
-		"func ", "function ", "def ", "public ", "private ", "protected ",
-		"static ", "async ", "procedure ", "sub ", "method ",
-	}
-
-	// Try to find a function that fits within our size constraints
+	// Try to find a function that fits within our size constraints,
+	// using the shared functionKeywords to detect function starts.
 	for i := 0; i < len(lines); i++ {
 		line := strings.TrimSpace(lines[i])
 
