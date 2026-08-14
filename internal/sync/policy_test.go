@@ -1,4 +1,4 @@
-package cli
+package sync
 
 import (
 	"os"
@@ -15,7 +15,7 @@ func TestEvaluateSyncPolicy_SkipsRepoSyncedWithinDay(t *testing.T) {
 	st := &state.State{}
 	st.SetLastRepoSync("repo", time.Now().Add(-23*time.Hour))
 
-	decision := evaluateSyncPolicy("repo", "", st, false, false, false)
+	decision := EvaluateSyncPolicy("repo", "", st, false, false, false)
 
 	if !decision.Skip {
 		t.Fatal("expected repo synced within 24 hours to be skipped")
@@ -29,7 +29,7 @@ func TestEvaluateSyncPolicy_AllowsRepoAfterDailyWindow(t *testing.T) {
 	st := &state.State{}
 	st.SetLastRepoSync("repo", time.Now().Add(-25*time.Hour))
 
-	decision := evaluateSyncPolicy("repo", "", st, false, false, false)
+	decision := EvaluateSyncPolicy("repo", "", st, false, false, false)
 
 	if decision.Skip {
 		t.Fatalf("expected repo synced more than 24 hours ago to proceed, got %q", decision.Message)
@@ -43,7 +43,7 @@ func TestEvaluateSyncPolicy_ForceBypassesDailyAndThrottleLimits(t *testing.T) {
 	now := time.Now()
 	st.SetRepoSync("repo", now.Add(-1*time.Hour), now.Add(30*24*time.Hour))
 
-	decision := evaluateSyncPolicy("repo", workDir, st, false, true, true)
+	decision := EvaluateSyncPolicy("repo", workDir, st, false, true, true)
 
 	if decision.Skip {
 		t.Fatalf("expected --force to bypass sync limits, got %q", decision.Message)
@@ -59,7 +59,7 @@ func TestEvaluateSyncPolicy_ThrottleSetsWindowWhenRepoIsIdle(t *testing.T) {
 	workDir := t.TempDir()
 
 	start := time.Now()
-	decision := evaluateSyncPolicy("repo", workDir, &state.State{}, false, false, true)
+	decision := EvaluateSyncPolicy("repo", workDir, &state.State{}, false, false, true)
 	end := time.Now()
 
 	if !decision.Skip {
@@ -88,7 +88,7 @@ func TestEvaluateSyncPolicy_UsesConfiguredWorkDirForRecentCommits(t *testing.T) 
 
 	initRepoWithCommit(t, repoPath)
 
-	decision := evaluateSyncPolicy(repoName, workDir, &state.State{}, false, false, true)
+	decision := EvaluateSyncPolicy(repoName, workDir, &state.State{}, false, false, true)
 
 	if decision.Skip {
 		t.Fatalf("expected repo with recent local commits under custom work dir to proceed, got %q", decision.Message)
@@ -129,7 +129,7 @@ func TestRecordRepoSync_ClearsThrottleWindowWhenThrottleDisabled(t *testing.T) {
 	st := &state.State{}
 	st.SetRepoSync("repo", time.Now().Add(-72*time.Hour), time.Now().Add(72*time.Hour))
 
-	recordRepoSync("repo", st, false)
+	RecordRepoSync("repo", st, false)
 
 	if st.GetLastRepoSync("repo").IsZero() {
 		t.Fatal("expected last sync time to be recorded")
@@ -142,7 +142,7 @@ func TestRecordRepoSync_ClearsThrottleWindowWhenThrottleDisabled(t *testing.T) {
 func TestRecordRepoSync_SetsThrottleWindowWhenThrottleEnabled(t *testing.T) {
 	st := &state.State{}
 
-	recordRepoSync("repo", st, true)
+	RecordRepoSync("repo", st, true)
 
 	lastSync := st.GetLastRepoSync("repo")
 	if lastSync.IsZero() {
