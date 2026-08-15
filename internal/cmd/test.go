@@ -5,7 +5,9 @@ import (
 	"os"
 
 	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"codeberg.org/snonux/gitsyncer/internal/codeberg"
 	"codeberg.org/snonux/gitsyncer/internal/config"
+	"codeberg.org/snonux/gitsyncer/internal/github"
 	"github.com/spf13/cobra"
 )
 
@@ -57,30 +59,47 @@ var testConfigCmd = &cobra.Command{
 		fmt.Printf("  Organizations: %d\n", len(cfg.Organizations))
 		fmt.Printf("  Repositories: %d\n", len(cfg.Repositories))
 
-		// Check for common issues
-		hasGitHub := false
-		hasCodeberg := false
-		for _, org := range cfg.Organizations {
-			if org.Host == "git@github.com" {
-				hasGitHub = true
-				if org.GitHubToken == "" {
-					fmt.Println("  ⚠️  Warning: GitHub organization without token")
-				}
-			}
-			if org.Host == "git@codeberg.org" {
-				hasCodeberg = true
-				if org.CodebergToken == "" {
-					fmt.Println("  ⚠️  Warning: Codeberg organization without token")
-				}
-			}
-		}
-
-		if !hasGitHub && !hasCodeberg {
-			fmt.Println("  ⚠️  Warning: No GitHub or Codeberg organizations configured")
+		for _, warning := range configTokenWarnings(cfg) {
+			fmt.Println("  ⚠️  " + warning)
 		}
 
 		os.Exit(0)
 	},
+}
+
+// configTokenWarnings reports GitHub/Codeberg organizations whose token
+// doesn't actually resolve, and flags configs with neither forge configured.
+// It checks resolvability via HasToken (the same config -> env var -> token
+// file cascade the real sync path uses via forge.ResolveToken) rather than
+// just whether the config file inlines a token - most setups intentionally
+// leave the config token field empty and rely on a token file instead
+// (e.g. ~/.gitsyncer_github_token), which checking only the config field
+// would always flag as missing.
+func configTokenWarnings(cfg *config.Config) []string {
+	var warnings []string
+	hasGitHub := false
+	hasCodeberg := false
+
+	for _, org := range cfg.Organizations {
+		if org.Host == "git@github.com" {
+			hasGitHub = true
+			if !github.NewClient(org.GitHubToken, org.Name).HasToken() {
+				warnings = append(warnings, "Warning: GitHub organization without token")
+			}
+		}
+		if org.Host == "git@codeberg.org" {
+			hasCodeberg = true
+			if !codeberg.NewClient(org.CodebergToken, org.Name).HasToken() {
+				warnings = append(warnings, "Warning: Codeberg organization without token")
+			}
+		}
+	}
+
+	if !hasGitHub && !hasCodeberg {
+		warnings = append(warnings, "Warning: No GitHub or Codeberg organizations configured")
+	}
+
+	return warnings
 }
 
 func init() {
