@@ -151,26 +151,6 @@ func TestFormatGemtext_SanitizesMarkdownHeadingsInSummary(t *testing.T) {
 	}
 }
 
-func TestFormatGemtext_IncludesForgejoLinkAndHint(t *testing.T) {
-	t.Parallel()
-
-	g := &Generator{config: &config.Config{}}
-	content := g.formatGemtext([]ProjectSummary{
-		{
-			Name:       "ggaze",
-			Summary:    "summary",
-			ForgejoURL: "https://code.f3s.buetow.org/snonux/ggaze",
-		},
-	})
-
-	if !strings.Contains(content, "=> https://code.f3s.buetow.org/snonux/ggaze View on Forgejo\n") {
-		t.Fatalf("Forgejo link was not rendered: %s", content)
-	}
-	if !strings.Contains(content, "For Forgejo access go to code dot f3s dot buetow dot org slash snonux slash ggaze\n") {
-		t.Fatalf("Forgejo hint text was not rendered: %s", content)
-	}
-}
-
 func TestFormatGemtext_ZeroProjectsReleasePercentagesAreZero(t *testing.T) {
 	t.Parallel()
 

@@ -34,7 +34,6 @@ type ProjectSummary struct {
 	Summary      string
 	CodebergURL  string
 	GitHubURL    string
-	ForgejoURL   string
 	Metadata     *RepoMetadata
 	RankHistory  []RepoRankHistory // Latest 5 weekly rank points, newest first
 	Images       []string          // Relative paths to images in showcase directory
@@ -435,7 +434,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 // gathered by generateProjectSummary (project links, images, code snippet),
 // persists it to the on-disk cache, and returns it.
 func (g *Generator) assembleProjectSummary(repoName, repoPath, statsRepoPath, summary string, metadata *RepoMetadata) (*ProjectSummary, error) {
-	codebergURL, githubURL, forgejoURL := g.linker.BuildLinks(repoName, repoPath)
+	codebergURL, githubURL := g.linker.BuildLinks(repoName, repoPath)
 
 	images, codeSnippet, codeLanguage, err := g.collectAssets(repoName, repoPath, statsRepoPath, metadata)
 	if err != nil {
@@ -447,7 +446,6 @@ func (g *Generator) assembleProjectSummary(repoName, repoPath, statsRepoPath, su
 		Summary:      summary,
 		CodebergURL:  codebergURL,
 		GitHubURL:    githubURL,
-		ForgejoURL:   forgejoURL,
 		Metadata:     metadata,
 		Images:       images,
 		CodeSnippet:  codeSnippet,

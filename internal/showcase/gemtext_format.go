@@ -2,7 +2,6 @@ package showcase
 
 import (
 	"fmt"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -231,13 +230,5 @@ func writeProjectLinks(builder *strings.Builder, summary ProjectSummary) {
 	}
 	if summary.GitHubURL != "" {
 		builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
-	}
-	if summary.ForgejoURL != "" {
-		builder.WriteString(fmt.Sprintf("=> %s View on Forgejo\n", summary.ForgejoURL))
-		if forgejoURL, err := url.Parse(summary.ForgejoURL); err == nil {
-			host := strings.ReplaceAll(forgejoURL.Hostname(), ".", " dot ")
-			path := strings.ReplaceAll(strings.Trim(forgejoURL.Path, "/"), "/", " slash ")
-			builder.WriteString(fmt.Sprintf("For Forgejo access go to %s slash %s\n", host, path))
-		}
 	}
 }

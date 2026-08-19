@@ -8,30 +8,6 @@ import (
 	"codeberg.org/snonux/gitsyncer/internal/config"
 )
 
-func TestBuildProjectLinks_UsesForgejoOrganization(t *testing.T) {
-	t.Parallel()
-
-	l := NewProjectLinker(&config.Config{Organizations: []config.Organization{{
-		Host: "ssh://git@code.f3s.buetow.org:2022", ForgejoAPIBase: "https://code.f3s.buetow.org/api/v1", ForgejoOwner: "snonux", BackupLocation: true,
-	}}})
-	_, _, forgejoURL := l.BuildLinks("cpuinfo", "")
-
-	if forgejoURL != "https://code.f3s.buetow.org/snonux/cpuinfo" {
-		t.Fatalf("BuildLinks() Forgejo URL = %q, want %q", forgejoURL, "https://code.f3s.buetow.org/snonux/cpuinfo")
-	}
-}
-
-func TestBuildProjectLinks_LegacyShowcaseHostIsIgnored(t *testing.T) {
-	t.Parallel()
-
-	l := NewProjectLinker(&config.Config{ShowcaseCgitHost: "https://legacy.example/git/"})
-	_, _, forgejoURL := l.BuildLinks("cpuinfo", "")
-
-	if forgejoURL != "" {
-		t.Fatalf("BuildLinks() Forgejo URL = %q without a Forgejo organization, want empty", forgejoURL)
-	}
-}
-
 func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 	t.Parallel()
 
@@ -59,7 +35,7 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 		Organizations: []config.Organization{codebergOrg},
 		Repositories:  []string{"cpuinfo"},
 	})
-	if codebergURL, _, _ := disabled.BuildLinks("cpuinfo", repoPath); codebergURL != "" {
+	if codebergURL, _ := disabled.BuildLinks("cpuinfo", repoPath); codebergURL != "" {
 		t.Fatalf("disabled BuildLinks() codeberg URL = %q, want empty", codebergURL)
 	}
 
@@ -70,7 +46,7 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 		Repositories:  []string{"cpuinfo"},
 		SyncCodeberg:  true,
 	})
-	codebergURL, _, _ := enabled.BuildLinks("cpuinfo", repoPath)
+	codebergURL, _ := enabled.BuildLinks("cpuinfo", repoPath)
 	want := "https://codeberg.org/snonux/cpuinfo"
 	if codebergURL != want {
 		t.Fatalf("enabled BuildLinks() codeberg URL = %q, want %q", codebergURL, want)
@@ -78,7 +54,7 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 
 	// Codeberg sync enabled and repo has a codeberg remote, but repo is NOT in
 	// the allowlist: no link (it is not one of the repos we sync with Codeberg).
-	if codebergURL, _, _ := enabled.BuildLinks("other-repo", repoPath); codebergURL != "" {
+	if codebergURL, _ := enabled.BuildLinks("other-repo", repoPath); codebergURL != "" {
 		t.Fatalf("non-allowlisted BuildLinks() codeberg URL = %q, want empty", codebergURL)
 	}
 
@@ -91,7 +67,7 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 	if out, err := exec.Command("git", "-C", plainRepo, "init").CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	if codebergURL, _, _ := enabled.BuildLinks("cpuinfo", plainRepo); codebergURL != "" {
+	if codebergURL, _ := enabled.BuildLinks("cpuinfo", plainRepo); codebergURL != "" {
 		t.Fatalf("BuildLinks() codeberg URL = %q, want empty when repo not on Codeberg", codebergURL)
 	}
 
@@ -101,7 +77,7 @@ func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {
 		Organizations: []config.Organization{codebergOrg},
 		SyncCodeberg:  true,
 	})
-	if codebergURL, _, _ := discovery.BuildLinks("cpuinfo", repoPath); codebergURL != want {
+	if codebergURL, _ := discovery.BuildLinks("cpuinfo", repoPath); codebergURL != want {
 		t.Fatalf("discovery BuildLinks() codeberg URL = %q, want %q", codebergURL, want)
 	}
 }
