@@ -1,6 +1,7 @@
 package aitool
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"os/exec"
@@ -15,10 +16,14 @@ type opencodeRunner struct{ dir string }
 func (r opencodeRunner) Run(prompt, stdin string) (string, error) {
 	fmt.Println("  Running ollama launch opencode ...")
 
-	cmd := exec.Command("ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
-	cmd.Dir = r.dir
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
 
-	return runExec(cmd, "opencode")
+	cmd := exec.CommandContext(ctx, "ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
+	cmd.Dir = r.dir
+	cmd.WaitDelay = waitDelay
+
+	return runExec(ctx, cmd, "opencode")
 }
 
 // hexaiRunner drives the hexai CLI, which takes the instructional prompt as
@@ -28,13 +33,17 @@ type hexaiRunner struct{ dir string }
 func (r hexaiRunner) Run(prompt, stdin string) (string, error) {
 	fmt.Println("  Running hexai CLI command (stdin payload)...")
 
-	cmd := exec.Command("hexai", prompt)
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "hexai", prompt)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	cmd.Dir = r.dir
+	cmd.WaitDelay = waitDelay
 
-	return runExec(cmd, "hexai")
+	return runExec(ctx, cmd, "hexai")
 }
 
 // claudeRunner drives the claude CLI. Like opencode it only takes a single
@@ -48,11 +57,15 @@ type claudeRunner struct{ dir string }
 func (r claudeRunner) Run(prompt, stdin string) (string, error) {
 	fmt.Println("  Running claude CLI command...")
 
-	cmd := exec.Command("claude", "--model", "sonnet", combinedPrompt(prompt, stdin))
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "claude", "--model", "sonnet", combinedPrompt(prompt, stdin))
 	cmd.Env = append(os.Environ(), "CLAUDE_DEBUG=1")
 	cmd.Dir = r.dir
+	cmd.WaitDelay = waitDelay
 
-	return runExec(cmd, "claude")
+	return runExec(ctx, cmd, "claude")
 }
 
 // ampRunner drives the amp CLI, which -- like hexai -- takes the
@@ -63,11 +76,15 @@ type ampRunner struct{ dir string }
 func (r ampRunner) Run(prompt, stdin string) (string, error) {
 	fmt.Println("  Running amp CLI command (stdin payload)...")
 
-	cmd := exec.Command("amp", "--execute", prompt)
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "amp", "--execute", prompt)
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
 	}
 	cmd.Dir = r.dir
+	cmd.WaitDelay = waitDelay
 
-	return runExec(cmd, "amp")
+	return runExec(ctx, cmd, "amp")
 }

@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 )
 
 // withFakeBinary puts an executable shell script named name on PATH for the
@@ -101,6 +102,68 @@ func TestRunners_InBandErrorMessageIsError(t *testing.T) {
 	_, err := NewRunner(ToolHexAI, "").Run("prompt", "")
 	if err == nil {
 		t.Fatal("expected error for in-band error message")
+	}
+}
+
+// withShortTimeout shortens runTimeout for the duration of the test and
+// clears any tools recorded as timed out, so tests can exercise timeout
+// behavior in milliseconds and don't leak state into other tests.
+func withShortTimeout(t *testing.T, d time.Duration) {
+	t.Helper()
+
+	origTimeout, origWaitDelay := runTimeout, waitDelay
+	runTimeout, waitDelay = d, d
+	t.Cleanup(func() {
+		runTimeout, waitDelay = origTimeout, origWaitDelay
+		timedOutMu.Lock()
+		timedOutTools = map[Tool]bool{}
+		timedOutMu.Unlock()
+	})
+}
+
+func TestRunners_TimeoutIsError(t *testing.T) {
+	withShortTimeout(t, 50*time.Millisecond)
+	withFakeBinary(t, "claude", "sleep 5; echo too-late")
+
+	_, err := NewRunner(ToolClaude, "").Run("prompt", "")
+	if err == nil {
+		t.Fatal("expected timeout error")
+	}
+	if !strings.Contains(err.Error(), "timed out") {
+		t.Fatalf("Run() error = %v, want a timeout error", err)
+	}
+}
+
+// TestRunChain_SkipsToolThatAlreadyTimedOut is a regression test for a
+// batch run (e.g. `gitsyncer sync bidirectional` across many repos) that
+// hits a tool timing out once: the same tool must be skipped on later
+// RunChain calls within the same process instead of being retried and
+// paying the full timeout again for every remaining repo.
+func TestRunChain_SkipsToolThatAlreadyTimedOut(t *testing.T) {
+	withShortTimeout(t, 50*time.Millisecond)
+	withFakeBinary(t, "ollama", "sleep 5")
+	withFakeBinary(t, "hexai", "echo used-hexai")
+
+	chain := []Tool{ToolOpencode, ToolHexAI}
+
+	got, used, err := RunChain(chain, "", "prompt", "")
+	if err != nil {
+		t.Fatalf("RunChain() first call error = %v", err)
+	}
+	if used != ToolHexAI || got != "used-hexai" {
+		t.Fatalf("RunChain() first call = (%q, %q), want (%q, %q)", got, used, "used-hexai", ToolHexAI)
+	}
+
+	start := time.Now()
+	got, used, err = RunChain(chain, "", "prompt", "")
+	if err != nil {
+		t.Fatalf("RunChain() second call error = %v", err)
+	}
+	if elapsed := time.Since(start); elapsed >= runTimeout {
+		t.Fatalf("RunChain() second call took %s, opencode should have been skipped instantly instead of retried", elapsed)
+	}
+	if used != ToolHexAI || got != "used-hexai" {
+		t.Fatalf("RunChain() second call = (%q, %q), want (%q, %q)", got, used, "used-hexai", ToolHexAI)
 	}
 }
 
