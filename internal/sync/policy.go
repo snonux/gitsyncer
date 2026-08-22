@@ -16,7 +16,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/state"
+	"github.com/snonux/gitsyncer/internal/state"
 )
 
 const (

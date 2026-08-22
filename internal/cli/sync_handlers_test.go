@@ -4,7 +4,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestShouldEnableBackupSync_FullSyncImplicitlyEnablesBackup(t *testing.T) {

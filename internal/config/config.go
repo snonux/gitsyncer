@@ -10,7 +10,7 @@ import (
 	"strconv"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 var forgejoOwnerPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9_.-]*$`)

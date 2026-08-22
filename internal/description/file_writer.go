@@ -6,7 +6,7 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // FileBackupDescriptionWriter writes the canonical description to a local

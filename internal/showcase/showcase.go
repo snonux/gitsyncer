@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/aitool"
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/localrepos"
+	"github.com/snonux/gitsyncer/internal/aitool"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/localrepos"
 )
 
 // Generator handles showcase generation for repositories. It orchestrates

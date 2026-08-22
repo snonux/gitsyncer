@@ -13,7 +13,7 @@ Welcome to the GitSyncer documentation. This directory contains comprehensive do
 ## Quick Links
 
 - [Project README](../README.md) - Main project documentation
-- [Source Code](https://codeberg.org/snonux/gitsyncer) - Repository on Codeberg
+- [Source Code](https://github.com/snonux/gitsyncer) - Repository on GitHub
 
 ## Overview
 

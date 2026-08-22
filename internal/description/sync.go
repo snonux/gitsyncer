@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 // ForgeClientResolver builds the forge.RepoDescriptionClient used to read and

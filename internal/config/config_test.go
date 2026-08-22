@@ -6,7 +6,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 func TestValidate_ShowcaseStatsBranchesRejectsEmptyBranch(t *testing.T) {

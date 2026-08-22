@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestIsBackupRepo(t *testing.T) {

@@ -24,7 +24,7 @@ This guide is for contributors who want to help develop GitSyncer.
 
 ```bash
 # Clone from Codeberg
-git clone https://codeberg.org/snonux/gitsyncer.git
+git clone https://github.com/snonux/gitsyncer.git
 cd gitsyncer
 
 # Or from GitHub mirror
@@ -119,9 +119,9 @@ go build -o gitsyncer ./cmd/gitsyncer
 
 # Build with version info
 go build -ldflags "\
-  -X codeberg.org/snonux/gitsyncer/internal/version.Version=0.1.0 \
-  -X codeberg.org/snonux/gitsyncer/internal/version.GitCommit=$(git rev-parse --short HEAD) \
-  -X codeberg.org/snonux/gitsyncer/internal/version.BuildDate=$(date -u +%Y-%m-%d)" \
+  -X github.com/snonux/gitsyncer/internal/version.Version=0.1.0 \
+  -X github.com/snonux/gitsyncer/internal/version.GitCommit=$(git rev-parse --short HEAD) \
+  -X github.com/snonux/gitsyncer/internal/version.BuildDate=$(date -u +%Y-%m-%d)" \
   -o gitsyncer ./cmd/gitsyncer
 
 # Cross-compile for Linux
@@ -170,7 +170,7 @@ package sync
 
 import (
     "testing"
-    "codeberg.org/snonux/gitsyncer/internal/config"
+    "github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestNew(t *testing.T) {

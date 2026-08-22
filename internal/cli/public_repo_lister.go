@@ -1,10 +1,10 @@
 package cli
 
 import (
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/github"
+	"github.com/snonux/gitsyncer/internal/codeberg"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/github"
 )
 
 // githubPublicRepoLister adapts *github.Client's ListPublicRepos (which

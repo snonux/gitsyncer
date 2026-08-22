@@ -11,9 +11,9 @@ package cli
 // t01 established for forge.PublicRepoEnsurer (SetForgejoBackupClientFactory)
 // and task u01 established for ForgeClientResolver.
 import (
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/description"
+	"github.com/snonux/gitsyncer/internal/codeberg"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/description"
 )
 
 // backupDescriptionWriters is the ordered list of backup mechanisms

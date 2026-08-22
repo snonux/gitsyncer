@@ -3,7 +3,7 @@ package cli
 import (
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestForgeClientResolver_ClientFor(t *testing.T) {

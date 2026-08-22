@@ -6,8 +6,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/sync/deletescript"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/sync/deletescript"
 )
 
 // BranchInfo holds information about a branch

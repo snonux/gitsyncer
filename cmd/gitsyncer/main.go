@@ -1,7 +1,7 @@
 package main
 
 import (
-	"codeberg.org/snonux/gitsyncer/internal/cmd"
+	"github.com/snonux/gitsyncer/internal/cmd"
 )
 
 func main() {

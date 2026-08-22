@@ -4,7 +4,7 @@ import (
 	"errors"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // alwaysConfirm and neverConfirm are ConfirmFunc test doubles standing in

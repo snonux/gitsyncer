@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // sshBackupRepoPushRetries and sshBackupRepoPushBackoff govern how a push is

@@ -5,8 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
-	"codeberg.org/snonux/gitsyncer/internal/cli"
-	"codeberg.org/snonux/gitsyncer/internal/state"
+	"github.com/snonux/gitsyncer/internal/cli"
+	"github.com/snonux/gitsyncer/internal/state"
 	"github.com/spf13/cobra"
 )
 

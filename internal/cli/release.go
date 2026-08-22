@@ -12,9 +12,9 @@ package cli
 import (
 	"fmt"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/localrepos"
-	"codeberg.org/snonux/gitsyncer/internal/release"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/localrepos"
+	"github.com/snonux/gitsyncer/internal/release"
 )
 
 // HandleCheckReleases checks for version tags without releases and creates them with confirmation

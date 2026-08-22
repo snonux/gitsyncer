@@ -15,8 +15,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/version"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/version"
 )
 
 // Options carries the subset of internal/cli's Flags that release

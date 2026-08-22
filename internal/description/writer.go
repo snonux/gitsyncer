@@ -12,7 +12,7 @@
 // ForgeClientResolver.
 package description
 
-import "codeberg.org/snonux/gitsyncer/internal/config"
+import "github.com/snonux/gitsyncer/internal/config"
 
 // BackupDescriptionWriter writes a repository description to one backup
 // mechanism (Forgejo API, local bare-repo file, or SSH-reachable bare-repo

@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/state"
+	"github.com/snonux/gitsyncer/internal/state"
 )
 
 func TestEvaluateSyncPolicy_SkipsRepoSyncedWithinDay(t *testing.T) {

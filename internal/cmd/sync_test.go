@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"github.com/snonux/gitsyncer/internal/cli"
 )
 
 func TestShouldRunPostSyncReleases(t *testing.T) {

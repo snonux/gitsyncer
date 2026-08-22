@@ -8,8 +8,8 @@ import (
 	"strings"
 	stdsync "sync"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 type backupSessionState struct {

@@ -3,7 +3,7 @@ package cmd
 import (
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // isolateFromRealTokenFiles points HOME at an empty temp dir so

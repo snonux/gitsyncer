@@ -4,11 +4,11 @@ import (
 	"fmt"
 	"log"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/github"
-	"codeberg.org/snonux/gitsyncer/internal/showcase"
-	"codeberg.org/snonux/gitsyncer/internal/sync"
+	"github.com/snonux/gitsyncer/internal/codeberg"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/github"
+	"github.com/snonux/gitsyncer/internal/showcase"
+	"github.com/snonux/gitsyncer/internal/sync"
 )
 
 // HandleShowcaseOnly handles showcase generation without syncing

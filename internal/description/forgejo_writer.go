@@ -3,7 +3,7 @@ package description
 import (
 	"fmt"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // ForgejoDescriptionClient is the narrow capability ForgejoBackupDescriptionWriter

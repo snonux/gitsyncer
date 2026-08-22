@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 
-	"codeberg.org/snonux/gitsyncer/internal/cli"
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/github"
+	"github.com/snonux/gitsyncer/internal/cli"
+	"github.com/snonux/gitsyncer/internal/codeberg"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/github"
 	"github.com/spf13/cobra"
 )
 

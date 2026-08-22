@@ -6,7 +6,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // setupRepository ensures the repository exists and all remotes are configured

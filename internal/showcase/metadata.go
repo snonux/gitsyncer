@@ -10,7 +10,7 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/version"
+	"github.com/snonux/gitsyncer/internal/version"
 )
 
 const unreleasedScorePenalty = 0.75

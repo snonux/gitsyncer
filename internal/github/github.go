@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/httpclient"
+	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/httpclient"
 )
 
 // Client handles GitHub API operations

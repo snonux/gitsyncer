@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // ProjectLinker builds the outbound links (Codeberg/GitHub) shown alongside

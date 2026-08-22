@@ -3,7 +3,7 @@ package cmd
 import (
 	"os"
 
-	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"github.com/snonux/gitsyncer/internal/cli"
 	"github.com/spf13/cobra"
 )
 

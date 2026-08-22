@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"log"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/showcase"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/showcase"
 )
 
 // HandleShowcase handles the showcase generation after syncing

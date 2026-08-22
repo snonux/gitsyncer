@@ -6,8 +6,8 @@ import (
 	"os"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/github"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/github"
 )
 
 // HandleTestGitHubToken tests GitHub token authentication

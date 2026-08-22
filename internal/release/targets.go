@@ -9,10 +9,10 @@ package release
 import (
 	"fmt"
 
-	"codeberg.org/snonux/gitsyncer/internal/codeberg"
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/github"
+	"github.com/snonux/gitsyncer/internal/codeberg"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/github"
 )
 
 // Target pairs a forge release client with the owner that releases should be

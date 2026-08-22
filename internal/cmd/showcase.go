@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"os"
 
-	"codeberg.org/snonux/gitsyncer/internal/cli"
+	"github.com/snonux/gitsyncer/internal/cli"
 	"github.com/spf13/cobra"
 )
 

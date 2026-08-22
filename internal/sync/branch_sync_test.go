@@ -11,7 +11,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // captureStdout runs fn while redirecting os.Stdout, returning the captured

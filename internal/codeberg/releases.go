@@ -7,8 +7,8 @@ import (
 	"net/http"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/httpclient"
+	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/httpclient"
 )
 
 // Compile-time guarantees that the Codeberg client satisfies the forge release

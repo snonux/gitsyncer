@@ -8,8 +8,8 @@ import (
 	"strings"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/httpclient"
+	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/httpclient"
 )
 
 // Repository represents a Codeberg/Gitea repository

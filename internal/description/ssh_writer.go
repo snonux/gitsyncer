@@ -6,7 +6,7 @@ import (
 	"path"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // SSHBackupDescriptionWriter writes the canonical description to a bare

@@ -1,6 +1,6 @@
 package cli
 
-import "codeberg.org/snonux/gitsyncer/internal/state"
+import "github.com/snonux/gitsyncer/internal/state"
 
 // Flags holds all command-line flag values
 type Flags struct {

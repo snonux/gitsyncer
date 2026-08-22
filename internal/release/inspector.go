@@ -8,7 +8,7 @@ import (
 	"strings"
 	"unicode"
 
-	"codeberg.org/snonux/gitsyncer/internal/version"
+	"github.com/snonux/gitsyncer/internal/version"
 )
 
 // GitInspector reads git state from a local working clone: version tags,

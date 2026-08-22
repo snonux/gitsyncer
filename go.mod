@@ -1,4 +1,4 @@
-module codeberg.org/snonux/gitsyncer
+module github.com/snonux/gitsyncer
 
 go 1.24.3
 

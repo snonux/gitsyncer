@@ -5,10 +5,10 @@ import (
 	"math/rand"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	"codeberg.org/snonux/gitsyncer/internal/state"
-	"codeberg.org/snonux/gitsyncer/internal/sync"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/state"
+	"github.com/snonux/gitsyncer/internal/sync"
 )
 
 func shouldEnableBackupSync(flags *Flags) bool {

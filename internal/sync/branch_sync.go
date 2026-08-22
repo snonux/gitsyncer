@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"sort"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 // sortedRemoteNames returns the keys of a remote-keyed map in sorted

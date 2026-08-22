@@ -9,7 +9,7 @@ import (
 	"testing"
 	"time"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 func TestNewForgejoClient_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"reflect"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestSyncRepository_DryRunDoesNotCreateNonexistentWorkDir(t *testing.T) {

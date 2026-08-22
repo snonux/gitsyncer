@@ -7,8 +7,8 @@ package cli
 // now just a re-export so existing call sites in this package keep working
 // as a thin flag-parsing -> function-call layer.
 import (
-	"codeberg.org/snonux/gitsyncer/internal/state"
-	"codeberg.org/snonux/gitsyncer/internal/sync"
+	"github.com/snonux/gitsyncer/internal/state"
+	"github.com/snonux/gitsyncer/internal/sync"
 )
 
 // syncDecision is an alias for sync.SyncDecision so call sites in this

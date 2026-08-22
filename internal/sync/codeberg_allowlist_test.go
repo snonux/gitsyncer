@@ -3,7 +3,7 @@ package sync
 import (
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestSyncer_CodebergActiveForRepo(t *testing.T) {

@@ -4,9 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
-	"codeberg.org/snonux/gitsyncer/internal/forge"
-	syncpkg "codeberg.org/snonux/gitsyncer/internal/sync"
+	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
+	syncpkg "github.com/snonux/gitsyncer/internal/sync"
 )
 
 // fakeForgeClientResolver stands in for internal/cli's ForgeClientResolver.

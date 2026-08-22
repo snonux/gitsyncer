@@ -5,7 +5,7 @@ import (
 	"regexp"
 	"strings"
 
-	"codeberg.org/snonux/gitsyncer/internal/aitool"
+	"github.com/snonux/gitsyncer/internal/aitool"
 )
 
 // featCommitRE and fixCommitRE recognize Conventional Commit subjects for

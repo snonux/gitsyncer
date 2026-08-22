@@ -5,7 +5,7 @@ import (
 	"reflect"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/aitool"
+	"github.com/snonux/gitsyncer/internal/aitool"
 )
 
 func TestAvailableReleaseNotesTools_DefaultChainWithFallback(t *testing.T) {

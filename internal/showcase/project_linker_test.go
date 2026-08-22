@@ -5,7 +5,7 @@ import (
 	"os/exec"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/config"
 )
 
 func TestBuildProjectLinks_CodebergLinkOnlyWhenSyncedToCodeberg(t *testing.T) {

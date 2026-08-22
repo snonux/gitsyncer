@@ -12,7 +12,7 @@ import (
 	"strings"
 	"testing"
 
-	"codeberg.org/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 func TestNewClient_UsesTokenOrgOrderAndReturnsPointer(t *testing.T) {
