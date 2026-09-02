@@ -33,7 +33,7 @@ func (s *Syncer) trackRemotesWithBranch(branch string, remotes map[string]*confi
 
 	for remoteName, org := range remotes {
 		// Skip checking backup locations as we don't sync from them
-		if org.BackupLocation {
+		if org.BackupLocation || !s.organizationActive(org) {
 			continue
 		}
 		if s.remoteBranchExists(remoteName, branch) {
@@ -73,6 +73,10 @@ func (s *Syncer) handlePushError(remoteName string, org *config.Organization, er
 		s.disableBackupForSession(remoteName, err)
 		return nil
 	}
+	if org != nil && org.Optional {
+		s.disableOptionalForSession(remoteName, err)
+		return nil
+	}
 
 	return err
 }
@@ -82,7 +86,7 @@ func (s *Syncer) pushToAllRemotes(repoPath, branch string, remotes map[string]*c
 	// Sorted so push order is deterministic across runs. See sortedRemoteNames.
 	for _, remoteName := range sortedRemoteNames(remotes) {
 		org := remotes[remoteName]
-		if org.BackupLocation && !s.backupActive(remoteName) {
+		if !s.organizationActive(org) {
 			continue
 		}
 

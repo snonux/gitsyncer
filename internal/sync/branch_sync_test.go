@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -170,6 +171,121 @@ func TestFetchAll_ProcessesRemotesInSortedOrder(t *testing.T) {
 		}
 		if !reflect.DeepEqual(got, want) {
 			t.Fatalf("run %d: fetch order = %v, want %v", i, got, want)
+		}
+	}
+}
+
+func TestFetchAll_OptionalPeerFailureDoesNotFailSync(t *testing.T) {
+	workDir := t.TempDir()
+	repoPath := filepath.Join(workDir, "demo")
+	if output, err := exec.Command("git", "init", repoPath).CombinedOutput(); err != nil {
+		t.Fatalf("git init: %v\n%s", err, output)
+	}
+	if output, err := exec.Command("git", "-C", repoPath, "remote", "add", "forgejo", "invalid://unavailable/demo.git").CombinedOutput(); err != nil {
+		t.Fatalf("git remote add: %v\n%s", err, output)
+	}
+
+	org := config.Organization{Host: "git@forgejo", Optional: true}
+	syncer := &Syncer{
+		config:   &config.Config{Organizations: []config.Organization{org}},
+		workDir:  workDir,
+		repoName: "demo",
+	}
+	if err := syncer.fetchAll(); err != nil {
+		t.Fatalf("fetchAll() error = %v; optional peer failure must not fail sync", err)
+	}
+	if syncer.organizationActive(&org) {
+		t.Fatal("expected failed optional peer to be disabled")
+	}
+}
+
+func TestFilterBackupBranches_IncludesActiveOptionalPeer(t *testing.T) {
+	org := config.Organization{Host: "git@forgejo", Optional: true}
+	syncer := &Syncer{
+		config:   &config.Config{Organizations: []config.Organization{org}},
+		repoName: "demo",
+	}
+
+	got := string(syncer.filterBackupBranches([]byte("  forgejo/main\n  forgejo/topic\n")))
+	if got != "forgejo/main\nforgejo/topic" {
+		t.Fatalf("filterBackupBranches() = %q, want optional peer branches retained", got)
+	}
+}
+
+func TestSyncRepository_ThreeWaySyncIncludesOptionalPeer(t *testing.T) {
+	root := t.TempDir()
+	remoteRoots := []string{
+		filepath.Join(root, "github"),
+		filepath.Join(root, "codeberg"),
+		filepath.Join(root, "forgejo"),
+	}
+	for _, remoteRoot := range remoteRoots {
+		if err := os.MkdirAll(remoteRoot, 0o755); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, root, "init", "--bare", filepath.Join(remoteRoot, "demo.git"))
+	}
+
+	seed := filepath.Join(root, "seed")
+	if err := os.Mkdir(seed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, seed, "init", "-b", "main")
+	runGit(t, seed, "config", "user.name", "GitSyncer Test")
+	runGit(t, seed, "config", "user.email", "gitsyncer@example.test")
+	if err := os.WriteFile(filepath.Join(seed, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, seed, "add", "base.txt")
+	runGit(t, seed, "commit", "-m", "base")
+	for i, remoteRoot := range remoteRoots {
+		remoteName := fmt.Sprintf("remote-%d", i)
+		runGit(t, seed, "remote", "add", remoteName, filepath.Join(remoteRoot, "demo.git"))
+		runGit(t, seed, "push", remoteName, "main")
+	}
+
+	addRemoteCommit := func(name, filename, remoteRoot string) {
+		repoPath := filepath.Join(root, name)
+		runGit(t, root, "clone", "--branch", "main", filepath.Join(remoteRoots[0], "demo.git"), repoPath)
+		runGit(t, repoPath, "config", "user.name", "GitSyncer Test")
+		runGit(t, repoPath, "config", "user.email", "gitsyncer@example.test")
+		if err := os.WriteFile(filepath.Join(repoPath, filename), []byte(name+"\n"), 0o644); err != nil {
+			t.Fatal(err)
+		}
+		runGit(t, repoPath, "add", filename)
+		runGit(t, repoPath, "commit", "-m", name)
+		runGit(t, repoPath, "push", filepath.Join(remoteRoot, "demo.git"), "main")
+	}
+	addRemoteCommit("codeberg-change", "codeberg.txt", remoteRoots[1])
+	addRemoteCommit("forgejo-change", "forgejo.txt", remoteRoots[2])
+
+	workDir := filepath.Join(root, "work")
+	if err := os.Mkdir(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoPath := filepath.Join(workDir, "demo")
+	runGit(t, workDir, "clone", "--branch", "main", filepath.Join(remoteRoots[0], "demo.git"), repoPath)
+	runGit(t, repoPath, "remote", "rename", "origin", "github")
+	runGit(t, repoPath, "config", "user.name", "GitSyncer Test")
+	runGit(t, repoPath, "config", "user.email", "gitsyncer@example.test")
+
+	cfg := &config.Config{Organizations: []config.Organization{
+		{Host: "file://" + remoteRoots[0]},
+		{Host: "file://" + remoteRoots[1]},
+		{Host: "file://" + remoteRoots[2], Optional: true},
+	}}
+	if err := New(cfg, workDir).SyncRepository("demo"); err != nil {
+		t.Fatalf("SyncRepository() error = %v", err)
+	}
+
+	wantCommit := runGit(t, remoteRoots[0], "--git-dir", filepath.Join(remoteRoots[0], "demo.git"), "rev-parse", "main")
+	for _, remoteRoot := range remoteRoots {
+		gitDir := filepath.Join(remoteRoot, "demo.git")
+		if got := runGit(t, remoteRoot, "--git-dir", gitDir, "rev-parse", "main"); got != wantCommit {
+			t.Fatalf("%s main = %s, want %s", remoteRoot, got, wantCommit)
+		}
+		for _, filename := range []string{"codeberg.txt", "forgejo.txt"} {
+			runGit(t, remoteRoot, "--git-dir", gitDir, "show", "main:"+filename)
 		}
 	}
 }

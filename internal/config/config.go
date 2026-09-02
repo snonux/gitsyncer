@@ -47,9 +47,10 @@ type Organization struct {
 	GitHubToken         string          `json:"github_token,omitempty"`
 	CodebergToken       string          `json:"codeberg_token,omitempty"`
 	ForgejoAPIBase      string          `json:"forgejo_api_base,omitempty"`    // Gitea-compatible API root, for example https://code.example/api/v1
-	ForgejoOwner        string          `json:"forgejo_owner,omitempty"`       // Forgejo user or organization that owns backup repositories
+	ForgejoOwner        string          `json:"forgejo_owner,omitempty"`       // Forgejo user or organization that owns repositories
 	ForgejoOwnerType    forge.OwnerType `json:"forgejo_owner_type,omitempty"`  // user (default) or organization
 	BackupLocation      bool            `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
+	Optional            bool            `json:"optional,omitempty"`            // Skip this sync peer for the current run when it is unavailable
 	ForcePush           bool            `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup destination
 	DescriptionSyncHost string          `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
 	DescriptionSyncRoot string          `json:"descriptionSyncRoot,omitempty"` // Filesystem path on DescriptionSyncHost where bare repos live
@@ -156,12 +157,15 @@ func (c *Config) Validate() error {
 		if org.ForcePush && !org.BackupLocation {
 			return fmt.Errorf("organization %d: forcePush requires backupLocation", i)
 		}
+		if org.BackupLocation && org.Optional {
+			return fmt.Errorf("organization %d: backupLocation and optional are mutually exclusive", i)
+		}
 		if org.IsForgejo() {
 			if org.ForgejoOwnerType != "" && !org.ForgejoOwnerType.Valid() {
 				return fmt.Errorf("organization %d: forgejo_owner_type must be %q or %q", i, forge.OwnerTypeUser, forge.OwnerTypeOrganization)
 			}
-			if !org.BackupLocation {
-				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation", i)
+			if !org.BackupLocation && !org.Optional {
+				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation or optional", i)
 			}
 			if strings.TrimSpace(org.ForgejoOwner) == "" {
 				return fmt.Errorf("organization %d: forgejo_owner is required with forgejo_api_base", i)
@@ -296,7 +300,7 @@ func (o *Organization) IsCodeberg() bool {
 	return o.Host == "git@codeberg.org" || strings.Contains(o.Host, "codeberg.org")
 }
 
-// IsForgejo reports whether the organization is a configured Forgejo backup target.
+// IsForgejo reports whether the organization is a configured Forgejo target.
 func (o *Organization) IsForgejo() bool {
 	return strings.TrimSpace(o.ForgejoAPIBase) != ""
 }

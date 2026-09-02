@@ -63,10 +63,11 @@ Array of organization objects. At least one organization must be configured.
 - **codeberg_token** (string, optional): Codeberg personal access token
   - Only needed for Codeberg organizations
   - Can also be set via environment variable or file
-- **forgejo_api_base** (string, optional): Gitea-compatible API root for a Forgejo backup, such as `https://code.example/api/v1`
-- **forgejo_owner** (string, required with `forgejo_api_base`): User or organization that owns the backup repositories
+- **forgejo_api_base** (string, optional): Gitea-compatible API root for a Forgejo target, such as `https://code.example/api/v1`
+- **forgejo_owner** (string, required with `forgejo_api_base`): User or organization that owns the repositories
 - **forgejo_owner_type** (`user` or `organization`, optional): Owner kind; defaults to `user` for backward compatibility
-- **backupLocation** (boolean, required for Forgejo): Keeps the destination one-way; it is pushed but never fetched
+- **backupLocation** (boolean): Makes the destination a one-way backup; it is pushed but never fetched
+- **optional** (boolean): Makes the organization a bidirectional sync peer whose Git fetch or push failures cause it to be skipped for the remainder of the run
 - **forcePush** (boolean, optional): Force-update backup branches and tags
 
 Forgejo credentials are read first from `FORGEJO_TOKEN`, then from
@@ -82,6 +83,14 @@ Existing repositories must belong to the configured owner and must be public.
 The Git SSH URL is formed as `<host>/<forgejo_owner>/<repo>.git`; do not
 configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo because
 metadata is updated through the API.
+
+Forgejo requires exactly one of `backupLocation: true` or `optional: true`.
+Use `optional` for three-way GitHub ↔ Codeberg ↔ Forgejo synchronization.
+Unlike a backup, an optional Forgejo peer is fetched and contributes branches
+and commits to the merge. If Forgejo is offline, GitSyncer disables it for the
+rest of that run and continues syncing the remaining hosts. A metadata API
+failure is reported but does not disable an otherwise reachable Git-over-SSH
+peer.
 
 #### repositories (optional)
 Array of repository names to sync. If empty, use `gitsyncer sync codeberg-to-github` or `gitsyncer sync github-to-codeberg` to discover repositories.
@@ -142,7 +151,7 @@ Example:
 ```
 
 #### Forgejo showcase links
-Showcase repository links require a Forgejo backup organization and are derived from its `forgejo_api_base` and `forgejo_owner`. For example, API base `https://code.example/api/v1` and owner `snonux` produce `https://code.example/snonux/<repo>`. This avoids a separate host setting that can drift from the backup configuration.
+Showcase repository links require a Forgejo target and are derived from its `forgejo_api_base` and `forgejo_owner`. For example, API base `https://code.example/api/v1` with owner `snonux` produces `https://code.example/snonux/<repo>`. This avoids a separate host setting that can drift from the Forgejo configuration.
 
 The legacy `showcase_cgit_host` key remains accepted for configuration compatibility, but it is ignored. Remove it when updating existing configurations.
 

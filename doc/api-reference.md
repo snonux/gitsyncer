@@ -179,9 +179,10 @@ type Organization struct {
     Name           string `json:"name"`             // Organization/username
     GitHubToken    string `json:"github_token"`     // Optional GitHub API token
     ForgejoAPIBase string `json:"forgejo_api_base"` // Gitea-compatible API root
-    ForgejoOwner   string `json:"forgejo_owner"`    // Forgejo backup owner
+    ForgejoOwner   string `json:"forgejo_owner"`    // Forgejo repository owner
     ForgejoOwnerType forge.OwnerType `json:"forgejo_owner_type"` // user (default) or organization
     BackupLocation bool   `json:"backupLocation"`   // One-way destination
+    Optional       bool   `json:"optional"`         // Non-fatal bidirectional peer
     ForcePush      bool   `json:"forcePush"`        // Force backup branches/tags
 }
 ```
@@ -223,7 +224,8 @@ Finds organization by host string.
 Returns true if organization host contains "codeberg.org".
 
 #### func (o *Organization) IsForgejo() bool
-Returns true when a Forgejo API base is configured. Forgejo organizations must be backup-only.
+Returns true when a Forgejo API base is configured. Forgejo organizations must
+be either one-way backups or optional bidirectional peers.
 
 #### func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client
 Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling

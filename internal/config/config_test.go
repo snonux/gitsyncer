@@ -70,7 +70,7 @@ func TestValidate_ForcePushRequiresBackupLocation(t *testing.T) {
 	}
 }
 
-func TestValidate_ForgejoMustBeBackupOnly(t *testing.T) {
+func TestValidate_ForgejoMustBeBackupOrOptional(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{Organizations: []Organization{{
@@ -79,8 +79,38 @@ func TestValidate_ForgejoMustBeBackupOnly(t *testing.T) {
 		ForgejoOwner:   "snonux",
 	}}}
 	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "must set backupLocation") {
-		t.Fatalf("Validate() error = %v, want backup-only validation", err)
+	if err == nil || !strings.Contains(err.Error(), "must set backupLocation or optional") {
+		t.Fatalf("Validate() error = %v, want backup-or-optional validation", err)
+	}
+}
+
+func TestValidate_ForgejoMayBeOptionalBidirectionalPeer(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{Organizations: []Organization{{
+		Host:           "ssh://git@forgejo.example:2022",
+		ForgejoAPIBase: "https://forgejo.example/api/v1",
+		ForgejoOwner:   "snonux",
+		Optional:       true,
+	}}}
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v", err)
+	}
+}
+
+func TestValidate_BackupAndOptionalAreMutuallyExclusive(t *testing.T) {
+	t.Parallel()
+
+	cfg := &Config{Organizations: []Organization{{
+		Host:           "ssh://git@forgejo.example:2022",
+		ForgejoAPIBase: "https://forgejo.example/api/v1",
+		ForgejoOwner:   "snonux",
+		BackupLocation: true,
+		Optional:       true,
+	}}}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Fatalf("Validate() error = %v, want mutually-exclusive validation", err)
 	}
 }
 

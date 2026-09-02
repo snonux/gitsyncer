@@ -168,8 +168,7 @@ func (s *Syncer) getBranchInfo(branch string) (*BranchInfo, error) {
 	for i := range orgs {
 		org := &orgs[i]
 
-		// Skip backup locations if backup is not enabled
-		if org.BackupLocation && !s.backupEnabled {
+		if !s.organizationActive(org) {
 			continue
 		}
 

@@ -172,7 +172,7 @@ gitsyncer sync bidirectional --dry-run
 
 `sync bidirectional`, `sync codeberg-to-github`, `sync github-to-codeberg`, and `manage batch-run` now always try configured backup locations when `backupLocation: true` is present in the config. If a backup push fails because that host is offline or unavailable, GitSyncer records that failure in memory and skips that destination for the rest of the process while continuing the primary sync targets and other backups.
 
-Forgejo can be used as a first-class, one-way public backup target. Repository creation and descriptions use its Gitea-compatible API, while branches and tags are pushed over SSH:
+Forgejo can be used either as a one-way public backup or as an optional bidirectional sync peer. Repository creation and descriptions use its Gitea-compatible API, while Git data is transferred over SSH. To make it a peer that is fetched, merged, and pushed whenever available, set `optional: true` instead of `backupLocation`:
 
 ```json
 {
@@ -181,8 +181,7 @@ Forgejo can be used as a first-class, one-way public backup target. Repository c
     "forgejo_api_base": "https://code.f3s.buetow.org/api/v1",
     "forgejo_owner": "snonux",
     "forgejo_owner_type": "organization",
-    "backupLocation": true,
-    "forcePush": true
+    "optional": true
   }]
 }
 ```
@@ -198,10 +197,14 @@ protected process environment as `FORGEJO_TOKEN`, or store it in
 `~/.gitsyncer_forgejo_token` with mode `0600`. The environment takes precedence;
 surrounding
 whitespace is removed from either source. Never put a Forgejo token in the JSON
-configuration. A repository named `demo` is pushed to
-`ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets are never
-fetched or used as primary bidirectional sources, and GitSyncer never runs
-remote shell repository-creation or description-file commands for them.
+configuration. A repository named `demo` uses
+`ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets with
+`backupLocation: true` remain push-only. Targets with `optional: true`
+participate fully in branch discovery, fetch, merge, and push. Metadata API
+failures are reported but do not prevent Git-over-SSH synchronization; a fetch
+or push failure skips that Forgejo peer for the remainder of the run without
+interrupting synchronization between the other hosts. GitSyncer never runs
+remote shell repository-creation or description-file commands for Forgejo.
 
 ### Release Management
 
@@ -492,7 +495,7 @@ Weekly rank snapshots are written on full showcase runs (all repositories), incl
 
 The showcase output defaults to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl`. You can override the output directory with `showcase_output_dir`.
 
-Forgejo links in project sections are derived from the configured Forgejo backup's `forgejo_api_base` and `forgejo_owner`. For example, `https://code.f3s.buetow.org/api/v1` with owner `snonux` produces `https://code.f3s.buetow.org/snonux/<repo>`, keeping showcase links aligned with the backup destination. The legacy `showcase_cgit_host` key is accepted but ignored and may be removed from configurations.
+Forgejo links in project sections are derived from the configured Forgejo target's `forgejo_api_base` and `forgejo_owner`. For example, `https://code.f3s.buetow.org/api/v1` with owner `snonux` produces `https://code.f3s.buetow.org/snonux/<repo>`, keeping showcase links aligned with the sync destination. The legacy `showcase_cgit_host` key is accepted but ignored and may be removed from configurations.
 
 You can override the branch used for showcase stats and cached code snippets on a per-repository basis with `showcase_stats_branches`. For example, `foo.zone` can use `content-gemtext` while the rest of the repos continue to use their current checkout branch.
 

@@ -12,7 +12,7 @@ import (
 )
 
 // fakePublicRepoEnsurer is a test double for forge.PublicRepoEnsurer. Since
-// ensureForgejoBackups now depends on that interface (injected via
+// ensureForgejoRepositories depends on that interface (injected via
 // SetForgejoBackupClientFactory) instead of constructing a concrete
 // codeberg.Client, tests can exercise the call/error paths without an HTTP
 // server standing in for a real Forgejo API.
@@ -44,7 +44,7 @@ func TestEnsureForgejoBackups_DryRunDoesNotInvokeFactory(t *testing.T) {
 	syncer.SetBackupEnabled(true)
 	syncer.SetDryRun(true)
 	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
-	syncer.ensureForgejoBackups("demo")
+	syncer.ensureForgejoRepositories("demo")
 	if len(fake.calls) != 0 {
 		t.Fatalf("dry run invoked EnsurePublicRepo %d times, want zero", len(fake.calls))
 	}
@@ -55,7 +55,7 @@ func TestEnsureForgejoBackups_NilFactoryIsNoOp(t *testing.T) {
 	syncer := New(cfg, t.TempDir())
 	syncer.SetBackupEnabled(true)
 	// No factory injected: a Syncer built without cli's wiring must not panic.
-	syncer.ensureForgejoBackups("demo")
+	syncer.ensureForgejoRepositories("demo")
 }
 
 func TestEnsureForgejoBackups_CallsInjectedFactory(t *testing.T) {
@@ -64,7 +64,7 @@ func TestEnsureForgejoBackups_CallsInjectedFactory(t *testing.T) {
 	syncer := New(cfg, t.TempDir())
 	syncer.SetBackupEnabled(true)
 	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
-	syncer.ensureForgejoBackups("demo")
+	syncer.ensureForgejoRepositories("demo")
 	if len(fake.calls) != 1 {
 		t.Fatalf("expected exactly one EnsurePublicRepo call, got %d", len(fake.calls))
 	}
@@ -79,9 +79,22 @@ func TestEnsureForgejoBackups_FactoryErrorDisablesBackupForSession(t *testing.T)
 	syncer := New(cfg, t.TempDir())
 	syncer.SetBackupEnabled(true)
 	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
-	syncer.ensureForgejoBackups("demo")
+	syncer.ensureForgejoRepositories("demo")
 	if syncer.backupActive(syncer.getRemoteName(&cfg.Organizations[0])) {
 		t.Fatal("expected backup sync to be disabled after EnsurePublicRepo error")
+	}
+}
+
+func TestEnsureForgejoBackups_OptionalPeerAPIErrorKeepsGitPeerActive(t *testing.T) {
+	fake := &fakePublicRepoEnsurer{err: errors.New("offline")}
+	cfg := forgejoBackupOrgConfig()
+	cfg.Organizations[0].BackupLocation = false
+	cfg.Organizations[0].Optional = true
+	syncer := New(cfg, t.TempDir())
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
+	syncer.ensureForgejoRepositories("demo")
+	if !syncer.organizationActive(&cfg.Organizations[0]) {
+		t.Fatal("expected optional Forgejo peer to remain active after metadata API error")
 	}
 }
 
@@ -118,6 +131,19 @@ func TestHandlePushError_PropagatesPrimaryRemoteFailure(t *testing.T) {
 	err := syncer.handlePushError("origin", &config.Organization{}, pushErr)
 	if !errors.Is(err, pushErr) {
 		t.Fatalf("expected primary remote error to be returned, got %v", err)
+	}
+}
+
+func TestHandlePushError_DisablesOptionalPeerForSession(t *testing.T) {
+	syncer := &Syncer{}
+	org := &config.Organization{Host: "git@forgejo.example", Optional: true}
+
+	err := syncer.handlePushError("forgejo_example", org, errors.New("connection refused"))
+	if err != nil {
+		t.Fatalf("expected optional peer failure to be downgraded, got %v", err)
+	}
+	if syncer.organizationActive(org) {
+		t.Fatal("expected optional peer to be disabled for the remainder of the session")
 	}
 }
 

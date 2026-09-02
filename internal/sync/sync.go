@@ -18,7 +18,8 @@ type backupSessionState struct {
 }
 
 // ForgejoBackupClientFactory builds a forge.PublicRepoEnsurer for a given
-// Forgejo backup organization. internal/sync depends only on this factory
+// Forgejo organization. The legacy name is retained for API compatibility.
+// internal/sync depends only on this factory
 // signature and the forge.PublicRepoEnsurer interface it returns; the
 // concrete client construction (which forge package, which token source)
 // lives in internal/cli, which injects it via SetForgejoBackupClientFactory.
@@ -37,7 +38,7 @@ type Syncer struct {
 	backupEnabled              bool                              // Whether to sync to backup locations
 	dryRun                     bool                              // Whether mutations should only be reported
 	backupSession              backupSessionState
-	forgejoBackupClientFactory ForgejoBackupClientFactory // Builds the client used by ensureForgejoBackups; injected by cli
+	forgejoBackupClientFactory ForgejoBackupClientFactory // Builds the client used to ensure Forgejo repositories; injected by cli
 }
 
 // CLAUDE: Is there a reason, we return a pointer to Syncer?
@@ -70,9 +71,8 @@ func (s *Syncer) SetDryRun(enabled bool) {
 	s.dryRun = enabled
 }
 
-// SetForgejoBackupClientFactory injects the factory used by
-// ensureForgejoBackups to build a forge.PublicRepoEnsurer per Forgejo backup
-// organization. Callers (internal/cli) construct this from a concrete forge
+// SetForgejoBackupClientFactory injects the factory used to ensure Forgejo
+// repositories. Callers (internal/cli) construct this from a concrete forge
 // client (e.g. codeberg.NewForgejoClient); internal/sync never depends on
 // that concrete type itself.
 func (s *Syncer) SetForgejoBackupClientFactory(factory ForgejoBackupClientFactory) {
@@ -88,13 +88,30 @@ func (s *Syncer) backupActive(remoteName string) bool {
 	return !disabled
 }
 
-// BackupActive reports whether a backup organization is enabled and has not
-// failed earlier in this sync session.
-func (s *Syncer) BackupActive(org *config.Organization) bool {
-	return org != nil && org.BackupLocation && s.backupActive(s.getRemoteName(org))
+func (s *Syncer) organizationActive(org *config.Organization) bool {
+	if org == nil {
+		return false
+	}
+	if org.BackupLocation {
+		return s.backupActive(s.getRemoteName(org))
+	}
+	if !org.Optional {
+		return true
+	}
+	disabled, _ := s.backupSession.status(s.getRemoteName(org))
+	return !disabled
 }
 
-// DisableBackup disables a backup organization after an API or push failure.
+// BackupActive reports whether an auxiliary destination is enabled and has
+// not failed earlier in this sync session. The name is retained for callers
+// that use this callback for backup and Forgejo description updates.
+func (s *Syncer) BackupActive(org *config.Organization) bool {
+	return org != nil && (org.BackupLocation || org.Optional) && s.organizationActive(org)
+}
+
+// DisableBackup disables a backup after a metadata API failure. Optional
+// bidirectional peers remain active until a Git fetch or push fails, because
+// their Git-over-SSH service can be healthy while the metadata API is down.
 func (s *Syncer) DisableBackup(org *config.Organization, err error) {
 	if org == nil || !org.BackupLocation || err == nil {
 		return
@@ -110,6 +127,25 @@ func (s *Syncer) disableBackupForSession(remoteName string, err error) {
 	if s.backupSession.disable(remoteName, err.Error()) {
 		fmt.Printf("Warning: Backup sync to %s failed: %v\n", remoteName, err)
 		fmt.Printf("Warning: Disabling backup sync to %s for the remainder of this session.\n", remoteName)
+	}
+}
+
+func (s *Syncer) disableOptionalForSession(remoteName string, err error) {
+	if s.backupSession.disable(remoteName, err.Error()) {
+		fmt.Printf("Warning: Optional sync peer %s failed: %v\n", remoteName, err)
+		fmt.Printf("Warning: Skipping %s for the remainder of this session.\n", remoteName)
+	}
+}
+
+func (s *Syncer) disableOrganizationForSession(org *config.Organization, err error) {
+	if org == nil || err == nil {
+		return
+	}
+	remoteName := s.getRemoteName(org)
+	if org.BackupLocation {
+		s.disableBackupForSession(remoteName, err)
+	} else if org.Optional {
+		s.disableOptionalForSession(remoteName, err)
 	}
 }
 
@@ -155,7 +191,7 @@ func (s *Syncer) SyncRepository(repoName string) error {
 		return err
 	}
 
-	s.ensureForgejoBackups(repoName)
+	s.ensureForgejoRepositories(repoName)
 
 	// Fetch all remotes
 	fmt.Printf("Fetching updates from all remotes...\n")
@@ -204,23 +240,27 @@ func (s *Syncer) SyncRepository(repoName string) error {
 	return nil
 }
 
-// ensureForgejoBackups creates (or validates) the backup repository on each
-// active Forgejo backup organization before syncing. It builds the client
+// ensureForgejoRepositories creates (or validates) the repository on each
+// active Forgejo organization before syncing. It builds the client
 // through forgejoBackupClientFactory rather than a concrete forge package,
 // so this package depends only on forge.PublicRepoEnsurer. If no factory was
 // injected (e.g. a Syncer built without cli's wiring), this is a no-op,
 // matching dry-run behavior of issuing no API mutations.
-func (s *Syncer) ensureForgejoBackups(repoName string) {
+func (s *Syncer) ensureForgejoRepositories(repoName string) {
 	if s.dryRun || s.forgejoBackupClientFactory == nil {
 		return
 	}
 	for i := range s.config.Organizations {
 		org := &s.config.Organizations[i]
-		if !org.IsForgejo() || !s.backupActive(s.getRemoteName(org)) {
+		if !org.IsForgejo() || !s.organizationActive(org) {
 			continue
 		}
 		client := s.forgejoBackupClientFactory(org)
 		if err := client.EnsurePublicRepo(repoName, "Mirror of "+repoName); err != nil {
+			if org.Optional {
+				fmt.Printf("Warning: Forgejo API unavailable for %s; continuing with Git sync: %v\n", s.getRemoteName(org), err)
+				continue
+			}
 			s.disableBackupForSession(s.getRemoteName(org), err)
 		}
 	}
@@ -367,12 +407,12 @@ func (s *Syncer) fetchAll() error {
 			fmt.Printf("Skipping fetch from disabled remote %s\n", remote)
 			continue
 		}
+		org, exists := allOrgsMap[remote]
+		if exists && !s.organizationActive(org) {
+			continue
+		}
 		// Check if this remote is a backup location
-		if org, exists := allOrgsMap[remote]; exists && org.BackupLocation {
-			if !s.backupActive(remote) {
-				// Silently skip - don't even print a message since backup is not enabled
-				continue
-			}
+		if exists && org.BackupLocation {
 			// Even when backup is enabled, we don't fetch from backup locations
 			fmt.Printf("Skipping fetch from backup location %s\n", remote)
 			continue
@@ -380,6 +420,10 @@ func (s *Syncer) fetchAll() error {
 
 		fmt.Printf("Fetching %s\n", remote)
 		if err := fetchRemote(s.repoPath(), remote); err != nil {
+			if exists && org.Optional {
+				s.disableOptionalForSession(remote, err)
+				continue
+			}
 			return err
 		}
 	}
@@ -471,6 +515,9 @@ func (s *Syncer) checkoutBranch(branch string) error {
 	orgs := s.syncOrgs()
 	for i := range orgs {
 		org := &orgs[i]
+		if !s.organizationActive(org) {
+			continue
+		}
 		remoteName := s.getRemoteName(org)
 
 		if s.remoteBranchExists(remoteName, branch) {
@@ -575,7 +622,7 @@ func (s *Syncer) filterBackupBranches(output []byte) []byte {
 	orgs := s.syncOrgs()
 	for i := range orgs {
 		remoteName := s.getRemoteName(&orgs[i])
-		activeRemotes[remoteName] = true
+		activeRemotes[remoteName] = s.organizationActive(&orgs[i])
 	}
 
 	for _, line := range lines {

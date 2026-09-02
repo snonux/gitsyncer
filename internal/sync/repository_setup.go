@@ -58,8 +58,7 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
-		// Skip backup locations unless backup sync is currently active.
-		if org.BackupLocation && !s.backupActive(remoteName) {
+		if !s.organizationActive(org) {
 			continue
 		}
 
@@ -81,8 +80,7 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
-		// Skip backup locations unless backup sync is currently active.
-		if org.BackupLocation && !s.backupActive(remoteName) {
+		if !s.organizationActive(org) {
 			continue
 		}
 
@@ -96,7 +94,7 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 		} else if org.IsForgejo() {
 			expected := s.expectedRemoteURL(org)
 			if err := verifyRemoteURLs(repoPath, remoteName, expected); err != nil {
-				s.disableBackupForSession(remoteName, err)
+				s.disableOrganizationForSession(org, err)
 				continue
 			}
 		}
@@ -131,8 +129,7 @@ func (s *Syncer) getRemotesMap() map[string]*config.Organization {
 		org := &orgs[i]
 		remoteName := s.getRemoteName(org)
 
-		// Skip backup locations unless backup sync is currently active.
-		if org.BackupLocation && !s.backupActive(remoteName) {
+		if !s.organizationActive(org) {
 			continue
 		}
 
