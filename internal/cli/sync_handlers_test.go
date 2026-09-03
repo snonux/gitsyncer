@@ -3,8 +3,10 @@ package cli
 import (
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/state"
 )
 
 func TestShouldEnableBackupSync_FullSyncImplicitlyEnablesBackup(t *testing.T) {
@@ -95,5 +97,33 @@ func TestHandleSyncAll_ContinuesAfterPerRepoFailure(t *testing.T) {
 	}
 	if strings.Contains(out, "Successfully synced all") {
 		t.Fatalf("did not expect the all-succeeded message when repos failed, got:\n%s", out)
+	}
+}
+
+// TestHandleSync_ExplicitRepoIgnoresDailyInterval is a regression for the
+// case where `gitsyncer sync repo NAME` skipped because the repo had been
+// synced within 24 hours. Naming a repo is an explicit request to sync it
+// now, so the daily interval (and --throttle) must not apply.
+func TestHandleSync_ExplicitRepoIgnoresDailyInterval(t *testing.T) {
+	workDir := t.TempDir()
+	st := &state.State{}
+	st.SetLastRepoSync("tasksamurai", time.Now())
+	if err := state.NewManager(workDir).Save(st); err != nil {
+		t.Fatalf("save state: %v", err)
+	}
+
+	var got int
+	out := captureStdout(t, func() {
+		got = HandleSync(&config.Config{}, &Flags{
+			WorkDir:  workDir,
+			SyncRepo: "tasksamurai",
+		})
+	})
+
+	if strings.Contains(out, "Skipping tasksamurai") {
+		t.Fatalf("explicit sync repo skipped by daily interval, got:\n%s", out)
+	}
+	if got != 1 {
+		t.Fatalf("HandleSync() = %d, want 1 (sync attempted and failed with no orgs)", got)
 	}
 }

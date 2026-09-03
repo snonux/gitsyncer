@@ -1,6 +1,7 @@
 package sync
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -420,6 +421,11 @@ func (s *Syncer) fetchAll() error {
 
 		fmt.Printf("Fetching %s\n", remote)
 		if err := fetchRemote(s.repoPath(), remote); err != nil {
+			// Tag conflicts abort the whole sync even for optional peers:
+			// skipping the peer would leave other forges without its commits.
+			if errors.Is(err, ErrTagConflict) {
+				return err
+			}
 			if exists && org.Optional {
 				s.disableOptionalForSession(remote, err)
 				continue

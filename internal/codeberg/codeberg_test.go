@@ -2,6 +2,7 @@ package codeberg
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -599,4 +600,61 @@ func TestListUserPublicRepos_PaginatesFiltersAndUsesUserEndpoint(t *testing.T) {
 		t.Fatalf("ListUserPublicRepos() error = %v", err)
 	}
 	assertKeptRepoNames(t, repos)
+}
+
+func TestGetReleases_PaginatesUntilShortPage(t *testing.T) {
+	t.Parallel()
+
+	page1 := make([]codebergRelease, codebergReleasesPerPage)
+	for i := range page1 {
+		page1[i] = codebergRelease{TagName: "v1." + strconv.Itoa(i) + ".0"}
+	}
+	page2 := []codebergRelease{{TagName: "v0.10.0"}}
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/repos/snonux/tasksamurai/releases" {
+			t.Errorf("path = %q", r.URL.Path)
+		}
+		if got := r.URL.Query().Get("limit"); got != strconv.Itoa(codebergReleasesPerPage) {
+			t.Errorf("limit = %q, want %d", got, codebergReleasesPerPage)
+		}
+		switch r.URL.Query().Get("page") {
+		case "1":
+			_ = json.NewEncoder(w).Encode(page1)
+		case "2":
+			_ = json.NewEncoder(w).Encode(page2)
+		default:
+			t.Errorf("unexpected page %q", r.URL.Query().Get("page"))
+			w.WriteHeader(http.StatusInternalServerError)
+		}
+	}))
+	defer server.Close()
+
+	client := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo", forge.OwnerTypeUser)
+	got, err := client.GetReleases("snonux", "tasksamurai")
+	if err != nil {
+		t.Fatalf("GetReleases() error = %v", err)
+	}
+	if len(got) != codebergReleasesPerPage+1 {
+		t.Fatalf("GetReleases() returned %d tags, want %d", len(got), codebergReleasesPerPage+1)
+	}
+	if got[len(got)-1] != "v0.10.0" {
+		t.Fatalf("expected older tag from page 2, got %q", got[len(got)-1])
+	}
+}
+
+func TestCreateRelease_AlreadyExistsReturnsSentinel(t *testing.T) {
+	t.Parallel()
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusConflict)
+		_, _ = w.Write([]byte(`{"message":"Release already exists"}`))
+	}))
+	defer server.Close()
+
+	client := NewGiteaClient(server.URL, "secret", "snonux", "Forgejo", forge.OwnerTypeUser)
+	err := client.CreateRelease("snonux", "tasksamurai", "v0.10.0", "notes")
+	if !errors.Is(err, forge.ErrReleaseAlreadyExists) {
+		t.Fatalf("CreateRelease() error = %v, want ErrReleaseAlreadyExists", err)
+	}
 }

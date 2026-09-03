@@ -1,9 +1,16 @@
 package forge
 
 import (
+	"errors"
 	"fmt"
 	"net/http"
 )
+
+// ErrReleaseAlreadyExists is returned by ReleaseClient.CreateRelease when the
+// forge already has a release for that tag. Callers treat it as a skip, not a
+// failure: listing can miss older tags when pagination is incomplete, and a
+// concurrent create can win the race.
+var ErrReleaseAlreadyExists = errors.New("release already exists")
 
 // OwnerType identifies whether a repository owner is a user or organization.
 type OwnerType string

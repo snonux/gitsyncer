@@ -94,8 +94,11 @@ func (s *Syncer) setupExistingRepository(repoPath string) error {
 		} else if org.IsForgejo() {
 			expected := s.expectedRemoteURL(org)
 			if err := verifyRemoteURLs(repoPath, remoteName, expected); err != nil {
-				s.disableOrganizationForSession(org, err)
-				continue
+				fmt.Printf("Updating stale Forgejo remote %s to %s\n", remoteName, expected)
+				if setErr := setRemoteURLs(repoPath, remoteName, expected); setErr != nil {
+					s.disableOrganizationForSession(org, setErr)
+					continue
+				}
 			}
 		}
 	}
@@ -117,6 +120,19 @@ func verifyRemoteURLs(repoPath, remoteName, expected string) error {
 				return fmt.Errorf("Forgejo remote %s URL mismatch: configured %q, expected %q", remoteName, configured, expected)
 			}
 		}
+	}
+	return nil
+}
+
+// setRemoteURLs rewrites both fetch and push URLs for remoteName. Used to
+// migrate older Forgejo remotes that were stored without forgejo_owner in the
+// path (…/repo.git) to the configured owner path (…/owner/repo.git).
+func setRemoteURLs(repoPath, remoteName, url string) error {
+	if output, err := exec.Command("git", "-C", repoPath, "remote", "set-url", remoteName, url).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to set fetch URL for %s: %w\n%s", remoteName, err, output)
+	}
+	if output, err := exec.Command("git", "-C", repoPath, "remote", "set-url", "--push", remoteName, url).CombinedOutput(); err != nil {
+		return fmt.Errorf("failed to set push URL for %s: %w\n%s", remoteName, err, output)
 	}
 	return nil
 }

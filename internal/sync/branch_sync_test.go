@@ -2,6 +2,7 @@ package sync
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -196,6 +197,57 @@ func TestFetchAll_OptionalPeerFailureDoesNotFailSync(t *testing.T) {
 	}
 	if syncer.organizationActive(&org) {
 		t.Fatal("expected failed optional peer to be disabled")
+	}
+}
+
+func TestFetchAll_TagConflictAbortsEvenForOptionalPeer(t *testing.T) {
+	root := t.TempDir()
+	workDir := filepath.Join(root, "work")
+	if err := os.MkdirAll(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	remotePath := filepath.Join(root, "forgejo.git")
+	runGit(t, root, "init", "--bare", remotePath)
+
+	seed := filepath.Join(root, "seed")
+	runGit(t, root, "clone", remotePath, seed)
+	runGit(t, seed, "config", "user.name", "GitSyncer Test")
+	runGit(t, seed, "config", "user.email", "gitsyncer@example.test")
+	runGit(t, seed, "checkout", "-b", "main")
+	runGit(t, seed, "commit", "--allow-empty", "-m", "first")
+	runGit(t, seed, "tag", "v0.18.2")
+	runGit(t, seed, "push", "origin", "main", "--tags")
+
+	repoPath := filepath.Join(workDir, "demo")
+	runGit(t, root, "clone", remotePath, repoPath)
+	runGit(t, repoPath, "remote", "rename", "origin", "forgejo")
+
+	// Move the same tag to a different commit on the remote only.
+	runGit(t, seed, "commit", "--allow-empty", "-m", "second")
+	runGit(t, seed, "tag", "-f", "v0.18.2")
+	runGit(t, seed, "push", "origin", "main")
+	runGit(t, seed, "push", "--force", "origin", "v0.18.2")
+
+	org := config.Organization{Host: "git@forgejo", Optional: true}
+	syncer := &Syncer{
+		config:   &config.Config{Organizations: []config.Organization{org}},
+		workDir:  workDir,
+		repoName: "demo",
+	}
+	// Force the remote name that getRemoteName would produce for Host git@forgejo.
+	if syncer.getRemoteName(&org) != "forgejo" {
+		t.Fatalf("test setup assumes remote name forgejo, got %q", syncer.getRemoteName(&org))
+	}
+
+	err := syncer.fetchAll()
+	if err == nil {
+		t.Fatal("expected fetchAll to abort on tag conflict")
+	}
+	if !errors.Is(err, ErrTagConflict) {
+		t.Fatalf("fetchAll() error = %v, want ErrTagConflict", err)
+	}
+	if !syncer.organizationActive(&org) {
+		t.Fatal("tag conflict must abort without silently disabling the optional peer")
 	}
 }
 

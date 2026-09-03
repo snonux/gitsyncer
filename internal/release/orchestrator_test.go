@@ -5,6 +5,7 @@ import (
 	"testing"
 
 	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
 )
 
 // alwaysConfirm and neverConfirm are ConfirmFunc test doubles standing in
@@ -394,6 +395,41 @@ func TestProcessCreateReleasesForTarget_CreateErrorDoesNotStopOtherTags(t *testi
 
 	if len(client.created) != 2 || client.created[0] != "v1.0.0" || client.created[1] != "v1.1.0" {
 		t.Fatalf("expected both releases to be attempted despite first failure, got %#v", client.created)
+	}
+}
+
+func TestProcessCreateReleasesForTarget_AlreadyExistsIsNotFatal(t *testing.T) {
+	cfg := &config.Config{}
+	opts := Options{AutoCreateReleases: true}
+	inspector := NewGitInspector()
+	notes := &fakeReleaseNotesGenerator{}
+	client := &fakeReleaseClient{
+		createErrs: map[string]error{"v0.10.0": forge.ErrReleaseAlreadyExists},
+	}
+	target := Target{
+		Name:   "GitHub",
+		Owner:  "owner",
+		Client: client,
+	}
+
+	processCreateReleasesForTarget(
+		cfg,
+		opts,
+		alwaysConfirm,
+		inspector,
+		notes,
+		target,
+		"demo",
+		"/definitely/not/a/repo",
+		[]string{"v0.10.0", "v0.11.0"},
+		[]string{"v0.10.0", "v0.11.0"},
+		"/tmp/cache.json",
+		map[string]string{},
+		&[]string{},
+	)
+
+	if len(client.created) != 2 || client.created[0] != "v0.10.0" || client.created[1] != "v0.11.0" {
+		t.Fatalf("expected create to continue after already-exists, got %#v", client.created)
 	}
 }
 

@@ -10,12 +10,14 @@ package release
 // Flags into Options and delegates here.
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forge"
 	"github.com/snonux/gitsyncer/internal/version"
 )
 
@@ -395,6 +397,10 @@ func createReleaseForTag(
 	}
 
 	if err := target.Client.CreateRelease(target.Owner, repoName, tag, releaseNotes); err != nil {
+		if errors.Is(err, forge.ErrReleaseAlreadyExists) {
+			fmt.Printf("  %s release for tag %s already exists, skipping\n", target.Name, tag)
+			return
+		}
 		fmt.Printf("  Error creating %s release: %v\n", target.Name, err)
 	} else {
 		fmt.Printf("  Created %s release for tag %s\n", target.Name, tag)

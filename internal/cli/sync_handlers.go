@@ -19,14 +19,17 @@ func shouldEnableBackupSync(flags *Flags) bool {
 	return flags.Backup || flags.FullSync || flags.SyncCodebergPublic || flags.SyncGitHubPublic
 }
 
-// HandleSync handles syncing a single repository
+// HandleSync handles syncing a single repository. Naming a repo on the
+// command line (`gitsyncer sync repo NAME`) always syncs it: the daily
+// interval and --throttle windows only apply to batch commands, not to an
+// explicit request.
 func HandleSync(cfg *config.Config, flags *Flags) int {
 	stateManager, syncState, err := loadSyncState(flags.WorkDir)
 	if err != nil {
 		fmt.Printf("Warning: Failed to load sync state: %v\n", err)
 	}
 
-	decision := evaluateSyncPolicy(flags.SyncRepo, flags.WorkDir, syncState, flags.DryRun, flags.Force, flags.Throttle)
+	decision := evaluateSyncPolicy(flags.SyncRepo, flags.WorkDir, syncState, flags.DryRun, true, flags.Throttle)
 	if decision.Message != "" {
 		fmt.Println(decision.Message)
 	}

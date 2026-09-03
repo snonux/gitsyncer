@@ -21,44 +21,60 @@ type Release struct {
 	Body    string `json:"body"`
 }
 
-const githubAccept = "application/vnd.github.v3+json"
+const (
+	githubAccept          = "application/vnd.github.v3+json"
+	githubReleasesPerPage = 100
+)
 
 // GetReleases fetches the tag names of existing releases for the repository.
-// A 404 (repository missing on GitHub) is normalized to an empty result so the
-// caller can treat it as "no releases yet" instead of an error. No token is
-// required: when the client has no token the request is sent unauthenticated,
-// which still lists releases for public repositories (matching GitHub's
-// unauthenticated rate-limited access).
+// GitHub paginates this endpoint (100 per page here; the API default is 30),
+// so every page is walked until a short page. A 404 (repository missing) is
+// normalized to an empty result so the caller can treat it as "no releases
+// yet". No token is required: when the client has no token the request is
+// sent unauthenticated, which still lists releases for public repositories.
 func (c *Client) GetReleases(owner, repo string) ([]string, error) {
-	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases", owner, repo)
+	var tags []string
+	for page := 1; ; page++ {
+		pageTags, done, err := c.getReleasesPage(owner, repo, page)
+		if err != nil {
+			return nil, err
+		}
+		tags = append(tags, pageTags...)
+		if done {
+			return tags, nil
+		}
+	}
+}
+
+func (c *Client) getReleasesPage(owner, repo string, page int) (tags []string, done bool, err error) {
+	url := fmt.Sprintf("https://api.github.com/repos/%s/%s/releases?page=%d&per_page=%d", owner, repo, page, githubReleasesPerPage)
 	headers := map[string]string{"Accept": githubAccept}
-	// Add GitHub token if available
 	if c.token != "" {
 		headers["Authorization"] = "Bearer " + c.token
 	}
 
 	result, err := httpclient.DoJSON(http.MethodGet, url, headers, nil)
 	if err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
 	if result.StatusCode == http.StatusNotFound {
-		return []string{}, nil
+		return nil, true, nil
 	}
 	if result.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("GitHub API error: %s - %s", result.Status, string(result.Body))
+		return nil, true, fmt.Errorf("GitHub API error: %s - %s", result.Status, string(result.Body))
 	}
 
 	var releases []Release
 	if err := json.Unmarshal(result.Body, &releases); err != nil {
-		return nil, err
+		return nil, true, err
 	}
 
-	tags := make([]string, 0, len(releases))
+	tags = make([]string, 0, len(releases))
 	for _, release := range releases {
 		tags = append(tags, release.TagName)
 	}
-	return tags, nil
+	return tags, len(releases) < githubReleasesPerPage, nil
 }
 
 // CreateRelease creates a release for the given tag on GitHub.
@@ -94,10 +110,30 @@ func (c *Client) CreateRelease(owner, repo, tag, releaseNotes string) error {
 		return err
 	}
 
-	if result.StatusCode != http.StatusCreated {
-		return fmt.Errorf("failed to create GitHub release: %s - %s", result.Status, string(result.Body))
+	if result.StatusCode == http.StatusCreated {
+		return nil
 	}
-	return nil
+	if releaseAlreadyExists(result.StatusCode, result.Body) {
+		return forge.ErrReleaseAlreadyExists
+	}
+	return fmt.Errorf("failed to create GitHub release: %s - %s", result.Status, string(result.Body))
+}
+
+func releaseAlreadyExists(status int, body []byte) bool {
+	if status != http.StatusUnprocessableEntity {
+		return false
+	}
+
+	var errResp ErrorResponse
+	if err := json.Unmarshal(body, &errResp); err != nil {
+		return false
+	}
+	for _, e := range errResp.Errors {
+		if e.Resource == "Release" && e.Code == "already_exists" && e.Field == "tag_name" {
+			return true
+		}
+	}
+	return false
 }
 
 // UpdateRelease updates the body of an existing release for the given tag on GitHub.

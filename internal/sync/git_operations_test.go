@@ -37,40 +37,41 @@ func TestAddRemote_ForgejoUsesOwnerAndSSHURL(t *testing.T) {
 	}
 }
 
-func TestSetupExistingRepository_DisablesForgejoRemoteWithWrongURL(t *testing.T) {
+func TestSetupExistingRepository_RewritesForgejoRemoteWithWrongURL(t *testing.T) {
 	repoPath := t.TempDir()
 	if output, err := exec.Command("git", "init", repoPath).CombinedOutput(); err != nil {
 		t.Fatalf("git init: %v\n%s", err, output)
 	}
 	org := config.Organization{
 		Host: "ssh://git@code.example:2022", ForgejoAPIBase: "https://code.example/api/v1",
-		ForgejoOwner: "right-owner", BackupLocation: true,
+		ForgejoOwner: "right-owner", Optional: true,
 	}
 	syncer := New(&config.Config{Organizations: []config.Organization{org}}, filepath.Dir(repoPath))
 	syncer.repoName = filepath.Base(repoPath)
-	syncer.SetBackupEnabled(true)
 	remoteName := syncer.getRemoteName(&org)
-	wrongURL := "https://code.example/wrong-owner/demo.git"
+	wrongURL := "ssh://git@code.example:2022/" + syncer.repoName + ".git"
 	expectedURL := syncer.expectedRemoteURL(&org)
-	if output, err := exec.Command("git", "-C", repoPath, "remote", "add", remoteName, expectedURL).CombinedOutput(); err != nil {
+	if output, err := exec.Command("git", "-C", repoPath, "remote", "add", remoteName, wrongURL).CombinedOutput(); err != nil {
 		t.Fatalf("git remote add: %v\n%s", err, output)
-	}
-	if output, err := exec.Command("git", "-C", repoPath, "remote", "set-url", "--push", remoteName, wrongURL).CombinedOutput(); err != nil {
-		t.Fatalf("git remote set-url --push: %v\n%s", err, output)
 	}
 
 	if err := syncer.setupExistingRepository(repoPath); err != nil {
 		t.Fatalf("setupExistingRepository() error = %v", err)
 	}
-	if syncer.backupActive(remoteName) {
-		t.Fatal("Forgejo backup with stale URL remained active")
+	if !syncer.organizationActive(&org) {
+		t.Fatal("expected Forgejo peer to stay active after URL rewrite")
 	}
-	output, err := exec.Command("git", "-C", repoPath, "remote", "get-url", "--push", remoteName).Output()
-	if err != nil {
-		t.Fatalf("git remote get-url: %v", err)
-	}
-	if got := strings.TrimSpace(string(output)); got != wrongURL {
-		t.Fatalf("unsafe remote was mutated: got %q, want %q", got, wrongURL)
+	for _, args := range [][]string{
+		{"remote", "get-url", remoteName},
+		{"remote", "get-url", "--push", remoteName},
+	} {
+		output, err := exec.Command("git", append([]string{"-C", repoPath}, args...)...).Output()
+		if err != nil {
+			t.Fatalf("git %v: %v", args, err)
+		}
+		if got := strings.TrimSpace(string(output)); got != expectedURL {
+			t.Fatalf("git %v = %q, want %q", args, got, expectedURL)
+		}
 	}
 }
 

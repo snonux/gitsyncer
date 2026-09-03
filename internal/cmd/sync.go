@@ -30,8 +30,10 @@ in sync between GitHub, Codeberg, and other configured platforms.`,
 var syncRepoCmd = &cobra.Command{
 	Use:   "repo [name]",
 	Short: "Sync a specific repository",
-	Long:  `Synchronize a specific repository across all configured organizations.`,
-	Args:  cobra.ExactArgs(1),
+	Long: `Synchronize a specific repository across all configured organizations.
+Always runs immediately; the daily sync interval and --throttle windows
+apply only to batch commands such as sync all and sync bidirectional.`,
+	Args: cobra.ExactArgs(1),
 	Example: `  # Sync a single repository (AI release notes enabled by default)
   gitsyncer sync repo myproject
   
@@ -41,9 +43,6 @@ var syncRepoCmd = &cobra.Command{
   # Preview what would be synced
   gitsyncer sync repo myproject --dry-run
 
-  # Override sync interval checks
-  gitsyncer sync repo myproject --force
-  
   # Sync without AI-generated release notes
   gitsyncer sync repo myproject --no-ai-release-notes
   

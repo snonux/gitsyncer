@@ -32,8 +32,54 @@ type repoReleaseSettings struct {
 	HasReleases bool `json:"has_releases"`
 }
 
+const codebergReleasesPerPage = 50
+
 func (c *Client) releasesURL(owner, repo string) string {
 	return fmt.Sprintf("%s/repos/%s/%s/releases", c.baseURL, owner, repo)
+}
+
+// GetReleases fetches the tag names of existing releases for the repository.
+// Gitea paginates this endpoint (default page size is 10), so every page is
+// walked until a short page. A 404 (repository missing) is normalized to an
+// empty result so the caller can treat it as "no releases yet".
+func (c *Client) GetReleases(owner, repo string) ([]string, error) {
+	var tags []string
+	for page := 1; ; page++ {
+		pageTags, done, err := c.getReleasesPage(owner, repo, page)
+		if err != nil {
+			return nil, err
+		}
+		tags = append(tags, pageTags...)
+		if done {
+			return tags, nil
+		}
+	}
+}
+
+func (c *Client) getReleasesPage(owner, repo string, page int) (tags []string, done bool, err error) {
+	url := fmt.Sprintf("%s?page=%d&limit=%d", c.releasesURL(owner, repo), page, codebergReleasesPerPage)
+	result, err := httpclient.DoJSON(http.MethodGet, url, c.authHeaders(false), nil)
+	if err != nil {
+		return nil, true, err
+	}
+
+	if result.StatusCode == http.StatusNotFound {
+		return nil, true, nil
+	}
+	if result.StatusCode != http.StatusOK {
+		return nil, true, fmt.Errorf("%s API error: %s - %s", c.service, result.Status, string(result.Body))
+	}
+
+	var releases []codebergRelease
+	if err := json.Unmarshal(result.Body, &releases); err != nil {
+		return nil, true, err
+	}
+
+	tags = make([]string, 0, len(releases))
+	for _, release := range releases {
+		tags = append(tags, release.TagName)
+	}
+	return tags, len(releases) < codebergReleasesPerPage, nil
 }
 
 func (c *Client) repoURL(owner, repo string) string {
@@ -55,35 +101,6 @@ func (c *Client) authHeaders(contentType bool) map[string]string {
 		headers["Content-Type"] = "application/json"
 	}
 	return headers
-}
-
-// GetReleases fetches the tag names of existing releases for the repository.
-// A 404 (repository missing on Codeberg) is normalized to an empty result so
-// the caller can treat it as "no releases yet" instead of an error.
-func (c *Client) GetReleases(owner, repo string) ([]string, error) {
-	url := c.releasesURL(owner, repo)
-	result, err := httpclient.DoJSON(http.MethodGet, url, c.authHeaders(false), nil)
-	if err != nil {
-		return nil, err
-	}
-
-	if result.StatusCode == http.StatusNotFound {
-		return []string{}, nil
-	}
-	if result.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("%s API error: %s - %s", c.service, result.Status, string(result.Body))
-	}
-
-	var releases []codebergRelease
-	if err := json.Unmarshal(result.Body, &releases); err != nil {
-		return nil, err
-	}
-
-	tags := make([]string, 0, len(releases))
-	for _, release := range releases {
-		tags = append(tags, release.TagName)
-	}
-	return tags, nil
 }
 
 // EnsureReleasesEnabled ensures that the repository has the Releases feature
@@ -200,6 +217,8 @@ func (c *Client) CreateRelease(owner, repo, tag, releaseNotes string) error {
 		fmt.Printf("This is a known issue with some old tags. The tag exists but cannot have a release created via API.\n")
 		fmt.Printf("You may need to create this release manually through the %s web interface.\n\n", c.service)
 		return fmt.Errorf("cannot create release for tag %s due to Gitea API limitation", tag)
+	case status == http.StatusConflict:
+		return forge.ErrReleaseAlreadyExists
 	default:
 		return fmt.Errorf("failed to create %s release: %s - %s", c.service, statusText, string(respBody))
 	}

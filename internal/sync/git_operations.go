@@ -124,34 +124,39 @@ func getRemotesList(repoPath string) (map[string]bool, error) {
 	return remotes, nil
 }
 
-// fetchRemote fetches from a single remote with error handling
+// ErrTagConflict is returned when fetching tags would overwrite a local tag
+// with a different commit. Sync aborts so the conflict can be resolved
+// manually instead of skipping a forge and leaving peers diverged.
+var ErrTagConflict = errors.New("tag conflict")
+
+// fetchRemote fetches from a single remote with error handling.
+// A tag conflict (same tag name, different commits) is a hard failure:
+// continuing would skip that forge and push an incomplete merge elsewhere.
 func fetchRemote(repoPath, remote string) error {
 	cmd := gitCommand(repoPath, "fetch", remote, "--prune", "--tags")
 	output, err := cmd.CombinedOutput()
-
-	if err != nil {
-		// Check if it's a tag conflict error
-		if bytes.Contains(output, []byte("would clobber existing tag")) {
-			return handleTagConflict(repoPath, remote, output)
-		}
-
-		// Check if it's because the repository doesn't exist
-		if isRepositoryMissing(string(output)) {
-			fmt.Printf("  Warning: Remote repository %s does not exist yet\n", remote)
-			return nil // Not an error, just skip
-		}
-		return fmt.Errorf("failed to fetch from %s: %w\n%s", remote, err, string(output))
+	if err == nil {
+		return nil
 	}
-	return nil
+
+	if bytes.Contains(output, []byte("would clobber existing tag")) {
+		return fmt.Errorf("%w: %s", ErrTagConflict, tagConflictDetails(repoPath, remote, output))
+	}
+
+	if isRepositoryMissing(string(output)) {
+		fmt.Printf("  Warning: Remote repository %s does not exist yet\n", remote)
+		return nil
+	}
+	return fmt.Errorf("failed to fetch from %s: %w\n%s", remote, err, string(output))
 }
 
-// handleTagConflict provides a detailed error message for tag conflicts.
-func handleTagConflict(repoPath, remote string, output []byte) error {
+// tagConflictDetails builds a human-readable description of which tags
+// conflicted during fetch.
+func tagConflictDetails(repoPath, remote string, output []byte) string {
 	var conflictDetails strings.Builder
 	conflictDetails.WriteString("tag conflict detected while fetching from remote: ")
 	conflictDetails.WriteString(remote)
 
-	// Regex to find tag names from error output
 	re := regexp.MustCompile(`! \[rejected\]\s+([^\s]+)`)
 	matches := re.FindAllSubmatch(output, -1)
 
@@ -164,7 +169,7 @@ func handleTagConflict(repoPath, remote string, output []byte) error {
 		}
 	}
 
-	return errors.New(conflictDetails.String())
+	return conflictDetails.String()
 }
 
 // getTagCommitHash retrieves the commit hash for a given tag, either locally or from a remote.
