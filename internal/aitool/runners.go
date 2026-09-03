@@ -19,7 +19,7 @@ func (r opencodeRunner) Run(prompt, stdin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ollama", "launch", "opencode", "--model", "glm-5.2:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
+	cmd := exec.CommandContext(ctx, "ollama", "launch", "opencode", "--model", "glm-5.3:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
 	cmd.Dir = r.dir
 	cmd.WaitDelay = waitDelay
 

@@ -57,7 +57,7 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
-		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.2:cloud)
+		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.3:cloud)
 		cache:   NewSummaryCache(workDir),
 		linker:  NewProjectLinker(cfg),
 	}
