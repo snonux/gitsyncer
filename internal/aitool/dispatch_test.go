@@ -16,10 +16,20 @@ func TestChain(t *testing.T) {
 	}{
 		{
 			name: "default chain when empty",
-			want: []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
+			want: []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
 		},
 		{
-			name:      "default chain when opencode",
+			name:      "default chain when pi",
+			preferred: "pi",
+			want:      []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
+		},
+		{
+			name:      "openrouter alias uses pi chain",
+			preferred: "openrouter",
+			want:      []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
+		},
+		{
+			name:      "opencode chain",
 			preferred: "opencode",
 			want:      []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
 		},
@@ -85,6 +95,18 @@ func TestIsAvailable_OpencodeUsesOllamaBinary(t *testing.T) {
 
 	if IsAvailable(ToolOpencode, fakeLookPath("opencode")) {
 		t.Fatal("expected opencode to be unavailable when only opencode binary exists")
+	}
+}
+
+func TestIsAvailable_PiUsesPiBinary(t *testing.T) {
+	t.Parallel()
+
+	if !IsAvailable(ToolPi, fakeLookPath("pi")) {
+		t.Fatal("expected pi to be available when pi exists")
+	}
+
+	if IsAvailable(ToolPi, fakeLookPath("ollama")) {
+		t.Fatal("expected pi to be unavailable when only ollama exists")
 	}
 }
 

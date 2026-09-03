@@ -32,11 +32,14 @@ func withFakeBinary(t *testing.T, name, script string) {
 }
 
 func TestRunners_SuccessReturnsTrimmedOutput(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "test-key")
+
 	tests := []struct {
 		name   string
 		binary string
 		tool   Tool
 	}{
+		{"pi", "pi", ToolPi},
 		{"opencode", "ollama", ToolOpencode},
 		{"hexai", "hexai", ToolHexAI},
 		{"claude", "claude", ToolClaude},
@@ -233,7 +236,38 @@ func TestRegistry_CoversAllChainTools(t *testing.T) {
 		}
 	}
 
-	if !reflect.DeepEqual(map[Tool]bool{ToolOpencode: true, ToolHexAI: true, ToolClaude: true, ToolAmp: true}, all) {
+	if !reflect.DeepEqual(map[Tool]bool{ToolPi: true, ToolOpencode: true, ToolHexAI: true, ToolClaude: true, ToolAmp: true}, all) {
 		t.Fatalf("unexpected tool set from Chain(): %#v", all)
+	}
+}
+
+func TestPi_MissingAPIKeyFailsImmediately(t *testing.T) {
+	t.Setenv("OPENROUTER_API_KEY", "")
+	withFakeBinary(t, "pi", "sleep 5; echo too-late")
+
+	start := time.Now()
+	_, err := NewRunner(ToolPi, "").Run("prompt", "")
+	if err == nil {
+		t.Fatal("expected error when OPENROUTER_API_KEY is unset")
+	}
+	if elapsed := time.Since(start); elapsed >= time.Second {
+		t.Fatalf("missing API key took %s, want an immediate skip", elapsed)
+	}
+	if !strings.Contains(err.Error(), "OPENROUTER_API_KEY") {
+		t.Fatalf("Run() error = %v, want OPENROUTER_API_KEY mentioned", err)
+	}
+}
+
+func TestIsInBandToolError(t *testing.T) {
+	t.Parallel()
+
+	if !isInBandToolError("Error: boom") {
+		t.Fatal("expected Error: prefix to be in-band")
+	}
+	if !isInBandToolError("out of credits for glm") {
+		t.Fatal("expected credit exhaustion to be in-band")
+	}
+	if isInBandToolError("Release notes about quotas in the product") {
+		t.Fatal("did not expect a normal notes sentence to be in-band")
 	}
 }

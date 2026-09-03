@@ -5,6 +5,7 @@ import "os/exec"
 type Tool string
 
 const (
+	ToolPi       Tool = "pi"
 	ToolOpencode Tool = "opencode"
 	ToolHexAI    Tool = "hexai"
 	ToolClaude   Tool = "claude"
@@ -15,7 +16,9 @@ type LookPathFunc func(file string) (string, error)
 
 func Chain(preferred string) []Tool {
 	switch preferred {
-	case "", string(ToolOpencode):
+	case "", string(ToolPi), "openrouter", "pi-openrouter":
+		return []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
+	case string(ToolOpencode):
 		return []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
 	case string(ToolHexAI):
 		return []Tool{ToolHexAI, ToolClaude, ToolAmp}
@@ -66,6 +69,8 @@ func IsAvailable(tool Tool, lookPath LookPathFunc) bool {
 
 func availabilityBinary(tool Tool) (string, bool) {
 	switch tool {
+	case ToolPi:
+		return "pi", true
 	case ToolOpencode:
 		return "ollama", true
 	case ToolHexAI, ToolClaude, ToolAmp:

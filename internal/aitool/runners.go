@@ -8,6 +8,44 @@ import (
 	"strings"
 )
 
+const (
+	// piOpenRouterModel is the same OpenRouter model as hypr's
+	// pi-openrouter-qwen38-27b abbreviation: pi --provider openrouter
+	// --model qwen/qwen3.8-27b, authenticated via OPENROUTER_API_KEY.
+	piOpenRouterProvider = "openrouter"
+	piOpenRouterModel    = "qwen/qwen3.8-27b"
+)
+
+// piRunner drives the pi CLI against OpenRouter. Prompt and stdin are
+// combined into one -p argument; tools and session persistence are off so a
+// release-notes or showcase prompt cannot mutate the repo or leave sessions.
+type piRunner struct{ dir string }
+
+func (r piRunner) Run(prompt, stdin string) (string, error) {
+	fmt.Printf("  Running pi --provider %s --model %s ...\n", piOpenRouterProvider, piOpenRouterModel)
+
+	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) == "" {
+		return "", fmt.Errorf("OPENROUTER_API_KEY is not set")
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
+	defer cancel()
+
+	cmd := exec.CommandContext(ctx, "pi",
+		"--provider", piOpenRouterProvider,
+		"--model", piOpenRouterModel,
+		"--print",
+		"--no-session",
+		"--no-tools",
+		"--thinking", "off",
+		combinedPrompt(prompt, stdin),
+	)
+	cmd.Dir = r.dir
+	cmd.WaitDelay = waitDelay
+
+	return runExec(ctx, cmd, "pi")
+}
+
 // opencodeRunner drives ollama's opencode agent. It only accepts a single
 // positional prompt (no piped-stdin channel in our usage), so prompt and
 // stdin are combined into one argument before invocation.
@@ -19,7 +57,7 @@ func (r opencodeRunner) Run(prompt, stdin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ollama", "launch", "opencode", "--model", "glm-5.3:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
+	cmd := exec.CommandContext(ctx, "ollama", "launch", "opencode", "--model", "glm-5.3-flash:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
 	cmd.Dir = r.dir
 	cmd.WaitDelay = waitDelay
 

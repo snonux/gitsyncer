@@ -13,9 +13,11 @@ import (
 // runTimeout bounds how long a single AI CLI invocation may run before it is
 // killed and treated as a failure. Without this, a hung call (e.g. an Ollama
 // Cloud request that never returns because of a rate limit) blocks the whole
-// chain forever instead of falling through to the next tool. It's a var
-// rather than a const so tests can shorten it.
-var runTimeout = 5 * time.Minute
+// chain forever instead of falling through to the next tool. Keep this short
+// so a dead provider fails over quickly; 90s is enough for a real reply on a
+// large release-notes prompt. It's a var rather than a const so tests can
+// shorten it.
+var runTimeout = 90 * time.Second
 
 // waitDelay bounds how long cmd.Output() will wait, after runTimeout
 // cancels the context, for the process's stdout/stderr pipes to close
@@ -77,6 +79,7 @@ type runnerFactory func(dir string) Runner
 // AI tool now means adding one entry here rather than touching both
 // packages.
 var registry = map[Tool]runnerFactory{
+	ToolPi:       func(dir string) Runner { return piRunner{dir: dir} },
 	ToolOpencode: func(dir string) Runner { return opencodeRunner{dir: dir} },
 	ToolHexAI:    func(dir string) Runner { return hexaiRunner{dir: dir} },
 	ToolClaude:   func(dir string) Runner { return claudeRunner{dir: dir} },
@@ -157,17 +160,29 @@ func runExec(ctx context.Context, cmd *exec.Cmd, toolName string) (string, error
 		return "", fmt.Errorf("received empty output from %s", toolName)
 	}
 
-	if strings.HasPrefix(content, "Error:") ||
-		strings.Contains(content, "API Error") ||
-		strings.Contains(content, "authentication_error") {
+	if isInBandToolError(content) {
 		return "", fmt.Errorf("%s returned an error: %s", toolName, content)
 	}
 
 	return content, nil
 }
 
+func isInBandToolError(content string) bool {
+	if strings.HasPrefix(content, "Error:") ||
+		strings.Contains(content, "API Error") ||
+		strings.Contains(content, "authentication_error") {
+		return true
+	}
+
+	lower := strings.ToLower(content)
+	return strings.Contains(lower, "insufficient credit") ||
+		strings.Contains(lower, "insufficient quota") ||
+		strings.Contains(lower, "quota exceeded") ||
+		strings.Contains(lower, "out of credits")
+}
+
 // combinedPrompt joins prompt and stdin for tools that only accept a single
-// positional argument in our usage (opencode, claude). Tools that accept a
+// positional argument in our usage (pi, opencode, claude). Tools that accept a
 // separate piped payload (hexai, amp) keep prompt and stdin apart instead;
 // see runners.go.
 func combinedPrompt(prompt, stdin string) string {

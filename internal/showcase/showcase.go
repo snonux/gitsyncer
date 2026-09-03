@@ -57,7 +57,7 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
-		aiTool:  "opencode", // default to opencode (via ollama launch with glm-5.3:cloud)
+		aiTool:  "pi", // default to pi via OpenRouter (qwen/qwen3.8-27b)
 		cache:   NewSummaryCache(workDir),
 		linker:  NewProjectLinker(cfg),
 	}
@@ -461,7 +461,7 @@ func (g *Generator) assembleProjectSummary(repoName, repoPath, statsRepoPath, su
 // (skipped entirely when forceRegenerate is set). On a cache hit, it
 // returns the cached summary text and a nil chain, since no AI tool needs to
 // run. On a miss, it returns the chain of AI tools to try instead: this
-// prefers opencode when the configured tool is "" (aligns with the
+// prefers pi when the configured tool is "" (aligns with the
 // release-notes flow), then falls back through the rest of the chain that's
 // actually installed.
 func (g *Generator) loadCachedSummaryOrChain(repoName string, forceRegenerate bool) (cachedSummary string, haveCachedSummary bool, chain []aitool.Tool) {

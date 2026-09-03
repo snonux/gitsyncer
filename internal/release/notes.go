@@ -184,7 +184,7 @@ func (n *NotesGenerator) GenerateAIReleaseNotes(repoPath, repoName, tag string, 
 	// type switch over aitool.Tool: instr is the instructional prompt, input
 	// (commits + diff) is the payload, and each Runner decides for itself
 	// whether its underlying CLI wants that payload combined into a single
-	// argument (opencode, claude) or piped via stdin (hexai, amp).
+	// argument (pi, opencode, claude) or piped via stdin (hexai, amp).
 	releaseNotes, _, err := aitool.RunChain(n.availableReleaseNotesTools(nil), "", instr.String(), input.String())
 	if err != nil {
 		return "", fmt.Errorf("all AI tools failed to generate release notes")
