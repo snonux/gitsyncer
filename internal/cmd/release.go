@@ -19,7 +19,7 @@ var releaseCmd = &cobra.Command{
 	Use:   "release",
 	Short: "Manage releases across platforms",
 	Long: `Check for version tags without releases and create them across 
-GitHub and Codeberg. Supports AI-generated release notes via pi (OpenRouter qwen/qwen3.8-27b),
+GitHub, Codeberg, and Forgejo. Supports AI-generated release notes via pi (OpenRouter qwen/qwen3.8-27b),
 with fallback to opencode, hexai, claude, or amp.`,
 }
 

@@ -205,6 +205,9 @@ failures are reported but do not prevent Git-over-SSH synchronization; a fetch
 or push failure skips that Forgejo peer for the remainder of the run without
 interrupting synchronization between the other hosts. GitSyncer never runs
 remote shell repository-creation or description-file commands for Forgejo.
+When a Forgejo organization is configured and `FORGEJO_TOKEN` (or
+`~/.gitsyncer_forgejo_token`) is available, release checking also creates and
+updates releases on Forgejo using the same Gitea-compatible API.
 
 ### Release Management
 

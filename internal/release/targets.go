@@ -1,9 +1,9 @@
 package release
 
-// Release targets: resolving which forges (GitHub/Codeberg) releases should
-// be published to, and the per-forge token/applicability rules around that.
-// This was internal/cli/release.go's buildReleaseTargets and friends before
-// task w01 moved the release-orchestration logic that belongs in this
+// Release targets: resolving which forges (GitHub/Codeberg/Forgejo) releases
+// should be published to, and the per-forge token/applicability rules around
+// that. This was internal/cli/release.go's buildReleaseTargets and friends
+// before task w01 moved the release-orchestration logic that belongs in this
 // package out of the CLI layer.
 
 import (
@@ -25,10 +25,10 @@ type Target struct {
 	SyncRepoRequired bool
 }
 
-// BuildReleaseTargets resolves the GitHub and Codeberg tokens (from config,
-// falling back to environment variables and token files) and returns the
-// release targets releases should be published to. A forge is included only
-// when its organization is configured in cfg; Codeberg is additionally
+// BuildReleaseTargets resolves the GitHub, Codeberg, and Forgejo tokens (from
+// config, falling back to environment variables and token files) and returns
+// the release targets releases should be published to. A forge is included
+// only when its organization is configured in cfg; Codeberg is additionally
 // skipped when Codeberg sync is disabled.
 func BuildReleaseTargets(cfg *config.Config) []Target {
 	var targets []Target
@@ -37,6 +37,9 @@ func BuildReleaseTargets(cfg *config.Config) []Target {
 		targets = append(targets, target)
 	}
 	if target, ok := buildCodebergReleaseTarget(cfg); ok {
+		targets = append(targets, target)
+	}
+	if target, ok := buildForgejoReleaseTarget(cfg); ok {
 		targets = append(targets, target)
 	}
 
@@ -109,6 +112,38 @@ func buildCodebergReleaseTarget(cfg *config.Config) (Target, bool) {
 	}, true
 }
 
+// buildForgejoReleaseTarget resolves the Forgejo org from cfg and returns the
+// corresponding release target. ok is false when no Forgejo org is configured
+// or the configured org has no forgejo_owner. The Gitea-compatible client is
+// the same codeberg.Client used for Codeberg releases (via NewForgejoClient),
+// pointed at the org's forgejo_api_base.
+func buildForgejoReleaseTarget(cfg *config.Config) (Target, bool) {
+	forgejoOrg := cfg.FindForgejoOrg()
+	if forgejoOrg == nil {
+		fmt.Println("No Forgejo organization found in config")
+		return Target{}, false
+	}
+	fmt.Printf("Found Forgejo org: %s\n", forgejoOrg.ForgejoOwner)
+
+	client := codeberg.NewForgejoClient(forgejoOrg.ForgejoAPIBase, forgejoOrg.ForgejoOwner, forgejoOrg.ForgejoOwnerType)
+	if client.HasToken() {
+		fmt.Println("  Forgejo token loaded")
+	} else {
+		fmt.Println("WARNING: No Forgejo token found - cannot create Forgejo releases")
+	}
+
+	if forgejoOrg.ForgejoOwner == "" {
+		return Target{}, false
+	}
+	// Forgejo has no sync_codeberg-style allowlist gate: any repo pushed via
+	// sync repo is eligible for Forgejo releases, matching GitHub.
+	return Target{
+		Name:   "Forgejo",
+		Owner:  forgejoOrg.ForgejoOwner,
+		Client: client,
+	}, true
+}
+
 // resolveGitHubToken loads the GitHub token from config, the GITHUB_TOKEN env
 // var, or ~/.gitsyncer_github_token, in that order. The cascade itself lives
 // in forge.ResolveToken - the single source of truth shared with the GitHub
@@ -128,7 +163,9 @@ func resolveCodebergToken(configToken string) string {
 // TargetApplicable reports whether a release target should run for the
 // given repository. Targets marked SyncRepoRequired (e.g. Codeberg) only run
 // for repos in the configured sync allowlist, so releases are not created on
-// Codeberg for repos that are not synced there.
+// Codeberg for repos that are not synced there. Forgejo is not gated this
+// way: like GitHub, it receives releases for any repo the release checker
+// is asked to process.
 func TargetApplicable(target Target, cfg *config.Config, repoName string) bool {
 	if !target.SyncRepoRequired {
 		return true

@@ -86,8 +86,8 @@ func CheckReleasesForRepos(cfg *config.Config, opts Options, repositories []stri
 	// the deferred call still sees every entry added during the run below.
 	defer printReleaseSummary(cacheFile, initialCacheSize, aiReleaseNotesCache, &failedAIGenerations)
 
-	// Resolve GitHub/Codeberg tokens from config/env/file and build the list
-	// of forges to publish releases to.
+	// Resolve GitHub/Codeberg/Forgejo tokens from config/env/file and build
+	// the list of forges to publish releases to.
 	releaseTargets := BuildReleaseTargets(cfg)
 
 	// Process the specified repositories

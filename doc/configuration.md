@@ -82,7 +82,9 @@ tracked JSON configuration. Forgejo creation is public and uninitialized.
 Existing repositories must belong to the configured owner and must be public.
 The Git SSH URL is formed as `<host>/<forgejo_owner>/<repo>.git`; do not
 configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo because
-metadata is updated through the API.
+metadata is updated through the API. The same token and API are used to create
+and update releases on Forgejo (alongside GitHub and Codeberg) when release
+checking runs.
 
 Forgejo requires exactly one of `backupLocation: true` or `optional: true`.
 Use `optional` for three-way GitHub ↔ Codeberg ↔ Forgejo synchronization.
@@ -99,7 +101,7 @@ Array of repository names to sync. If empty, use `gitsyncer sync codeberg-to-git
 Array of regex patterns for branches to exclude from synchronization.
 
 #### skip_releases (optional)
-Map of repository names to an array of tag names for which releases should not be created on any platform (GitHub and Codeberg). Useful to suppress auto-release for specific historical tags.
+Map of repository names to an array of tag names for which releases should not be created on any platform (GitHub, Codeberg, and Forgejo). Useful to suppress auto-release for specific historical tags.
 
 #### sync_codeberg (optional, default: false)
 Opts in to Codeberg syncing. Codeberg is never synced unless this is explicitly set to `true`, even when a Codeberg organization is present in `organizations`. When `false`:

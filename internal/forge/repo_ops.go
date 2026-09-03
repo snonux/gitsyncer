@@ -87,8 +87,8 @@ type UserFallbackPublicRepoLister interface {
 }
 
 // ReleaseClient defines release CRUD operations shared across forges. Each
-// forge (GitHub, Codeberg/Gitea) implements this against its own API so the
-// release pipeline can talk to any forge through a single abstraction
+// forge (GitHub, Codeberg/Gitea, Forgejo) implements this against its own API
+// so the release pipeline can talk to any forge through a single abstraction
 // instead of hand-rolled per-forge HTTP in the caller.
 type ReleaseClient interface {
 	// GetReleases returns the tag names of existing releases for the

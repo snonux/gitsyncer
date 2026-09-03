@@ -11,9 +11,9 @@ import (
 	"github.com/snonux/gitsyncer/internal/httpclient"
 )
 
-// Compile-time guarantees that the Codeberg client satisfies the forge release
-// contracts. Codeberg/Gitea is the only built-in forge that needs releases
-// enabled per-repository, so it also implements ReleasesEnabler.
+// Compile-time guarantees that the Codeberg/Forgejo client satisfies the forge
+// release contracts. Codeberg/Gitea/Forgejo is the only built-in forge that
+// needs releases enabled per-repository, so it also implements ReleasesEnabler.
 var (
 	_ forge.ReleaseClient   = (*Client)(nil)
 	_ forge.ReleasesEnabler = (*Client)(nil)
