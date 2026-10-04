@@ -224,7 +224,9 @@ func TestRegistry_CoversAllChainTools(t *testing.T) {
 	t.Parallel()
 
 	all := map[Tool]bool{}
-	for _, preferred := range []string{"", "hexai", "claude", "amp"} {
+	// "" covers the default chain; "pi" covers the OpenRouter chain (the
+	// only remaining way Chain can return ToolPi).
+	for _, preferred := range []string{"", "pi", "hexai", "claude", "amp"} {
 		for _, tool := range Chain(preferred) {
 			all[tool] = true
 		}

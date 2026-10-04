@@ -57,7 +57,7 @@ func New(cfg *config.Config, workDir string) *Generator {
 	return &Generator{
 		config:  cfg,
 		workDir: workDir,
-		aiTool:  "pi", // default to pi via OpenRouter (qwen/qwen3.8-27b)
+		aiTool:  "", // empty = default chain: opencode via ollama cloud (glm-5.3-flash) first
 		cache:   NewSummaryCache(workDir),
 		linker:  NewProjectLinker(cfg),
 	}

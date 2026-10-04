@@ -46,9 +46,11 @@ func (r piRunner) Run(prompt, stdin string) (string, error) {
 	return runExec(ctx, cmd, "pi")
 }
 
-// opencodeRunner drives ollama's opencode agent. It only accepts a single
-// positional prompt (no piped-stdin channel in our usage), so prompt and
-// stdin are combined into one argument before invocation.
+// opencodeRunner drives ollama's opencode agent against the glm-5.3-flash
+// model hosted on ollama cloud. It only accepts a single positional prompt
+// (no piped-stdin channel in our usage), so prompt and stdin are combined
+// into one argument before invocation. This is the default release-notes
+// and showcase tool (see Chain's default case).
 type opencodeRunner struct{ dir string }
 
 func (r opencodeRunner) Run(prompt, stdin string) (string, error) {

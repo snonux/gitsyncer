@@ -15,8 +15,13 @@ const (
 type LookPathFunc func(file string) (string, error)
 
 func Chain(preferred string) []Tool {
+	// The default chain prefers opencode (ollama cloud, glm-5.3-flash) for
+	// AI-generated release notes and showcase summaries. pi via OpenRouter
+	// (qwen/qwen3.8-27b) is only part of the chain when explicitly requested.
 	switch preferred {
-	case "", string(ToolPi), "openrouter", "pi-openrouter":
+	case "":
+		return []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
+	case string(ToolPi), "openrouter", "pi-openrouter":
 		return []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
 	case string(ToolOpencode):
 		return []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}

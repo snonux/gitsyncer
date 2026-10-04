@@ -19,7 +19,7 @@ var showcaseCmd = &cobra.Command{
 	Short: "Generate AI-powered project showcase",
 	Long: `Generate a comprehensive showcase of all your projects using AI.
 This feature creates a formatted document with project summaries, statistics,
-and code snippets. By default uses pi via OpenRouter (qwen/qwen3.8-27b), with fallback to opencode, hexai, claude, and amp.`,
+and code snippets. By default uses opencode via ollama cloud (glm-5.3-flash), with fallback to hexai, claude, and amp.`,
 	Example: `  # Generate showcase with cached summaries
   gitsyncer showcase
   

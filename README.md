@@ -237,16 +237,16 @@ gitsyncer release create --update-existing
 # Create for specific repository without AI
 gitsyncer release create myproject --no-ai-notes
 
-# Use amp for AI release notes (default)
+# Use amp for AI release notes
 gitsyncer release create --ai-tool amp
 ```
 
 #### AI Release Notes Engines
 
-- Default flow: tries `amp` first by piping the generated commit/diff payload to stdin and passing an instruction prompt via `--execute` (equivalent to `echo SOMETEXT | amp --execute 'PROMPT'`).
-- Fallback: if `amp` is not available or fails, falls back to `hexai`, then `claude --model sonnet`, then to `aichat`.
-- Explicit tool: `--ai-tool claude` or `--ai-tool aichat` influences the fallback preference, but `amp` is still attempted first when available.
-- Requirements: ensure `amp`, `hexai`, `claude`, or `aichat` are installed and available in `PATH`.
+- Default flow: tries `opencode` first, driving ollama cloud's `glm-5.3-flash` model (`ollama launch opencode --model glm-5.3-flash:cloud`) with the commit/diff payload and instruction prompt combined into a single argument.
+- Fallback: if ollama/opencode is not available or fails, falls back to `hexai`, then `claude --model sonnet`, then `amp`.
+- Explicit tool: `--ai-tool pi` requests OpenRouter's `qwen/qwen3.8-27b` via the pi CLI (requires `OPENROUTER_API_KEY`); `--ai-tool claude`, `--ai-tool amp`, etc. adjust the fallback chain order.
+- Requirements: ensure `ollama`, `hexai`, `claude`, or `amp` are installed and available in `PATH`.
 
 ### Project Showcase
 
@@ -434,7 +434,7 @@ The backup location path format is: `user@host:path/REPONAME.git`
 
 ## Project Showcase Generation
 
-GitSyncer can generate a comprehensive showcase of all your projects using AI (amp by default). This feature creates a formatted document with project summaries, statistics, and code snippets.
+GitSyncer can generate a comprehensive showcase of all your projects using AI (opencode via ollama cloud glm-5.3-flash by default). This feature creates a formatted document with project summaries, statistics, and code snippets.
 
 ### How it works
 
@@ -446,7 +446,7 @@ GitSyncer can generate a comprehensive showcase of all your projects using AI (a
    - Latest release version and date
    - AI-assistance detection (looks for CLAUDE.md, GEMINI.md files)
 
-2. **AI-Powered Summaries**: Uses AI (amp, hexai, claude, or aichat) to generate concise project descriptions that explain:
+2. **AI-Powered Summaries**: Uses AI (opencode, hexai, claude, or amp) to generate concise project descriptions that explain:
    - What the project does
    - Why it's useful
    - How it's implemented

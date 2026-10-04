@@ -16,7 +16,7 @@ func TestChain(t *testing.T) {
 	}{
 		{
 			name: "default chain when empty",
-			want: []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
+			want: []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp},
 		},
 		{
 			name:      "default chain when pi",

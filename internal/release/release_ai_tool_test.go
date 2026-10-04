@@ -12,7 +12,9 @@ func TestAvailableReleaseNotesTools_DefaultChainWithFallback(t *testing.T) {
 	t.Parallel()
 
 	gen := NewNotesGenerator("", nil)
-	got := gen.availableReleaseNotesTools(fakeLookPathRelease("ollama", "claude"))
+	// pi is deliberately excluded from the default chain (opencode via ollama
+	// cloud glm-5.3-flash is preferred), even when the pi binary is present.
+	got := gen.availableReleaseNotesTools(fakeLookPathRelease("pi", "ollama", "claude"))
 	want := []aitool.Tool{aitool.ToolOpencode, aitool.ToolClaude}
 
 	if !reflect.DeepEqual(got, want) {
