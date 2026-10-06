@@ -9,57 +9,28 @@ import (
 )
 
 const (
-	// piOpenRouterModel is the same OpenRouter model as hypr's
-	// pi-openrouter-qwen38-27b abbreviation: pi --provider openrouter
-	// --model qwen/qwen3.8-27b, authenticated via OPENROUTER_API_KEY.
-	piOpenRouterProvider = "openrouter"
-	piOpenRouterModel    = "qwen/qwen3.8-27b"
+	// ollamaCloudModel is the default Ollama Cloud model for release notes
+	// and showcase summaries. Prefer this over agent wrappers (opencode) so
+	// the model replies with prose instead of emitting tool-call scaffolding.
+	ollamaCloudModel = "glm-5.3-flash:cloud"
 )
 
-// piRunner drives the pi CLI against OpenRouter. Prompt and stdin are
-// combined into one -p argument; tools and session persistence are off so a
-// release-notes or showcase prompt cannot mutate the repo or leave sessions.
-type piRunner struct{ dir string }
-
-func (r piRunner) Run(prompt, stdin string) (string, error) {
-	fmt.Printf("  Running pi --provider %s --model %s ...\n", piOpenRouterProvider, piOpenRouterModel)
-
-	if strings.TrimSpace(os.Getenv("OPENROUTER_API_KEY")) == "" {
-		return "", fmt.Errorf("OPENROUTER_API_KEY is not set")
-	}
-
-	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
-	defer cancel()
-
-	cmd := exec.CommandContext(ctx, "pi",
-		"--provider", piOpenRouterProvider,
-		"--model", piOpenRouterModel,
-		"--print",
-		"--no-session",
-		"--no-tools",
-		"--thinking", "off",
-		combinedPrompt(prompt, stdin),
-	)
-	cmd.Dir = r.dir
-	cmd.WaitDelay = waitDelay
-
-	return runExec(ctx, cmd, "pi")
-}
-
-// opencodeRunner drives ollama's opencode agent against the glm-5.3-flash
-// model hosted on ollama cloud. It only accepts a single positional prompt
-// (no piped-stdin channel in our usage), so prompt and stdin are combined
-// into one argument before invocation. This is the default release-notes
-// and showcase tool (see Chain's default case).
+// opencodeRunner drives `ollama run` against ollamaCloudModel. Prompt and
+// stdin payload are combined and piped on stdin (not argv) so large
+// release-notes diffs do not hit ARG_MAX ("argument list too long").
+// --hidethinking keeps chain-of-thought out of the captured stdout that
+// becomes release notes or a showcase summary. This is the default
+// release-notes and showcase tool (see Chain's default case).
 type opencodeRunner struct{ dir string }
 
 func (r opencodeRunner) Run(prompt, stdin string) (string, error) {
-	fmt.Println("  Running ollama launch opencode ...")
+	fmt.Printf("  Running ollama run %s ...\n", ollamaCloudModel)
 
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ollama", "launch", "opencode", "--model", "glm-5.3-flash:cloud", "-y", "--", "run", combinedPrompt(prompt, stdin))
+	cmd := exec.CommandContext(ctx, "ollama", "run", ollamaCloudModel, "--hidethinking")
+	cmd.Stdin = strings.NewReader(combinedPrompt(prompt, stdin))
 	cmd.Dir = r.dir
 	cmd.WaitDelay = waitDelay
 

@@ -12,8 +12,8 @@ func TestAvailableReleaseNotesTools_DefaultChainWithFallback(t *testing.T) {
 	t.Parallel()
 
 	gen := NewNotesGenerator("", nil)
-	// pi is deliberately excluded from the default chain (opencode via ollama
-	// cloud glm-5.3-flash is preferred), even when the pi binary is present.
+	// OpenRouter/pi is no longer part of the chain; ollama (glm-5.3-flash:cloud)
+	// is preferred when available.
 	got := gen.availableReleaseNotesTools(fakeLookPathRelease("pi", "ollama", "claude"))
 	want := []aitool.Tool{aitool.ToolOpencode, aitool.ToolClaude}
 

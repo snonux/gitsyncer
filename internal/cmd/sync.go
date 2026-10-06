@@ -46,8 +46,8 @@ apply only to batch commands such as sync all and sync bidirectional.`,
   # Sync without AI-generated release notes
   gitsyncer sync repo myproject --no-ai-release-notes
   
-  # Auto-create releases using pi/OpenRouter for AI notes (default)
-  gitsyncer sync repo myproject --auto-create-releases --ai-tool pi`,
+  # Auto-create releases with AI notes (ollama glm-5.3-flash:cloud by default)
+  gitsyncer sync repo myproject --auto-create-releases`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncRepo = args[0]
@@ -193,7 +193,7 @@ func init() {
 	syncCmd.PersistentFlags().BoolVar(&noReleases, "no-releases", false, "skip release checking after sync")
 	syncCmd.PersistentFlags().BoolVar(&autoCreate, "auto-create-releases", false, "automatically create releases without confirmation")
 	syncCmd.PersistentFlags().BoolVar(&noAIReleaseNotes, "no-ai-release-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
-	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "pi", "AI tool to use for release notes when auto-creating (pi, opencode, hexai, claude, or amp; pi/OpenRouter is tried first if available)")
+	syncCmd.PersistentFlags().StringVar(&syncAITool, "ai-tool", "", "AI tool to use for release notes when auto-creating (opencode/ollama, hexai, claude, or amp; default tries ollama glm-5.3-flash:cloud first)")
 	syncCmd.PersistentFlags().BoolVarP(&syncForce, "force", "f", false, "force sync even if normal sync interval checks would skip a repository")
 	syncCmd.PersistentFlags().BoolVar(&throttle, "throttle", false, "throttle syncing based on local repo activity")
 }

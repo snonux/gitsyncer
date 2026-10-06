@@ -5,7 +5,6 @@ import "os/exec"
 type Tool string
 
 const (
-	ToolPi       Tool = "pi"
 	ToolOpencode Tool = "opencode"
 	ToolHexAI    Tool = "hexai"
 	ToolClaude   Tool = "claude"
@@ -15,15 +14,11 @@ const (
 type LookPathFunc func(file string) (string, error)
 
 func Chain(preferred string) []Tool {
-	// The default chain prefers opencode (ollama cloud, glm-5.3-flash) for
-	// AI-generated release notes and showcase summaries. pi via OpenRouter
-	// (qwen/qwen3.8-27b) is only part of the chain when explicitly requested.
+	// The default chain prefers ollama (glm-5.3-flash:cloud via `ollama run`) for
+	// AI-generated release notes and showcase summaries. "opencode" and
+	// "ollama" are aliases for that first tool.
 	switch preferred {
-	case "":
-		return []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
-	case string(ToolPi), "openrouter", "pi-openrouter":
-		return []Tool{ToolPi, ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
-	case string(ToolOpencode):
+	case "", string(ToolOpencode), "ollama":
 		return []Tool{ToolOpencode, ToolHexAI, ToolClaude, ToolAmp}
 	case string(ToolHexAI):
 		return []Tool{ToolHexAI, ToolClaude, ToolAmp}
@@ -74,8 +69,6 @@ func IsAvailable(tool Tool, lookPath LookPathFunc) bool {
 
 func availabilityBinary(tool Tool) (string, bool) {
 	switch tool {
-	case ToolPi:
-		return "pi", true
 	case ToolOpencode:
 		return "ollama", true
 	case ToolHexAI, ToolClaude, ToolAmp:

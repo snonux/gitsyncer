@@ -19,9 +19,8 @@ var releaseCmd = &cobra.Command{
 	Use:   "release",
 	Short: "Manage releases across platforms",
 	Long: `Check for version tags without releases and create them across 
-GitHub, Codeberg, and Forgejo. Supports AI-generated release notes via opencode
-(ollama cloud glm-5.3-flash), with fallback to hexai, claude, or amp.
-Use --ai-tool pi for OpenRouter (qwen/qwen3.8-27b) via the pi CLI.`,
+GitHub, Codeberg, and Forgejo. Supports AI-generated release notes via ollama
+(glm-5.3-flash:cloud), with fallback to hexai, claude, or amp.`,
 }
 
 var releaseCheckCmd = &cobra.Command{
@@ -75,8 +74,8 @@ If no repository is specified, processes all configured repositories.`,
   # Create for specific repository without AI
   gitsyncer release create myproject --no-ai-notes
   
-  # Use pi (OpenRouter) for AI release notes (default)
-  gitsyncer release create --ai-tool pi`,
+  # Use a specific AI tool for release notes
+  gitsyncer release create --ai-tool opencode`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.CheckReleases = true
@@ -110,5 +109,5 @@ func init() {
 	releaseCreateCmd.Flags().BoolVar(&noAINotes, "no-ai-notes", false, "disable AI-generated release notes (AI notes are enabled by default)")
 	releaseCreateCmd.Flags().BoolVar(&updateExisting, "update-existing", false, "update existing releases with new AI-generated notes")
 	releaseCreateCmd.Flags().StringVar(&templatePath, "template", "", "custom template for release notes")
-	releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "pi", "AI tool to use for release notes (pi, opencode, hexai, claude, or amp; pi/OpenRouter is tried first if available)")
+	releaseCreateCmd.Flags().StringVar(&aiTool, "ai-tool", "", "AI tool to use for release notes (opencode/ollama, hexai, claude, or amp; default tries ollama glm-5.3-flash:cloud first)")
 }

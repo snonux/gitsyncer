@@ -243,9 +243,9 @@ gitsyncer release create --ai-tool amp
 
 #### AI Release Notes Engines
 
-- Default flow: tries `opencode` first, driving ollama cloud's `glm-5.3-flash` model (`ollama launch opencode --model glm-5.3-flash:cloud`) with the commit/diff payload and instruction prompt combined into a single argument.
-- Fallback: if ollama/opencode is not available or fails, falls back to `hexai`, then `claude --model sonnet`, then `amp`.
-- Explicit tool: `--ai-tool pi` requests OpenRouter's `qwen/qwen3.8-27b` via the pi CLI (requires `OPENROUTER_API_KEY`); `--ai-tool claude`, `--ai-tool amp`, etc. adjust the fallback chain order.
+- Default flow: tries `ollama run glm-5.3-flash:cloud` first with the commit/diff payload and instruction prompt combined into a single argument (`--hidethinking` so chain-of-thought is not captured).
+- Fallback: if ollama is not available or fails, falls back to `hexai`, then `claude --model sonnet`, then `amp`.
+- Explicit tool: `--ai-tool hexai`, `--ai-tool claude`, `--ai-tool amp`, etc. adjust the fallback chain order. OpenRouter/`pi` is no longer used.
 - Requirements: ensure `ollama`, `hexai`, `claude`, or `amp` are installed and available in `PATH`.
 
 ### Project Showcase
@@ -434,7 +434,7 @@ The backup location path format is: `user@host:path/REPONAME.git`
 
 ## Project Showcase Generation
 
-GitSyncer can generate a comprehensive showcase of all your projects using AI (opencode via ollama cloud glm-5.3-flash by default). This feature creates a formatted document with project summaries, statistics, and code snippets.
+GitSyncer can generate a comprehensive showcase of all your projects using AI (ollama `glm-5.3-flash:cloud` by default). This feature creates a formatted document with project summaries, statistics, and code snippets.
 
 ### How it works
 

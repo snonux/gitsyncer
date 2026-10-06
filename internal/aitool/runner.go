@@ -17,16 +17,16 @@ import (
 // so a dead provider fails over quickly; 90s is enough for a real reply on a
 // large release-notes prompt. It's a var rather than a const so tests can
 // shorten it.
-var runTimeout = 90 * time.Second
+var runTimeout = 180 * time.Second
 
 // waitDelay bounds how long cmd.Output() will wait, after runTimeout
 // cancels the context, for the process's stdout/stderr pipes to close
 // before forcibly closing them itself. This matters because these CLIs
-// (ollama launch opencode in particular) are multi-process: cancellation
-// kills only the direct child, and any grandchildren it spawned can be left
-// running and holding the stdout pipe open, which would otherwise keep
-// cmd.Output() blocked indefinitely even after the "timeout". It's a var
-// rather than a const so tests can shorten it.
+// (ollama run in particular) are multi-process: cancellation kills only the
+// direct child, and any grandchildren it spawned can be left running and
+// holding the stdout pipe open, which would otherwise keep cmd.Output()
+// blocked indefinitely even after the "timeout". It's a var rather than a
+// const so tests can shorten it.
 var waitDelay = 5 * time.Second
 
 // timedOut tracks, for the lifetime of this process, which tools have
@@ -79,7 +79,6 @@ type runnerFactory func(dir string) Runner
 // AI tool now means adding one entry here rather than touching both
 // packages.
 var registry = map[Tool]runnerFactory{
-	ToolPi:       func(dir string) Runner { return piRunner{dir: dir} },
 	ToolOpencode: func(dir string) Runner { return opencodeRunner{dir: dir} },
 	ToolHexAI:    func(dir string) Runner { return hexaiRunner{dir: dir} },
 	ToolClaude:   func(dir string) Runner { return claudeRunner{dir: dir} },
@@ -174,6 +173,16 @@ func isInBandToolError(content string) bool {
 		return true
 	}
 
+	// Agentic wrappers sometimes emit tool-call XML/JSON instead of prose
+	// release notes. Treat that as a failed generation so we fall through
+	// to the next tool (or standard notes) instead of publishing junk.
+	if strings.Contains(content, "<tool_call>") ||
+		strings.Contains(content, "</tool_call>") ||
+		strings.Contains(content, "<function=") ||
+		strings.Contains(content, "invoke tool") {
+		return true
+	}
+
 	lower := strings.ToLower(content)
 	return strings.Contains(lower, "insufficient credit") ||
 		strings.Contains(lower, "insufficient quota") ||
@@ -181,10 +190,10 @@ func isInBandToolError(content string) bool {
 		strings.Contains(lower, "out of credits")
 }
 
-// combinedPrompt joins prompt and stdin for tools that only accept a single
-// positional argument in our usage (pi, opencode, claude). Tools that accept a
-// separate piped payload (hexai, amp) keep prompt and stdin apart instead;
-// see runners.go.
+// combinedPrompt joins prompt and stdin for tools that take a single payload
+// (ollama via stdin, claude via argv). Tools that already accept a separate
+// piped payload (hexai, amp) keep prompt and stdin apart instead; see
+// runners.go.
 func combinedPrompt(prompt, stdin string) string {
 	if stdin == "" {
 		return prompt
