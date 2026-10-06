@@ -254,3 +254,24 @@ func TestIsInBandToolError(t *testing.T) {
 		t.Fatal("did not expect a normal notes sentence to be in-band")
 	}
 }
+
+func TestStripANSI(t *testing.T) {
+	t.Parallel()
+
+	in := "hello\x1b[K world\x1b[3D\x1b[Kdone\r\n"
+	if got := stripANSI(in); got != "hello worlddone\n" {
+		t.Fatalf("stripANSI() = %q, want %q", got, "hello worlddone\n")
+	}
+}
+
+func TestRunners_ANSISequencesStrippedFromOutput(t *testing.T) {
+	withFakeBinary(t, "ollama", "printf 'clean\\033[K notes\\r\\n'")
+
+	got, err := NewRunner(ToolOpencode, "").Run("prompt", "")
+	if err != nil {
+		t.Fatalf("Run() error = %v", err)
+	}
+	if got != "clean notes" {
+		t.Fatalf("Run() = %q, want %q", got, "clean notes")
+	}
+}

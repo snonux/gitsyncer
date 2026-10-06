@@ -29,8 +29,9 @@ func (r opencodeRunner) Run(prompt, stdin string) (string, error) {
 	ctx, cancel := context.WithTimeout(context.Background(), runTimeout)
 	defer cancel()
 
-	cmd := exec.CommandContext(ctx, "ollama", "run", ollamaCloudModel, "--hidethinking")
+	cmd := exec.CommandContext(ctx, "ollama", "run", ollamaCloudModel, "--hidethinking", "--nowordwrap")
 	cmd.Stdin = strings.NewReader(combinedPrompt(prompt, stdin))
+	cmd.Env = append(os.Environ(), "TERM=dumb", "NO_COLOR=1", "OLLAMA_NOHISTORY=1")
 	cmd.Dir = r.dir
 	cmd.WaitDelay = waitDelay
 

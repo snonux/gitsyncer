@@ -5,10 +5,16 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"regexp"
 	"strings"
 	"sync"
 	"time"
 )
+
+// ansiEscapeRE matches CSI/OSC-style terminal escape sequences that some
+// CLIs (notably `ollama run`) emit even when stdout is captured. Without
+// stripping, those sequences end up published as release-note garbage.
+var ansiEscapeRE = regexp.MustCompile(`\x1b\[[0-9;?]*[a-zA-Z]|\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)|\r`)
 
 // runTimeout bounds how long a single AI CLI invocation may run before it is
 // killed and treated as a failure. Without this, a hung call (e.g. an Ollama
@@ -17,7 +23,7 @@ import (
 // so a dead provider fails over quickly; 90s is enough for a real reply on a
 // large release-notes prompt. It's a var rather than a const so tests can
 // shorten it.
-var runTimeout = 180 * time.Second
+var runTimeout = 300 * time.Second
 
 // waitDelay bounds how long cmd.Output() will wait, after runTimeout
 // cancels the context, for the process's stdout/stderr pipes to close
@@ -154,7 +160,7 @@ func runExec(ctx context.Context, cmd *exec.Cmd, toolName string) (string, error
 		return "", fmt.Errorf("%s command failed: %w. Output: %s", toolName, err, string(output))
 	}
 
-	content := strings.TrimSpace(string(output))
+	content := strings.TrimSpace(stripANSI(string(output)))
 	if content == "" {
 		return "", fmt.Errorf("received empty output from %s", toolName)
 	}
@@ -164,6 +170,10 @@ func runExec(ctx context.Context, cmd *exec.Cmd, toolName string) (string, error
 	}
 
 	return content, nil
+}
+
+func stripANSI(s string) string {
+	return ansiEscapeRE.ReplaceAllString(s, "")
 }
 
 func isInBandToolError(content string) bool {
