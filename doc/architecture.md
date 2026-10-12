@@ -22,7 +22,7 @@ GitSyncer is designed as a command-line tool that synchronizes Git repositories 
 │   Config    │    │  API Clients │    │    Sync    │
 │  Manager    │    │              │    │   Engine   │
 │(config.go)  │    │ - GitHub     │    │ (sync.go)  │
-│             │    │ - Codeberg   │    │            │
+│             │    │ - Forgejo   │    │            │
 └─────────────┘    └──────────────┘    └────────────┘
 ```
 
@@ -69,9 +69,9 @@ The CLI layer is responsible for user interaction and consists of:
 - Lists public repositories with pagination
 - Handles multiple token sources (config, env, file)
 
-#### Codeberg Client (internal/codeberg/)
-- Interacts with Codeberg's Gitea API
-- Lists public repositories for users/organizations
+#### Forgejo Client (internal/forgejo/)
+- Interacts with a configured Forgejo server through its Gitea-compatible API
+- Creates repositories and manages releases
 - Supports pagination for large repository lists
 - No authentication required for public operations
 

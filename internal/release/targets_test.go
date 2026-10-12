@@ -11,7 +11,6 @@ func TestBuildReleaseTargets_IncludesForgejo(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("FORGEJO_TOKEN", "forgejo-test-token")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("CODEBERG_TOKEN", "")
 
 	cfg := &config.Config{
 		Organizations: []config.Organization{
@@ -38,9 +37,6 @@ func TestBuildReleaseTargets_IncludesForgejo(t *testing.T) {
 	if forgejo.Owner != "snonux" {
 		t.Fatalf("Forgejo Owner = %q, want snonux", forgejo.Owner)
 	}
-	if forgejo.SyncRepoRequired {
-		t.Fatal("Forgejo SyncRepoRequired = true, want false (no allowlist gate)")
-	}
 	if _, ok := forgejo.Client.(forge.ReleasesEnabler); !ok {
 		t.Fatal("Forgejo client should implement ReleasesEnabler")
 	}
@@ -50,7 +46,6 @@ func TestBuildReleaseTargets_OmitsForgejoWhenUnconfigured(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 	t.Setenv("FORGEJO_TOKEN", "")
 	t.Setenv("GITHUB_TOKEN", "")
-	t.Setenv("CODEBERG_TOKEN", "")
 
 	cfg := &config.Config{
 		Organizations: []config.Organization{

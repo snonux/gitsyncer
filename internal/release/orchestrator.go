@@ -86,7 +86,7 @@ func CheckReleasesForRepos(cfg *config.Config, opts Options, repositories []stri
 	// the deferred call still sees every entry added during the run below.
 	defer printReleaseSummary(cacheFile, initialCacheSize, aiReleaseNotesCache, &failedAIGenerations)
 
-	// Resolve GitHub/Codeberg/Forgejo tokens from config/env/file and build
+	// Resolve GitHub/Forgejo tokens from config/env/file and build
 	// the list of forges to publish releases to.
 	releaseTargets := BuildReleaseTargets(cfg)
 
@@ -215,9 +215,6 @@ func createMissingReleasesForRepo(
 	failedAIGenerations *[]string,
 ) {
 	for _, target := range releaseTargets {
-		if !TargetApplicable(target, cfg, repoName) {
-			continue
-		}
 		missingReleases := getMissingReleasesForTarget(cfg, inspector, target, repoName, localTags)
 		processCreateReleasesForTarget(
 			cfg,
@@ -254,9 +251,6 @@ func updateExistingReleasesForRepo(
 	failedAIGenerations *[]string,
 ) {
 	for _, target := range releaseTargets {
-		if !TargetApplicable(target, cfg, repoName) {
-			continue
-		}
 		processUpdateReleasesForTarget(
 			opts,
 			confirm,

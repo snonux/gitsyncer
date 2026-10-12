@@ -26,8 +26,11 @@ GitSyncer looks for configuration files in the following order:
       "github_token": "ghp_xxxxxxxxxxxx"
     },
     {
-      "host": "git@codeberg.org",
-      "name": "myorg"
+      "host": "ssh://git@forgejo.example",
+      "name": "myorg",
+      "forgejo_api_base": "https://forgejo.example/api/v1",
+      "forgejo_owner": "myorg",
+      "backupLocation": true
     }
   ],
   "repositories": [
@@ -45,8 +48,7 @@ GitSyncer looks for configuration files in the following order:
   "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
-  },
-  "sync_codeberg": true
+  }
 }
 ```
 
@@ -59,20 +61,18 @@ Array of organization objects. At least one organization must be configured.
 - **host** (string, required): Git host URL
   - Format: `git@hostname` for SSH
   - Format: `file:///path/to/repos` for local repositories
-  - Examples: `git@github.com`, `git@codeberg.org`, `git@gitlab.com`
+  - Examples: `git@github.com`, `git@forgejo.example`, `git@gitlab.com`
 - **name** (string, required): Organization or username
 - **github_token** (string, optional): GitHub personal access token
   - Only needed for GitHub organizations
-  - Can also be set via environment variable or file
-- **codeberg_token** (string, optional): Codeberg personal access token
-  - Only needed for Codeberg organizations
   - Can also be set via environment variable or file
 - **forgejo_api_base** (string, optional): Gitea-compatible API root for a Forgejo target, such as `https://code.example/api/v1`
 - **forgejo_owner** (string, required with `forgejo_api_base`): User or organization that owns the repositories
 - **forgejo_owner_type** (`user` or `organization`, optional): Owner kind; defaults to `user` for backward compatibility
 - **backupLocation** (boolean): Makes the destination a one-way backup; it is pushed but never fetched
 - **optional** (boolean): Makes the organization a bidirectional sync peer whose Git fetch or push failures cause it to be skipped for the remainder of the run
-- **forcePush** (boolean, optional): Force-update backup branches and tags
+- **pushOnly** (boolean): Makes the organization a one-way mirror: pushed on every run (no `--backup` needed), never fetched, merged, or cloned from. May be combined with `optional`; mutually exclusive with `backupLocation`. While one is configured, the GitHub discovery commands sync every public GitHub repository, not only those in `repositories`
+- **forcePush** (boolean, optional): Force-update branches and tags; only allowed with `backupLocation` or `pushOnly`
 
 Forgejo credentials are read first from `FORGEJO_TOKEN`, then from
 `~/.gitsyncer_forgejo_token`; surrounding whitespace is trimmed. The token needs
@@ -87,11 +87,14 @@ Existing repositories must belong to the configured owner and must be public.
 The Git SSH URL is formed as `<host>/<forgejo_owner>/<repo>.git`; do not
 configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo because
 metadata is updated through the API. The same token and API are used to create
-and update releases on Forgejo (alongside GitHub and Codeberg) when release
+and update releases on Forgejo (alongside GitHub) when release
 checking runs.
 
-Forgejo requires exactly one of `backupLocation: true` or `optional: true`.
-Use `optional` for three-way GitHub ↔ Codeberg ↔ Forgejo synchronization.
+Forgejo requires `backupLocation: true`, `optional: true`, or `pushOnly: true`.
+Use `pushOnly` (optionally with `optional`) for a one-way GitHub → Forgejo
+mirror: Forgejo then receives every public GitHub repository on each run and
+nothing that exists only on Forgejo flows back to GitHub.
+Use `optional` alone for three-way GitHub ↔ Forgejo synchronization.
 Unlike a backup, an optional Forgejo peer is fetched and contributes branches
 and commits to the merge. If Forgejo is offline, GitSyncer disables it for the
 rest of that run and continues syncing the remaining hosts. A metadata API
@@ -99,7 +102,7 @@ failure is reported but does not disable an otherwise reachable Git-over-SSH
 peer.
 
 #### repositories (optional)
-Array of repository names to sync. If empty, use `gitsyncer sync codeberg-to-github` or `gitsyncer sync github-to-codeberg` to discover repositories.
+Array of repository names to sync. If empty, use `gitsyncer sync github-to-forgejo` to discover repositories.
 
 #### branches and repository_branches (optional)
 By default, synchronization is limited to branches named `main`, `master`, or
@@ -121,22 +124,8 @@ repositories without an override use the global list, or the default list when
 Array of regex patterns for branches to exclude from synchronization.
 
 #### skip_releases (optional)
-Map of repository names to an array of tag names for which releases should not be created on any platform (GitHub, Codeberg, and Forgejo). Useful to suppress auto-release for specific historical tags.
+Map of repository names to an array of tag names for which releases should not be created on any platform (GitHub and Forgejo). Useful to suppress auto-release for specific historical tags.
 
-#### sync_codeberg (optional, default: false)
-Opts in to Codeberg syncing. Codeberg is never synced unless this is explicitly set to `true`, even when a Codeberg organization is present in `organizations`. When `false`:
-
-- `sync repo` / `sync all` do not push to or fetch from Codeberg remotes.
-- `sync codeberg-to-github` and `sync github-to-codeberg` skip the Codeberg portion.
-- `manage batch-run` and `sync bidirectional` skip Codeberg syncing (and no longer fail just because no Codeberg sync is configured).
-- Repository descriptions are not synced to Codeberg.
-- Releases are not created on Codeberg.
-- `manage delete-repo` skips Codeberg organizations.
-- The showcase only renders a "View on Codeberg" link for repositories that are actually synced to Codeberg.
-
-Set `"sync_codeberg": true` to enable all of the above. A Codeberg organization can still be listed in `organizations` (e.g. to keep a token or to generate Codeberg links) without enabling syncing.
-
-When `sync_codeberg` is `true` **and** `repositories` is non-empty, the `repositories` list acts as an allowlist: the discovery-based commands (`sync codeberg-to-github`, `sync github-to-codeberg`, `sync bidirectional`, and `manage batch-run`) only sync the repos in that list to/from Codeberg, rather than every public repo they discover. This prevents accidentally mirroring unintended repos to Codeberg. When `repositories` is empty, discovery mode is preserved and all public repos are synced.
 
 Example:
 ```json
@@ -181,13 +170,13 @@ The legacy `showcase_cgit_host` key remains accepted for configuration compatibi
 
 ### Minimal Configuration
 
-Sync between GitHub and Codeberg:
+Sync between GitHub and a configured Forgejo server:
 
 ```json
 {
   "organizations": [
     {"host": "git@github.com", "name": "myusername"},
-    {"host": "git@codeberg.org", "name": "myusername"}
+    {"host": "ssh://git@forgejo.example", "name": "myusername", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myusername", "backupLocation": true}
   ]
 }
 ```
@@ -198,7 +187,7 @@ Sync between GitHub and Codeberg:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
-    {"host": "git@codeberg.org", "name": "myorg"}
+    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg", "backupLocation": true}
   ],
   "repositories": [
     "project1",
@@ -214,7 +203,7 @@ Sync between GitHub and Codeberg:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
-    {"host": "git@codeberg.org", "name": "myorg"}
+    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg", "backupLocation": true}
   ],
   "repositories": ["myproject"],
   "exclude_branches": [
@@ -237,7 +226,7 @@ Sync between GitHub and Codeberg:
   "organizations": [
     {"host": "git@github.com", "name": "personal"},
     {"host": "git@github.com", "name": "work"},
-    {"host": "git@codeberg.org", "name": "personal"},
+    {"host": "ssh://git@forgejo.example", "name": "personal", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "personal", "backupLocation": true},
     {"host": "git@gitlab.com", "name": "personal"}
   ],
   "repositories": ["shared-project"]
@@ -311,52 +300,6 @@ chmod 600 ~/.gitsyncer_github_token
 gitsyncer test github-token
 ```
 
-## Codeberg Token Configuration
-
-Codeberg tokens are required for:
-- Creating repositories (`sync ... --create-repos`)
-- Listing private repositories
-
-### Token Sources (in order of precedence)
-
-1. **Configuration file**: `codeberg_token` field in organization object
-2. **Environment variable**: `CODEBERG_TOKEN`
-3. **Token file**: `~/.gitsyncer_codeberg_token`
-
-### Creating a Codeberg Token
-
-1. Go to Codeberg Settings → Applications → Manage Access Tokens
-2. Click "Generate New Token"
-3. Select scopes:
-   - `repository` (full control of repositories)
-4. Save the token securely
-
-### Setting the Token
-
-#### Method 1: Configuration File
-```json
-{
-  "organizations": [
-    {
-      "host": "git@codeberg.org",
-      "name": "myorg",
-      "codeberg_token": "xxxxxxxxxxxx"
-    }
-  ]
-}
-```
-
-#### Method 2: Environment Variable
-```bash
-export CODEBERG_TOKEN="xxxxxxxxxxxx"
-gitsyncer sync all
-```
-
-#### Method 3: Token File
-```bash
-echo "xxxxxxxxxxxx" > ~/.gitsyncer_codeberg_token
-chmod 600 ~/.gitsyncer_codeberg_token
-```
 
 ## Branch Exclusion Patterns
 
@@ -401,7 +344,7 @@ gitsyncer sync all --dry-run
 
 ### 5. Organization Naming
 - Keep organization names consistent across platforms
-- Use the same name on GitHub and Codeberg when possible
+- Use consistent organization names across configured hosts when possible
 
 ## Troubleshooting
 

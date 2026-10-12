@@ -46,20 +46,20 @@ type RepoDescriptionClient interface {
 // ensure a public repository exists: create it if absent, or validate that
 // an existing repository is a compatible (public, same-name) target.
 // internal/sync depends on this narrow interface instead of importing a
-// concrete forge package (e.g. codeberg) directly, so the backup-repo
+// concrete forge package directly, so the backup-repo
 // bootstrapping in ensureForgejoBackups stays decoupled from any single
-// forge implementation. codeberg.Client implements this method.
+// forge implementation.
 type PublicRepoEnsurer interface {
 	EnsurePublicRepo(name, description string) error
 }
 
 // PublicRepo is a forge-agnostic view of a repository returned by a public
-// repository listing. github.Client and codeberg.Client each list
-// repositories as their own concrete Repository DTO (with many
+// repository listing. GitHub and Forgejo list repositories using their own
+// concrete repository DTOs (with many
 // forge-specific fields); callers that only need name/description convert
 // into this shared type via a thin adapter (see internal/cli's
-// githubPublicRepoLister/codebergPublicRepoLister), so public-sync code
-// depends on this package instead of importing github/codeberg for their
+// githubPublicRepoLister), so public-sync code
+// depends on this package instead of importing concrete forge packages for
 // concrete types.
 type PublicRepo struct {
 	Name        string
@@ -68,26 +68,15 @@ type PublicRepo struct {
 
 // PublicRepoLister lists public repositories for a forge account.
 // HasToken is part of the contract because GitHub's public-listing API
-// requires an auth token even for public repositories, unlike Codeberg's;
+// requires an auth token even for public repositories;
 // callers check it before calling ListPublicRepos.
 type PublicRepoLister interface {
 	HasToken() bool
 	ListPublicRepos() ([]PublicRepo, error)
 }
 
-// UserFallbackPublicRepoLister is implemented by forges (Codeberg/Gitea)
-// whose public-repo listing must retry as a user-scoped listing when the
-// organization-scoped listing fails, e.g. because the configured account is
-// a user rather than an organization. Unlike PublicRepoLister it has no
-// HasToken method because Codeberg's public listing does not require a
-// token.
-type UserFallbackPublicRepoLister interface {
-	ListPublicRepos() ([]PublicRepo, error)
-	ListUserPublicRepos() ([]PublicRepo, error)
-}
-
 // ReleaseClient defines release CRUD operations shared across forges. Each
-// forge (GitHub, Codeberg/Gitea, Forgejo) implements this against its own API
+// forge (GitHub or Forgejo) implements this against its own API
 // so the release pipeline can talk to any forge through a single abstraction
 // instead of hand-rolled per-forge HTTP in the caller.
 type ReleaseClient interface {
@@ -100,8 +89,7 @@ type ReleaseClient interface {
 }
 
 // ReleasesEnabler is optionally implemented by forges that require releases
-// to be enabled per-repository before release creation can succeed (e.g.
-// Codeberg/Gitea, where the repository's Releases feature may be disabled).
+// to be enabled per-repository before release creation can succeed.
 // Callers check for this interface rather than assuming every forge needs it.
 type ReleasesEnabler interface {
 	EnsureReleasesEnabled(owner, repo string) error

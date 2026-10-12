@@ -14,7 +14,7 @@ import (
 // fakePublicRepoEnsurer is a test double for forge.PublicRepoEnsurer. Since
 // ensureForgejoRepositories depends on that interface (injected via
 // SetForgejoBackupClientFactory) instead of constructing a concrete
-// codeberg.Client, tests can exercise the call/error paths without an HTTP
+// Forgejo client, tests can exercise the call/error paths without an HTTP
 // server standing in for a real Forgejo API.
 type fakePublicRepoEnsurer struct {
 	calls []fakeEnsureCall

@@ -10,7 +10,7 @@ import (
 )
 
 // fakeForgeClientResolver stands in for internal/cli's ForgeClientResolver.
-// The tests below never configure a GitHub or Codeberg organization, so
+// The tests below never configure a GitHub organization, so
 // ClientFor is never actually invoked; it exists only to satisfy the
 // ForgeClientResolver parameter.
 type fakeForgeClientResolver struct{}
@@ -20,9 +20,8 @@ func (fakeForgeClientResolver) ClientFor(*config.Organization) (forge.RepoDescri
 }
 
 // fakeForgejoDescriptionClient is a test double for ForgejoDescriptionClient,
-// replacing the httptest.Server + real codeberg.NewForgejoClient the
-// pre-move cli-level test used - the HTTP transport is codeberg's concern,
-// not this package's; here we only need to verify the orchestration
+// replacing the API client with a fake; here we only need to verify the
+// orchestration
 // (backupActive gating, dry-run suppression, disable-on-failure) around
 // whatever client the injected factory returns.
 type fakeForgejoDescriptionClient struct {
@@ -52,11 +51,11 @@ func TestSyncRepoDescriptions_ForgejoWritesOnlyForActiveNonDryRunBackup(t *testi
 		Host: "ssh://git@forgejo.example:2022", ForgejoAPIBase: "https://forgejo.example", ForgejoOwner: "owner", BackupLocation: true,
 	}}}
 
-	SyncRepoDescriptions(cfg, false, nil, nil, "demo", "canonical", "", nil, fakeForgeClientResolver{}, writers)
+	SyncRepoDescriptions(cfg, false, nil, nil, "demo", "canonical", nil, fakeForgeClientResolver{}, writers)
 	if len(client.updates) != 0 {
 		t.Fatalf("inactive backup issued %d Forgejo updates, want zero", len(client.updates))
 	}
-	SyncRepoDescriptions(cfg, true, func(*config.Organization) bool { return true }, nil, "demo", "canonical", "", nil, fakeForgeClientResolver{}, writers)
+	SyncRepoDescriptions(cfg, true, func(*config.Organization) bool { return true }, nil, "demo", "canonical", nil, fakeForgeClientResolver{}, writers)
 	if len(client.updates) != 0 {
 		t.Fatalf("dry run issued %d Forgejo updates, want zero", len(client.updates))
 	}
@@ -84,7 +83,7 @@ func TestSyncRepoDescriptions_ForgejoFailureDisablesDestinationAcrossRepos(t *te
 	syncer.SetBackupEnabled(true)
 
 	for _, repo := range []string{"one", "two"} {
-		SyncRepoDescriptions(cfg, false, syncer.BackupActive, syncer.DisableBackup, repo, "canonical", "", nil, fakeForgeClientResolver{}, writers)
+		SyncRepoDescriptions(cfg, false, syncer.BackupActive, syncer.DisableBackup, repo, "canonical", nil, fakeForgeClientResolver{}, writers)
 	}
 
 	if len(failedClient.updates) != 1 {

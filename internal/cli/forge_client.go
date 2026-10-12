@@ -1,9 +1,9 @@
 package cli
 
 import (
-	"github.com/snonux/gitsyncer/internal/codeberg"
 	"github.com/snonux/gitsyncer/internal/config"
 	"github.com/snonux/gitsyncer/internal/forge"
+	"github.com/snonux/gitsyncer/internal/forgejo"
 	"github.com/snonux/gitsyncer/internal/github"
 )
 
@@ -12,11 +12,11 @@ import (
 // here: a switch-based newRepoClientForOrg that only ever handed back a
 // narrow forge.RepoClient, and repoClientFactory's fat 6-method interface
 // (formerly in repo_client_factory.go) whose methods all just called
-// github.NewClient/codeberg.NewClient again with the result narrowed to a
+// github.NewClient again with the result narrowed to a
 // different role interface. Both existed because github.Client and
-// codeberg.Client already satisfy every role interface callers need
+// forgejo.Client already satisfy every role interface callers need
 // (forge.RepoClient and forge.RepoDescriptionClient structurally; public
-// repo listing via the adapters in public_repo_lister.go) - there was never
+// repo listing via the adapter in public_repo_lister.go) - there was never
 // a reason to construct a client more than once per org. ClientFor builds
 // the client once and callers assign the result to whichever narrow
 // interface they actually depend on. Adding a new forge means adding one
@@ -32,8 +32,7 @@ type forgeClientResolver interface {
 }
 
 // ClientFor builds the forge.RepoDescriptionClient for org's configured
-// forge (GitHub, Codeberg, or Forgejo/Gitea - Forgejo is Gitea-compatible
-// and served by the same codeberg.Client via NewForgejoClient). The bool is
+// forge (GitHub or Forgejo). The bool is
 // false when org.Host does not match any supported forge.
 //
 // forge.RepoDescriptionClient embeds forge.RepoClient, so callers that only
@@ -44,10 +43,8 @@ func (ForgeClientResolver) ClientFor(org *config.Organization) (forge.RepoDescri
 	switch {
 	case org.IsGitHub():
 		return github.NewClient(org.GitHubToken, org.Name), true
-	case org.IsCodeberg():
-		return codeberg.NewClient(org.CodebergToken, org.Name), true
 	case org.IsForgejo():
-		return codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType), true
+		return forgejo.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType), true
 	default:
 		return nil, false
 	}
@@ -56,9 +53,9 @@ func (ForgeClientResolver) ClientFor(org *config.Organization) (forge.RepoDescri
 // newForgejoBackupClient constructs a Forgejo client for the given backup
 // organization, satisfying forge.PublicRepoEnsurer. It is injected into
 // sync.Syncer via SetForgejoBackupClientFactory so internal/sync can ensure
-// backup repositories exist without importing the concrete codeberg package
+// backup repositories exist without importing the concrete Forgejo package
 // itself; internal/cli is the composition root that knows which concrete
 // forge client to build, same as ForgeClientResolver.ClientFor above.
 func newForgejoBackupClient(org *config.Organization) forge.PublicRepoEnsurer {
-	return codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType)
+	return forgejo.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType)
 }

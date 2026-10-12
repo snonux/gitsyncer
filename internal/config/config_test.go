@@ -102,8 +102,96 @@ func TestValidate_ForgejoMustBeBackupOrOptional(t *testing.T) {
 		ForgejoOwner:   "snonux",
 	}}}
 	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "must set backupLocation or optional") {
-		t.Fatalf("Validate() error = %v, want backup-or-optional validation", err)
+	if err == nil || !strings.Contains(err.Error(), "must set backupLocation, optional, or pushOnly") {
+		t.Fatalf("Validate() error = %v, want backup-optional-or-pushOnly validation", err)
+	}
+}
+
+// forgejoPushOnlyOrg is a one-way Forgejo mirror as used in the tests below.
+func forgejoPushOnlyOrg() Organization {
+	return Organization{
+		Host:           "ssh://git@forgejo.example:2022",
+		ForgejoAPIBase: "https://forgejo.example/api/v1",
+		ForgejoOwner:   "snonux",
+		PushOnly:       true,
+	}
+}
+
+func TestValidate_ForgejoMayBePushOnlyMirror(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name   string
+		mutate func(*Organization)
+	}{
+		{name: "pushOnly alone", mutate: func(*Organization) {}},
+		{name: "pushOnly and optional", mutate: func(o *Organization) { o.Optional = true }},
+		{name: "pushOnly with forcePush", mutate: func(o *Organization) { o.ForcePush = true }},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			org := forgejoPushOnlyOrg()
+			tt.mutate(&org)
+			cfg := &Config{Organizations: []Organization{org}}
+			if err := cfg.Validate(); err != nil {
+				t.Fatalf("Validate() error = %v, want nil", err)
+			}
+		})
+	}
+}
+
+func TestValidate_BackupLocationAndPushOnlyAreMutuallyExclusive(t *testing.T) {
+	t.Parallel()
+
+	org := forgejoPushOnlyOrg()
+	org.BackupLocation = true
+	cfg := &Config{Organizations: []Organization{org}}
+	err := cfg.Validate()
+	if err == nil || !strings.Contains(err.Error(), "backupLocation and pushOnly are mutually exclusive") {
+		t.Fatalf("Validate() error = %v, want mutual-exclusion validation", err)
+	}
+}
+
+func TestIsWriteOnly(t *testing.T) {
+	t.Parallel()
+
+	for _, tt := range []struct {
+		name string
+		org  Organization
+		want bool
+	}{
+		{name: "regular peer", org: Organization{}, want: false},
+		{name: "optional peer", org: Organization{Optional: true}, want: false},
+		{name: "backup", org: Organization{BackupLocation: true}, want: true},
+		{name: "pushOnly", org: Organization{PushOnly: true}, want: true},
+	} {
+		if got := tt.org.IsWriteOnly(); got != tt.want {
+			t.Errorf("%s: IsWriteOnly() = %v, want %v", tt.name, got, tt.want)
+		}
+	}
+}
+
+func TestMirrorsAllGitHubRepos(t *testing.T) {
+	t.Parallel()
+
+	var nilCfg *Config
+	if nilCfg.MirrorsAllGitHubRepos() {
+		t.Fatal("nil config must not mirror all repos")
+	}
+	bidirectional := &Config{Organizations: []Organization{
+		{Host: "git@github.com", Name: "acme"},
+		{Host: "ssh://git@forgejo.example:2022", Optional: true},
+		{Host: "paul@nas:/git", BackupLocation: true},
+	}}
+	if bidirectional.MirrorsAllGitHubRepos() {
+		t.Fatal("config without a pushOnly org must not mirror all repos")
+	}
+	mirrored := &Config{Organizations: []Organization{
+		{Host: "git@github.com", Name: "acme"},
+		forgejoPushOnlyOrg(),
+	}}
+	if !mirrored.MirrorsAllGitHubRepos() {
+		t.Fatal("config with a pushOnly org must mirror all repos")
 	}
 }
 
@@ -348,52 +436,21 @@ func TestFindForgejoOrg(t *testing.T) {
 	}
 }
 
-func TestCodebergSyncEnabled(t *testing.T) {
-	t.Parallel()
-
-	if (&Config{}).CodebergSyncEnabled() {
-		t.Fatal("CodebergSyncEnabled() = true for zero-value Config, want false")
-	}
-	if (&Config{SyncCodeberg: true}).CodebergSyncEnabled() != true {
-		t.Fatal("CodebergSyncEnabled() = false for SyncCodeberg:true, want true")
-	}
-	if (*Config)(nil).CodebergSyncEnabled() {
-		t.Fatal("CodebergSyncEnabled() = true for nil Config, want false")
-	}
-}
-
-func TestSyncOrganizations_ExcludesCodebergUnlessEnabled(t *testing.T) {
+func TestSyncOrganizationsReturnsConfiguredOrganizations(t *testing.T) {
 	t.Parallel()
 
 	orgs := []Organization{
 		{Host: "git@github.com", Name: "acme"},
-		{Host: "git@codeberg.org", Name: "acme"},
+		{Host: "ssh://git@forgejo.example:2022", Name: "acme", ForgejoAPIBase: "https://forgejo.example/api/v1", ForgejoOwner: "acme", BackupLocation: true},
 		{Host: "user@nas.local:git", BackupLocation: true},
 	}
-
-	// Codeberg syncing disabled (default): Codeberg org is excluded, but
-	// GitHub and backup locations are still returned.
-	disabled := &Config{Organizations: orgs}
-	got := disabled.SyncOrganizations()
-	if len(got) != 2 {
-		t.Fatalf("disabled SyncOrganizations() = %d orgs, want 2", len(got))
+	cfg := &Config{Organizations: orgs}
+	got := cfg.SyncOrganizations()
+	if len(got) != len(orgs) {
+		t.Fatalf("SyncOrganizations() = %d orgs, want %d", len(got), len(orgs))
 	}
-	for _, o := range got {
-		if o.IsCodeberg() {
-			t.Fatalf("disabled SyncOrganizations() included Codeberg org %q", o.Host)
-		}
-	}
-
-	// Codeberg syncing enabled: every organization is returned.
-	enabled := &Config{Organizations: orgs, SyncCodeberg: true}
-	got = enabled.SyncOrganizations()
-	if len(got) != 3 {
-		t.Fatalf("enabled SyncOrganizations() = %d orgs, want 3", len(got))
-	}
-
-	// The original Organizations slice must be left untouched.
-	if len(disabled.Organizations) != 3 {
-		t.Fatalf("Organizations mutated by SyncOrganizations(): len=%d", len(disabled.Organizations))
+	if len(cfg.Organizations) != len(orgs) {
+		t.Fatalf("Organizations mutated by SyncOrganizations(): len=%d", len(cfg.Organizations))
 	}
 }
 

@@ -32,8 +32,9 @@ func (s *Syncer) trackRemotesWithBranch(branch string, remotes map[string]*confi
 	remotesWithBranch := make(map[string]bool)
 
 	for remoteName, org := range remotes {
-		// Skip checking backup locations as we don't sync from them
-		if org.BackupLocation || !s.organizationActive(org) {
+		// Skip write-only locations (backups, pushOnly mirrors): we never
+		// merge from them, and their remote-tracking refs are not refreshed.
+		if org.IsWriteOnly() || !s.organizationActive(org) {
 			continue
 		}
 		if s.remoteBranchExists(remoteName, branch) {
@@ -90,8 +91,10 @@ func (s *Syncer) pushToAllRemotes(repoPath, branch string, remotes map[string]*c
 			continue
 		}
 
-		// Check if this remote has the branch
-		remoteHasBranch := remotesWithBranch[remoteName]
+		// Check if this remote has the branch. Write-only remotes are never
+		// fetched, so we cannot know; treat them as a plain push rather than
+		// announcing a branch creation on every run.
+		remoteHasBranch := remotesWithBranch[remoteName] || org.IsWriteOnly()
 
 		if !remoteHasBranch {
 			fmt.Printf("  Creating branch on %s (%s)...\n", remoteName, org.Host)

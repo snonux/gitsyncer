@@ -11,7 +11,7 @@ import (
 )
 
 // TestLoadToken_FIFOHasNoTokenAndDoesNotBlock mirrors
-// codeberg.TestNewForgejoClient_FIFOHasNoTokenAndDoesNotBlock: a FIFO
+// forgejo.TestNewForgejoClient_FIFOHasNoTokenAndDoesNotBlock: a FIFO
 // planted at the token path must be rejected by the O_NONBLOCK|O_NOFOLLOW
 // hardened opener rather than blocking loadToken forever.
 func TestLoadToken_FIFOHasNoTokenAndDoesNotBlock(t *testing.T) {

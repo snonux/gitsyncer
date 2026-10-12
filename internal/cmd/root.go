@@ -18,7 +18,7 @@ var (
 		Use:   "gitsyncer",
 		Short: "Synchronize git repositories across multiple platforms",
 		Long: `GitSyncer is a tool for synchronizing git repositories between 
-multiple organizations (e.g., GitHub and Codeberg). It automatically 
+multiple organizations (e.g., GitHub and Forgejo). It automatically
 keeps all branches in sync across different git hosting platforms.`,
 		PersistentPreRun: func(cmd *cobra.Command, args []string) {
 			// Skip config loading for version command

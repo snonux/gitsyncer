@@ -32,7 +32,6 @@ type Generator struct {
 type ProjectSummary struct {
 	Name         string
 	Summary      string
-	CodebergURL  string
 	GitHubURL    string
 	Metadata     *RepoMetadata
 	RankHistory  []RepoRankHistory // Latest 5 weekly rank points, newest first
@@ -434,7 +433,7 @@ func (g *Generator) generateProjectSummary(repoName string, forceRegenerate bool
 // gathered by generateProjectSummary (project links, images, code snippet),
 // persists it to the on-disk cache, and returns it.
 func (g *Generator) assembleProjectSummary(repoName, repoPath, statsRepoPath, summary string, metadata *RepoMetadata) (*ProjectSummary, error) {
-	codebergURL, githubURL := g.linker.BuildLinks(repoName, repoPath)
+	githubURL := g.linker.BuildLink(repoName)
 
 	images, codeSnippet, codeLanguage, err := g.collectAssets(repoName, repoPath, statsRepoPath, metadata)
 	if err != nil {
@@ -444,7 +443,6 @@ func (g *Generator) assembleProjectSummary(repoName, repoPath, statsRepoPath, su
 	projectSummary := &ProjectSummary{
 		Name:         repoName,
 		Summary:      summary,
-		CodebergURL:  codebergURL,
 		GitHubURL:    githubURL,
 		Metadata:     metadata,
 		Images:       images,

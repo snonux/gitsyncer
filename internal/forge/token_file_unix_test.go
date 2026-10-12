@@ -11,7 +11,7 @@ import (
 )
 
 // TestResolveToken_FIFOHasNoTokenAndDoesNotBlock mirrors the equivalent FIFO
-// tests in the github and codeberg packages: a FIFO planted at the token path
+// tests in the GitHub and Forgejo packages: a FIFO planted at the token path
 // must be rejected by the hardened opener rather than blocking ResolveToken
 // forever. This moved here from internal/cli's now-removed
 // loadTokenWithFallback test when task g01 consolidated the cascade.

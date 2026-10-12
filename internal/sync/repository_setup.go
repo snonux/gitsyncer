@@ -24,11 +24,12 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 		return fmt.Errorf("no organizations configured")
 	}
 
-	// Find first non-backup organization to clone from
+	// Find the first organization we are allowed to read from. Backups and
+	// pushOnly mirrors are write-only and never serve as a clone source.
 	var firstOrg *config.Organization
 	var firstOrgIndex int
 	for i := range orgs {
-		if !orgs[i].BackupLocation {
+		if !orgs[i].IsWriteOnly() {
 			firstOrg = &orgs[i]
 			firstOrgIndex = i
 			break

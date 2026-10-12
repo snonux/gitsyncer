@@ -17,11 +17,11 @@ Welcome to the GitSyncer documentation. This directory contains comprehensive do
 
 ## Overview
 
-GitSyncer is a tool for synchronizing Git repositories across multiple platforms (GitHub, Codeberg, self-hosted Git servers). It supports:
+GitSyncer is a tool for synchronizing Git repositories across multiple platforms (GitHub and Forgejo). It supports:
 
 - Bidirectional synchronization between multiple Git hosts
 - Automatic branch management and filtering
-- Repository creation on supported platforms
+- Repository creation on GitHub and configured Forgejo servers
 - Conflict detection and reporting
 - Abandoned branch analysis
 

@@ -6,8 +6,8 @@ This document provides a complete reference for all packages, types, and functio
 
 - [Package main](#package-main)
 - [Package cli](#package-cli)
-- [Package codeberg](#package-codeberg)
 - [Package config](#package-config)
+- [Package forgejo](#package-forgejo)
 - [Package github](#package-github)
 - [Package sync](#package-sync)
 - [Package version](#package-version)
@@ -47,11 +47,9 @@ type Flags struct {
     ListRepos           bool   // List configured repositories
     SyncRepo            string // Single repository to sync
     SyncAll             bool   // Sync all configured repositories
-    SyncCodebergPublic  bool   // Sync all public Codeberg repos
     SyncGitHubPublic    bool   // Sync all public GitHub repos
     FullSync            bool   // Full bidirectional sync
     CreateGitHubRepos   bool   // Auto-create GitHub repositories
-    CreateCodebergRepos bool   // Auto-create Codeberg repositories
     DryRun              bool   // Preview mode without changes
     WorkDir             string // Working directory for operations
     TestGitHubToken     bool   // Test GitHub authentication
@@ -78,11 +76,9 @@ Synchronizes a single repository, used by `gitsyncer sync repo [name]`.
 #### func HandleSyncAll(cfg *config.Config, flags *Flags) int
 Synchronizes all repositories listed in configuration, used by `gitsyncer sync all`.
 
-#### func HandleSyncCodebergPublic(cfg *config.Config, flags *Flags) int
-Discovers and syncs all public Codeberg repositories to other platforms, used by `gitsyncer sync codeberg-to-github`.
 
 #### func HandleSyncGitHubPublic(cfg *config.Config, flags *Flags) int
-Discovers and syncs all public GitHub repositories to other platforms, used by `gitsyncer sync github-to-codeberg`.
+Discovers and syncs all public GitHub repositories to other platforms, used by `gitsyncer sync github-to-forgejo`.
 
 ### Helper Functions (sync_handlers.go)
 
@@ -98,71 +94,12 @@ Creates repository using provided GitHub client.
 #### func showReposToSync(repoNames []string)
 Displays list of repositories that will be synced.
 
-#### func syncCodebergRepos(cfg *config.Config, flags *Flags, repos []codeberg.Repository, repoNames []string) int
-Synchronizes discovered Codeberg repositories.
 
 #### func syncGitHubRepos(cfg *config.Config, flags *Flags, repos []github.Repository, repoNames []string) int
 Synchronizes discovered GitHub repositories.
 
 ---
 
-## Package codeberg
-
-**Location**: `internal/codeberg/codeberg.go`
-
-The codeberg package provides a client for interacting with Codeberg's Gitea API.
-
-### Types
-
-#### type Repository
-```go
-type Repository struct {
-    ID          int64     `json:"id"`          // Repository ID
-    Name        string    `json:"name"`        // Repository name
-    FullName    string    `json:"full_name"`   // Full name (org/repo)
-    Description string    `json:"description"` // Repository description
-    Private     bool      `json:"private"`     // Is private repository
-    Fork        bool      `json:"fork"`        // Is fork
-    CreatedAt   time.Time `json:"created_at"`  // Creation timestamp
-    UpdatedAt   time.Time `json:"updated_at"`  // Last update timestamp
-    CloneURL    string    `json:"clone_url"`   // HTTPS clone URL
-    SSHURL      string    `json:"ssh_url"`     // SSH clone URL
-    Size        int       `json:"size"`        // Repository size
-    Archived    bool      `json:"archived"`    // Is archived
-    Empty       bool      `json:"empty"`       // Is empty repository
-}
-```
-
-#### type Client
-```go
-type Client struct {
-    baseURL string // API base URL (https://codeberg.org/api/v1)
-    org     string // Organization or username
-}
-```
-
-### Functions
-
-#### func NewClient(org string) Client
-Creates a new Codeberg API client for the specified organization/user.
-
-### Methods
-
-#### func (c *Client) ListPublicRepos() ([]Repository, error)
-Lists all public repositories for an organization:
-- Handles pagination automatically
-- Filters out private, fork, archived, and empty repos
-- Returns error on API failure
-
-#### func (c *Client) ListUserPublicRepos() ([]Repository, error)
-Lists all public repositories for a user:
-- Same filtering as ListPublicRepos
-- Use when org endpoint fails (for user accounts)
-
-#### func GetRepoNames(repos []Repository) []string
-Extracts repository names from a slice of Repository structs.
-
----
 
 ## Package config
 
@@ -184,6 +121,7 @@ type Organization struct {
     BackupLocation bool   `json:"backupLocation"`   // One-way destination
     Optional       bool   `json:"optional"`         // Non-fatal bidirectional peer
     ForcePush      bool   `json:"forcePush"`        // Force backup branches/tags
+    PushOnly       bool   `json:"pushOnly"`          // One-way mirror, pushed on every run
 }
 ```
 
@@ -192,6 +130,8 @@ type Organization struct {
 type Config struct {
     Organizations         []Organization      `json:"organizations"`             // List of git organizations
     Repositories          []string            `json:"repositories"`              // Specific repos to sync
+    Branches              []string            `json:"branches"`                  // Global branch allowlist
+    RepositoryBranches    map[string][]string `json:"repository_branches"`      // Per-repo branch overrides
     ExcludeBranches       []string            `json:"exclude_branches"`          // Regex patterns for branch exclusion
     ShowcaseOutputDir     string              `json:"showcase_output_dir"`       // Showcase output directory
     ShowcaseCgitHost      string              `json:"showcase_cgit_host"`        // Deprecated compatibility key; ignored
@@ -220,8 +160,6 @@ Returns the Git URL for the organization in format `host:name`.
 #### func (c *Config) FindOrganization(host string) *Organization
 Finds organization by host string.
 
-#### func (o *Organization) IsCodeberg() bool
-Returns true if organization host contains "codeberg.org".
 
 #### func (o *Organization) IsForgejo() bool
 Returns true when a Forgejo API base is configured. Forgejo organizations must
@@ -236,14 +174,26 @@ token must belong to an interactive user authorized to create repositories in
 that organization, not an organization pseudo-user. Forgejo tokens are never
 read from JSON configuration.
 
-#### func (c *Config) FindCodebergOrg() *Organization
-Finds first Codeberg organization in config.
 
 #### func (o *Organization) IsGitHub() bool
 Returns true if organization host contains "github.com".
 
 #### func (c *Config) FindGitHubOrg() *Organization
 Finds first GitHub organization in config.
+
+---
+
+## Package forgejo
+
+**Location**: `internal/forgejo/`
+
+The forgejo package implements repository creation and release operations
+against a configured Forgejo instance using its Gitea-compatible API. Git data
+is transferred through the configured Git remote over SSH.
+
+`NewForgejoClient(baseURL, owner, ownerType)` creates a client. The API token is
+read from `FORGEJO_TOKEN`, falling back to `~/.gitsyncer_forgejo_token`; tokens
+are not read from JSON configuration.
 
 ---
 
@@ -493,7 +443,7 @@ The version package provides version information.
 
 ```go
 var (
-    Version   = "0.1.0"           // Application version
+    Version   = "0.21.3"           // Application version
     GitCommit = "unknown"         // Git commit hash (set at build time)
     BuildDate = "unknown"         // Build date (set at build time)
     GoVersion = runtime.Version() // Go version used for build
@@ -512,4 +462,4 @@ gitsyncer version 0.1.0
 ```
 
 #### func GetShortVersion() string
-Returns just the version number: `0.1.0`
+Returns just the version number.

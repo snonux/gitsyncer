@@ -225,9 +225,6 @@ func writeProjectSummaryContent(builder *strings.Builder, summary ProjectSummary
 }
 
 func writeProjectLinks(builder *strings.Builder, summary ProjectSummary) {
-	if summary.CodebergURL != "" {
-		builder.WriteString(fmt.Sprintf("=> %s View on Codeberg\n", summary.CodebergURL))
-	}
 	if summary.GitHubURL != "" {
 		builder.WriteString(fmt.Sprintf("=> %s View on GitHub\n", summary.GitHubURL))
 	}

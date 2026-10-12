@@ -2,7 +2,7 @@
 
 ## Project Structure & Module Organization
 - `cmd/gitsyncer/`: CLI entrypoint (`main.go`).
-- `internal/`: private packages — `cli/` (flags/handlers), `sync/` (core git ops), `config/`, `github/`, `codeberg/`, `release/`, `showcase/`, `state/`, `version/`, `cmd/` (cobra wiring).
+- `internal/`: private packages — `cli/` (flags/handlers), `sync/` (core git ops), `config/`, `github/`, `forgejo/`, `release/`, `showcase/`, `state/`, `version/`, `cmd/` (cobra wiring).
 - `test/`: integration tests (`run_integration_tests.sh`, `test_*.sh`) and local configs.
 - `doc/`: architecture, API, and development docs. `dist/`: build artifacts.
 

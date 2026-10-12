@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/snonux/gitsyncer/internal/codeberg"
 	"github.com/snonux/gitsyncer/internal/config"
 	"github.com/snonux/gitsyncer/internal/github"
 	"github.com/snonux/gitsyncer/internal/showcase"
@@ -93,27 +92,6 @@ func getAllRepositories(cfg *config.Config) ([]string, error) {
 	// Add configured repositories
 	for _, repo := range cfg.Repositories {
 		repoMap[repo] = true
-	}
-
-	// Add Codeberg public repos if Codeberg syncing is enabled and configured.
-	if cfg.CodebergSyncEnabled() {
-		if codebergOrg := cfg.FindCodebergOrg(); codebergOrg != nil {
-			fmt.Printf("Fetching public repositories from Codeberg user/org: %s...\n", codebergOrg.Name)
-			client := codeberg.NewClient(codebergOrg.CodebergToken, codebergOrg.Name)
-
-			repos, err := client.ListPublicRepos()
-			if err != nil {
-				// Try as user
-				repos, err = client.ListUserPublicRepos()
-				if err != nil {
-					fmt.Printf("Warning: Failed to fetch Codeberg repos: %v\n", err)
-				}
-			}
-
-			for _, repo := range repos {
-				repoMap[repo.Name] = true
-			}
-		}
 	}
 
 	// Add GitHub public repos if configured

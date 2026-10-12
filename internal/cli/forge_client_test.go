@@ -24,21 +24,6 @@ func TestForgeClientResolver_ClientFor(t *testing.T) {
 		}
 	})
 
-	t.Run("codeberg", func(t *testing.T) {
-		org := config.Organization{
-			Host:          "git@codeberg.org",
-			Name:          "acme",
-			CodebergToken: "token",
-		}
-		client, ok := resolver.ClientFor(&org)
-		if !ok {
-			t.Fatal("expected supported codeberg client")
-		}
-		if !client.HasToken() {
-			t.Fatal("expected codeberg client token to be loaded")
-		}
-	})
-
 	t.Run("forgejo backup", func(t *testing.T) {
 		t.Setenv("FORGEJO_TOKEN", "token")
 		org := config.Organization{
@@ -80,38 +65,6 @@ func TestForgeClientResolver_ClientFor(t *testing.T) {
 				}
 				if !client.HasToken() {
 					t.Fatalf("expected github client token for host variant %q", host)
-				}
-			})
-		}
-	})
-
-	t.Run("codeberg host variants", func(t *testing.T) {
-		t.Parallel()
-		resolver := ForgeClientResolver{}
-
-		variantHosts := []string{
-			"https://codeberg.org",
-			"ssh://codeberg.org",
-			"git@codeberg.org:acme",
-			"git@codeberg.org.example",
-		}
-
-		for _, host := range variantHosts {
-			host := host
-			t.Run(host, func(t *testing.T) {
-				t.Parallel()
-
-				org := config.Organization{
-					Host:          host,
-					Name:          "acme",
-					CodebergToken: "token",
-				}
-				client, ok := resolver.ClientFor(&org)
-				if !ok {
-					t.Fatalf("expected supported codeberg host variant %q", host)
-				}
-				if !client.HasToken() {
-					t.Fatalf("expected codeberg client token for host variant %q", host)
 				}
 			})
 		}

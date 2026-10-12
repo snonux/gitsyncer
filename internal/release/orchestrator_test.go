@@ -295,33 +295,6 @@ func TestResolveReleaseNotes_CreateAISuccessContinuesOnCacheSaveError(t *testing
 	}
 }
 
-func TestTargetApplicable_CodebergGatedByAllowlist(t *testing.T) {
-	t.Parallel()
-
-	cfg := &config.Config{Repositories: []string{"cpuinfo"}, SyncCodeberg: true}
-	gh := Target{Name: "GitHub"}
-	cb := Target{Name: "Codeberg", SyncRepoRequired: true}
-
-	// GitHub target runs for any repo.
-	if !TargetApplicable(gh, cfg, "anything") {
-		t.Fatal("GitHub target should be applicable to any repo")
-	}
-
-	// Codeberg target only runs for allowlisted repos.
-	if !TargetApplicable(cb, cfg, "cpuinfo") {
-		t.Fatal("Codeberg target should be applicable to allowlisted repo")
-	}
-	if TargetApplicable(cb, cfg, "hypr") {
-		t.Fatal("Codeberg target should NOT be applicable to non-allowlisted repo")
-	}
-
-	// Discovery mode (empty allowlist): Codeberg runs for any repo.
-	discovery := &config.Config{SyncCodeberg: true}
-	if !TargetApplicable(cb, discovery, "anything") {
-		t.Fatal("Codeberg target should be applicable to any repo in discovery mode")
-	}
-}
-
 func TestGetMissingReleasesForTarget_FiltersConfiguredSkips(t *testing.T) {
 	cfg := &config.Config{
 		SkipReleases: map[string][]string{
@@ -444,7 +417,7 @@ func TestProcessCreateReleasesForTarget_HonorsConfiguredSkip(t *testing.T) {
 	notes := &fakeReleaseNotesGenerator{}
 	client := &fakeReleaseClient{}
 	target := Target{
-		Name:   "Codeberg",
+		Name:   "Forgejo",
 		Owner:  "owner",
 		Client: client,
 	}
@@ -519,7 +492,7 @@ func TestProcessUpdateReleasesForTarget_GetReleasesErrorSkipsUpdates(t *testing.
 		releasesErr: errors.New("api error"),
 	}
 	target := Target{
-		Name:   "Codeberg",
+		Name:   "Forgejo",
 		Owner:  "owner",
 		Client: client,
 	}

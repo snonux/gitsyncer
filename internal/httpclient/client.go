@@ -98,7 +98,7 @@ func NewRequest(method, url string, body io.Reader) (*http.Request, context.Canc
 // error), so a close failure here cannot change the outcome that was already
 // determined - the error is intentionally discarded rather than treated as
 // actionable. This used to be a private closeResponseBody helper duplicated
-// verbatim in the github and codeberg packages; it now lives here so DoJSON
+// verbatim in the GitHub and Forgejo packages; it now lives here so DoJSON
 // can use it too and so there is one place to change if that reasoning ever
 // stops holding.
 func CloseBody(resp *http.Response) {
@@ -143,7 +143,7 @@ func Idempotent() Option {
 // executes it via Do, and reads the entire response body before closing it.
 // It centralizes the "build request -> set headers -> Do -> defer close ->
 // read body" plumbing that used to be duplicated across 15+ call sites in
-// the github and codeberg clients (and, transitively, the release package
+// the GitHub and Forgejo clients (and, transitively, the release package
 // that calls into them).
 //
 // DoJSON deliberately stops short of interpreting the status code or

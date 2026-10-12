@@ -12,7 +12,7 @@ import (
 // file through forge.ReadProtectedTokenFile instead of os.ReadFile, so a
 // symlink, a non-regular file, or an overly-permissive file must all be
 // rejected the same way loadForgejoToken already rejects them in the
-// codeberg package.
+// Forgejo package.
 
 func TestLoadToken_AcceptsOwnerOnlyTokenFile(t *testing.T) {
 	for _, mode := range []os.FileMode{0600, 0400} {

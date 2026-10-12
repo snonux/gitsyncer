@@ -9,7 +9,7 @@ import (
 )
 
 // ReadProtectedTokenFile reads a credential file at path using hardened
-// semantics shared by every forge client (GitHub, Codeberg, Forgejo, and the
+// semantics shared by every forge client (GitHub, Forgejo, and the
 // CLI's release token loading). Token files live at well-known paths under
 // the user's home directory, so a local attacker able to plant something at
 // that path before gitsyncer runs could otherwise cause it to:
@@ -54,7 +54,7 @@ func ReadProtectedTokenFile(path string) (string, error) {
 // ResolveToken resolves a forge API token via the shared config -> env var ->
 // token file cascade. This is the single source of truth for token
 // precedence: it used to be reimplemented separately by the GitHub client's
-// loadToken, the Codeberg client's loadToken and loadForgejoToken, and the
+// loadToken, the Forgejo client's token loader, and the
 // CLI release pipeline's loadTokenWithFallback, with subtly different
 // trimming behavior between the copies (task g01 consolidated them here,
 // building on the shared ReadProtectedTokenFile extracted for task 901).

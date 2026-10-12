@@ -19,11 +19,11 @@ func TestShouldEnableBackupSync_FullSyncImplicitlyEnablesBackup(t *testing.T) {
 	if !shouldEnableBackupSync(&Flags{Backup: true}) {
 		t.Fatal("expected explicit --backup to enable backup sync")
 	}
-	if !shouldEnableBackupSync(&Flags{SyncCodebergPublic: true}) {
-		t.Fatal("expected codeberg-to-github sync to enable backups")
+	if !shouldEnableBackupSync(&Flags{FullSync: true}) {
+		t.Fatal("expected full sync to enable backups")
 	}
 	if !shouldEnableBackupSync(&Flags{SyncGitHubPublic: true}) {
-		t.Fatal("expected github-to-codeberg sync to enable backups")
+		t.Fatal("expected GitHub discovery to enable backups")
 	}
 
 	if shouldEnableBackupSync(&Flags{}) {
@@ -40,16 +40,15 @@ func TestShouldEnableBackupSync_FullSyncImplicitlyEnablesBackup(t *testing.T) {
 // all the failures at the end instead.
 func TestSyncDiscoveredRepos_ContinuesAfterPerRepoFailure(t *testing.T) {
 	// Not t.Parallel(): captureStdout swaps the global os.Stdout (see comment
-	// on TestSyncCodebergRepos_PrintsSeparatorWhenChainingIntoGitHubSync in
+	// on GitHub discovery sync in
 	// forge_client_injection_test.go).
 
-	resolver := &stubForgeClientResolver{}
 	flags := &Flags{WorkDir: t.TempDir()}
 	repoNames := []string{"repo-a", "repo-b"}
 
 	var got int
 	out := captureStdout(t, func() {
-		got = syncGitHubRepos(&config.Config{}, flags, nil, repoNames, resolver)
+		got = syncGitHubRepos(&config.Config{}, flags, nil, repoNames)
 	})
 
 	if got != 1 {

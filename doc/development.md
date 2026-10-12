@@ -23,7 +23,7 @@ This guide is for contributors who want to help develop GitSyncer.
 ### Clone the Repository
 
 ```bash
-# Clone from Codeberg
+# Clone from GitHub
 git clone https://github.com/snonux/gitsyncer.git
 cd gitsyncer
 
@@ -63,8 +63,8 @@ gitsyncer/
 │   │   ├── flags.go      # Command-line flags
 │   │   ├── handlers.go   # General handlers
 │   │   └── sync_handlers.go # Sync handlers
-│   ├── codeberg/         # Codeberg API client
-│   │   └── codeberg.go   # Codeberg implementation
+│   ├── forgejo/          # Forgejo API client
+│   │   └── client.go     # Forgejo implementation
 │   ├── config/           # Configuration
 │   │   └── config.go     # Config structures
 │   ├── github/           # GitHub API client
@@ -436,4 +436,4 @@ GITSYNCER_DEBUG=1 gitsyncer sync repo test-repo
    ```bash
    mage buildAll
    ```
-5. Create GitHub/Codeberg release with binaries
+5. Create GitHub/Forgejo release with binaries

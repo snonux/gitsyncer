@@ -5,8 +5,8 @@ import (
 	"os"
 
 	"github.com/snonux/gitsyncer/internal/cli"
-	"github.com/snonux/gitsyncer/internal/codeberg"
 	"github.com/snonux/gitsyncer/internal/config"
+	"github.com/snonux/gitsyncer/internal/forgejo"
 	"github.com/snonux/gitsyncer/internal/github"
 	"github.com/spf13/cobra"
 )
@@ -24,18 +24,6 @@ var testGitHubCmd = &cobra.Command{
   gitsyncer test github-token`,
 	Run: func(cmd *cobra.Command, args []string) {
 		os.Exit(cli.HandleTestGitHubToken())
-	},
-}
-
-var testCodebergCmd = &cobra.Command{
-	Use:   "codeberg-token",
-	Short: "Test Codeberg authentication",
-	Example: `  # Test Codeberg token authentication
-  gitsyncer test codeberg-token`,
-	Run: func(cmd *cobra.Command, args []string) {
-		// TODO: Implement Codeberg token test
-		fmt.Println("Codeberg token test not yet implemented")
-		os.Exit(1)
 	},
 }
 
@@ -67,8 +55,8 @@ var testConfigCmd = &cobra.Command{
 	},
 }
 
-// configTokenWarnings reports GitHub/Codeberg organizations whose token
-// doesn't actually resolve, and flags configs with neither forge configured.
+// configTokenWarnings reports configured forge organizations whose token
+// does not resolve, and flags configs with neither forge configured.
 // It checks resolvability via HasToken (the same config -> env var -> token
 // file cascade the real sync path uses via forge.ResolveToken) rather than
 // just whether the config file inlines a token - most setups intentionally
@@ -78,7 +66,7 @@ var testConfigCmd = &cobra.Command{
 func configTokenWarnings(cfg *config.Config) []string {
 	var warnings []string
 	hasGitHub := false
-	hasCodeberg := false
+	hasForgejo := false
 
 	for _, org := range cfg.Organizations {
 		if org.Host == "git@github.com" {
@@ -87,16 +75,16 @@ func configTokenWarnings(cfg *config.Config) []string {
 				warnings = append(warnings, "Warning: GitHub organization without token")
 			}
 		}
-		if org.Host == "git@codeberg.org" {
-			hasCodeberg = true
-			if !codeberg.NewClient(org.CodebergToken, org.Name).HasToken() {
-				warnings = append(warnings, "Warning: Codeberg organization without token")
+		if org.IsForgejo() {
+			hasForgejo = true
+			if !forgejo.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType).HasToken() {
+				warnings = append(warnings, "Warning: Forgejo organization without token")
 			}
 		}
 	}
 
-	if !hasGitHub && !hasCodeberg {
-		warnings = append(warnings, "Warning: No GitHub or Codeberg organizations configured")
+	if !hasGitHub && !hasForgejo {
+		warnings = append(warnings, "Warning: No GitHub or Forgejo organizations configured")
 	}
 
 	return warnings
@@ -105,6 +93,5 @@ func configTokenWarnings(cfg *config.Config) []string {
 func init() {
 	rootCmd.AddCommand(testCmd)
 	testCmd.AddCommand(testGitHubCmd)
-	testCmd.AddCommand(testCodebergCmd)
 	testCmd.AddCommand(testConfigCmd)
 }

@@ -1,6 +1,6 @@
 # GitSyncer
 
-GitSyncer is a tool for synchronizing git repositories between multiple organizations (e.g., GitHub and Codeberg). It automatically keeps all branches in sync across different git hosting platforms.
+GitSyncer is a tool for synchronizing git repositories between multiple organizations (e.g., GitHub and Forgejo). It automatically keeps all branches in sync across different git hosting platforms.
 
 It has been vibe coded mainly using AI tools (Claude Code CLI and amp).
 
@@ -19,9 +19,8 @@ It has been vibe coded mainly using AI tools (Claude Code CLI and amp).
 - Sync repositories between multiple git organizations
 - Automatic branch creation on remotes that don't have them
 - Batch sync multiple repositories with a single command
-- Sync all public repositories from Codeberg to GitHub
-- Sync all public repositories from GitHub to Codeberg
-- Automatic repository creation on GitHub and Codeberg
+- Discover and sync public GitHub repositories to configured destinations
+- Automatic repository creation on GitHub and Forgejo
 - SSH backup locations with automatic bare repository creation
 - One-way backup to private SSH servers (e.g., home NAS)
 - Merge conflict detection with clear error messages
@@ -48,8 +47,10 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
 {
   "organizations": [
     {
-      "host": "git@codeberg.org",
-      "name": "yourusername"
+      "host": "ssh://git@forgejo.example",
+      "name": "yourusername",
+      "forgejo_api_base": "https://forgejo.example/api/v1",
+      "forgejo_owner": "yourusername"
     },
     {
       "host": "git@github.com",
@@ -71,7 +72,6 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   },
-  "sync_codeberg": true
 }
 ```
 
@@ -127,8 +127,7 @@ gitsyncer sync repo myproject --throttle
 
 # Throttle all public repo sync modes
 gitsyncer sync bidirectional --throttle
-gitsyncer sync codeberg-to-github --throttle
-gitsyncer sync github-to-codeberg --throttle
+gitsyncer sync github-to-forgejo --throttle
 ```
 When `--throttle` is enabled, GitSyncer still applies the default once-daily limit first, then checks `~/git/<repo>` for commits in the last 7 days. If no recent commits are found (or the repo is missing locally), the repo sync is allowed only once per random interval between 60 and 120 days and the next allowed date is stored. Sync state is stored in `.gitsyncer-state.json` in the work directory. Use `--force` to bypass both interval checks.
 
@@ -140,27 +139,6 @@ gitsyncer sync all
 gitsyncer sync all --backup
 ```
 
-#### Sync Codeberg to GitHub
-```bash
-# Sync all public Codeberg repositories to GitHub
-gitsyncer sync codeberg-to-github
-
-# Auto-create missing GitHub repos
-gitsyncer sync codeberg-to-github --create-repos
-
-# Preview changes
-gitsyncer sync codeberg-to-github --dry-run
-```
-
-#### Sync GitHub to Codeberg
-```bash
-# Sync all public GitHub repositories to Codeberg
-gitsyncer sync github-to-codeberg
-
-# Auto-create missing Codeberg repos
-gitsyncer sync github-to-codeberg --create-repos
-```
-
 #### Full bidirectional sync
 ```bash
 # Complete bidirectional sync of all public repos
@@ -170,9 +148,9 @@ gitsyncer sync bidirectional
 gitsyncer sync bidirectional --dry-run
 ```
 
-`sync bidirectional`, `sync codeberg-to-github`, `sync github-to-codeberg`, and `manage batch-run` now always try configured backup locations when `backupLocation: true` is present in the config. If a backup push fails because that host is offline or unavailable, GitSyncer records that failure in memory and skips that destination for the rest of the process while continuing the primary sync targets and other backups.
+`sync bidirectional`, `sync github-to-forgejo`, and `manage batch-run` now always try configured backup locations when `backupLocation: true` is present in the config. If a backup push fails because that host is offline or unavailable, GitSyncer records that failure in memory and skips that destination for the rest of the process while continuing the primary sync targets and other backups.
 
-Forgejo can be used either as a one-way public backup or as an optional bidirectional sync peer. Repository creation and descriptions use its Gitea-compatible API, while Git data is transferred over SSH. To make it a peer that is fetched, merged, and pushed whenever available, set `optional: true` instead of `backupLocation`:
+Forgejo can be used as a one-way public backup, as a one-way mirror that is pushed on every run, or as an optional bidirectional sync peer. Repository creation and descriptions use its Gitea-compatible API, while Git data is transferred over SSH. To make it a peer that is fetched, merged, and pushed whenever available, set `optional: true` instead of `backupLocation`:
 
 ```json
 {
@@ -185,6 +163,34 @@ Forgejo can be used either as a one-way public backup or as an optional bidirect
   }]
 }
 ```
+
+To mirror GitHub to Forgejo one way, set `pushOnly: true` (it may be combined
+with `optional: true` so an unreachable Forgejo is skipped instead of failing
+the run):
+
+```json
+{
+  "organizations": [{
+    "host": "ssh://git@code.f3s.buetow.org:2022",
+    "forgejo_api_base": "https://code.f3s.buetow.org/api/v1",
+    "forgejo_owner": "snonux",
+    "forgejo_owner_type": "organization",
+    "optional": true,
+    "pushOnly": true
+  }]
+}
+```
+
+A `pushOnly` organization is pushed on every sync (no `--backup` needed) but is
+never fetched, merged, or cloned from, so commits, branches, and tags that exist
+only there never reach GitHub. While a `pushOnly` organization is configured,
+the GitHub discovery commands (`sync github-to-forgejo`, `sync bidirectional`,
+`manage batch-run`) sync every public, non-fork, non-archived GitHub repository
+instead of only those in `repositories`; that list then only decides which
+repositories also go to Forgejo. Pushes are not forced unless `forcePush: true`
+is set, so a branch or tag that diverged on the mirror makes its push fail
+rather than being overwritten. GitSyncer never deletes branches or tags on the
+mirror.
 
 Set an API token with the minimal scopes for the configured owner type:
 `write:repository` plus `write:organization` for an organization, or
@@ -199,8 +205,8 @@ surrounding
 whitespace is removed from either source. Never put a Forgejo token in the JSON
 configuration. A repository named `demo` uses
 `ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets with
-`backupLocation: true` remain push-only. Targets with `optional: true`
-participate fully in branch discovery, fetch, merge, and push. Metadata API
+`backupLocation: true` or `pushOnly: true` are never fetched. Targets with only
+`optional: true` participate fully in branch discovery, fetch, merge, and push. Metadata API
 failures are reported but do not prevent Git-over-SSH synchronization; a fetch
 or push failure skips that Forgejo peer for the remainder of the run without
 interrupting synchronization between the other hosts. GitSyncer never runs
@@ -297,10 +303,7 @@ gitsyncer manage batch-run --force
 # Test GitHub token
 gitsyncer test github-token
 
-# Test Codeberg token
-gitsyncer test codeberg-token
-
-# Validate configuration
+# # Validate configuration
 gitsyncer test config
 ```
 
@@ -333,7 +336,7 @@ The `--backup` flag enables syncing to backup locations configured in your confi
 - You want to control when backups happen
 - You need to separate regular syncing from backup operations
 
-Without `--backup`: GitSyncer only syncs between primary git hosts (GitHub, Codeberg, etc.)
+Without `--backup`: GitSyncer only syncs between primary git hosts (GitHub, Forgejo, etc.)
 With `--backup`: GitSyncer also pushes to backup locations marked with `"backupLocation": true`
 
 ```bash
@@ -375,6 +378,7 @@ branches from that list using regex patterns in `exclude_branches`:
 {
   "organizations": [...],
   "repositories": [...],
+  "branches": ["main", "master", "develop"],
   "exclude_branches": [
     "^codex/",    // Exclude branches starting with "codex/"
     "^temp-",     // Exclude branches starting with "temp-"
@@ -542,21 +546,13 @@ The batch-run feature is designed for automated weekly synchronization from cron
    - Shows state file location for debugging
 
 ### Sync specific repositories
-1. Create repositories on all platforms (GitHub, Codeberg, etc.)
+1. Create repositories on all configured platforms
 2. Add the repository name to your configuration file
 3. Run `gitsyncer sync repo repo-name`
 4. GitSyncer will:
    - Clone from the first organization
    - Push all branches to other organizations
    - Keep them in sync going forward
-
-### Sync all public Codeberg repositories
-1. Ensure Codeberg is in your organizations list in the config
-2. Run `gitsyncer sync codeberg-to-github`
-3. GitSyncer will:
-   - Fetch all public repositories from your Codeberg account
-   - Sync each one to all other configured organizations
-   - Skip any that fail (e.g., don't exist on other platforms)
 
 ## Error Handling
 

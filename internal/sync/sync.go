@@ -74,7 +74,7 @@ func (s *Syncer) SetDryRun(enabled bool) {
 
 // SetForgejoBackupClientFactory injects the factory used to ensure Forgejo
 // repositories. Callers (internal/cli) construct this from a concrete forge
-// client (e.g. codeberg.NewForgejoClient); internal/sync never depends on
+// client (e.g. forgejo.NewForgejoClient); internal/sync never depends on
 // that concrete type itself.
 func (s *Syncer) SetForgejoBackupClientFactory(factory ForgejoBackupClientFactory) {
 	s.forgejoBackupClientFactory = factory
@@ -294,11 +294,12 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 	// Repository doesn't exist, clone it
 	fmt.Printf("  Cloning %s...\n", repoName)
 
-	// Find first non-backup organization to clone from
+	// Find the first organization we are allowed to read from. Backups and
+	// pushOnly mirrors are write-only and never serve as a clone source.
 	var sourceOrg *config.Organization
 	orgs := s.syncOrgs()
 	for i := range orgs {
-		if !orgs[i].BackupLocation {
+		if !orgs[i].IsWriteOnly() {
 			sourceOrg = &orgs[i]
 			break
 		}
@@ -319,9 +320,9 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 
 // cloneRepository clones a repository from an organization
 func (s *Syncer) cloneRepository(org *config.Organization, repoPath string) error {
-	// Skip cloning from backup locations
-	if org.BackupLocation {
-		return fmt.Errorf("cannot clone from backup location %s", org.Host)
+	// Never clone from backups or pushOnly mirrors: they are write-only.
+	if org.IsWriteOnly() {
+		return fmt.Errorf("cannot clone from write-only location %s", org.Host)
 	}
 
 	// For file:// URLs, we need special handling
@@ -397,27 +398,19 @@ func (s *Syncer) fetchAll() error {
 		allOrgsMap[remoteName] = org
 	}
 
-	// Remotes that must not be fetched because Codeberg syncing is disabled
-	// in the config. A Codeberg remote may still exist in the working copy
-	// from a previous run, so we explicitly skip it here.
-	disabledRemotes := s.disabledRemoteNames()
-
 	// Fetch from each remote, in sorted order so the fetch sequence is
 	// deterministic across runs instead of following Go's randomized map
 	// iteration order. See sortedRemoteNames in branch_sync.go.
 	for _, remote := range sortedRemoteNames(remotes) {
-		if disabledRemotes[remote] {
-			fmt.Printf("Skipping fetch from disabled remote %s\n", remote)
-			continue
-		}
 		org, exists := allOrgsMap[remote]
 		if exists && !s.organizationActive(org) {
 			continue
 		}
-		// Check if this remote is a backup location
-		if exists && org.BackupLocation {
-			// Even when backup is enabled, we don't fetch from backup locations
-			fmt.Printf("Skipping fetch from backup location %s\n", remote)
+		// Backups and pushOnly mirrors are write-only: even when active we
+		// never fetch from them, so nothing that exists only there (commits,
+		// branches, tags) can be merged or pushed to the other forges.
+		if exists && org.IsWriteOnly() {
+			fmt.Printf("Skipping fetch from write-only location %s\n", remote)
 			continue
 		}
 
@@ -447,7 +440,8 @@ func (s *Syncer) getAllBranches() ([]string, error) {
 		return nil, err
 	}
 
-	// Backup remotes are push-only and must never influence branch discovery.
+	// Backup and pushOnly remotes are write-only and must never influence
+	// branch discovery.
 	filteredOutput := s.filterBackupBranches(output)
 	return getAllUniqueBranches(filteredOutput), nil
 }
@@ -519,11 +513,13 @@ func (s *Syncer) checkoutBranch(branch string) error {
 		return nil
 	}
 
-	// If that fails, create a new branch tracking the first remote that has it
+	// If that fails, create a new branch tracking the first remote that has
+	// it. Write-only remotes are skipped: a stale remote-tracking ref left
+	// over from before a peer became pushOnly must not seed a local branch.
 	orgs := s.syncOrgs()
 	for i := range orgs {
 		org := &orgs[i]
-		if !s.organizationActive(org) {
+		if org.IsWriteOnly() || !s.organizationActive(org) {
 			continue
 		}
 		remoteName := s.getRemoteName(org)
@@ -568,60 +564,17 @@ func (s *Syncer) getRemoteName(org *config.Organization) string {
 	return host
 }
 
-// codebergActiveForRepo reports whether Codeberg is an active sync target for
-// the current repository. Codeberg syncing must be enabled in the config AND
-// the repository must be part of the configured sync set (the repositories
-// allowlist; in discovery mode, with an empty allowlist, every repo qualifies).
-// This is what prevents a repo that is not in the allowlist (e.g. "hypr") from
-// being pushed to or fetched from Codeberg via sync repo / sync all.
-func (s *Syncer) codebergActiveForRepo() bool {
-	return s.config.CodebergSyncEnabled() && s.config.IsSyncRepo(s.repoName)
-}
-
 // syncOrgs returns the organizations that should participate in syncing
-// (clone/fetch/push) for the current repository. Codeberg organizations are
-// excluded unless codebergActiveForRepo is true; backup locations are
+// (clone/fetch/push) for the current repository. Backup locations are
 // returned as usual and gated separately via backupActive.
 func (s *Syncer) syncOrgs() []config.Organization {
-	if s.codebergActiveForRepo() {
-		return s.config.Organizations
-	}
-	orgs := make([]config.Organization, 0, len(s.config.Organizations))
-	for i := range s.config.Organizations {
-		if s.config.Organizations[i].IsCodeberg() {
-			continue
-		}
-		orgs = append(orgs, s.config.Organizations[i])
-	}
-	return orgs
+	return s.config.SyncOrganizations()
 }
 
-// disabledRemoteNames returns the remote names of organizations that must not
-// be synced because Codeberg is not an active target for the current repo
-// (either Codeberg syncing is disabled in the config, or the repo is not in
-// the configured allowlist). These remotes may still exist in a working copy
-// from a previous run, so callers use this set to skip fetching and branch
-// discovery for them.
-func (s *Syncer) disabledRemoteNames() map[string]bool {
-	disabled := make(map[string]bool)
-	if s.config == nil {
-		return disabled
-	}
-	if s.codebergActiveForRepo() {
-		return disabled
-	}
-	for i := range s.config.Organizations {
-		org := &s.config.Organizations[i]
-		if org.IsCodeberg() {
-			disabled[s.getRemoteName(org)] = true
-		}
-	}
-	return disabled
-}
-
-// filterBackupBranches filters out branches from backup locations and from
-// remotes that are not active sync targets (e.g. a leftover Codeberg remote
-// when Codeberg syncing is disabled in the config).
+// filterBackupBranches filters out branches from write-only locations (backups
+// and pushOnly mirrors) and from remotes that are not active sync targets.
+// Write-only remotes can still carry remote-tracking refs, either
+// written by our own pushes or left over from when the peer was bidirectional.
 func (s *Syncer) filterBackupBranches(output []byte) []byte {
 	lines := strings.Split(string(output), "\n")
 	var filtered []string
@@ -647,11 +600,11 @@ func (s *Syncer) filterBackupBranches(output []byte) []byte {
 			continue
 		}
 
-		// Check if this branch is from a backup remote
+		// Check if this branch is from a write-only remote
 		isBackup := false
 		for i := range orgs {
 			org := &orgs[i]
-			if org.BackupLocation {
+			if org.IsWriteOnly() {
 				remoteName := s.getRemoteName(org)
 				if strings.HasPrefix(line, remoteName+"/") {
 					isBackup = true

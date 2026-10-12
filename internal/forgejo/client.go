@@ -1,4 +1,4 @@
-package codeberg
+package forgejo
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 	"github.com/snonux/gitsyncer/internal/httpclient"
 )
 
-// Repository represents a Codeberg/Gitea repository
+// Repository represents a Forgejo repository.
 type Repository struct {
 	ID          int64     `json:"id"`
 	Name        string    `json:"name"`
@@ -29,7 +29,7 @@ type Repository struct {
 	Empty       bool      `json:"empty"`
 }
 
-// Client handles Codeberg API operations
+// Client handles Forgejo API operations.
 type Client struct {
 	baseURL   string
 	org       string
@@ -42,19 +42,15 @@ var _ forge.RepoClient = (*Client)(nil)
 var _ forge.RepoDescriptionClient = (*Client)(nil)
 var _ forge.PublicRepoEnsurer = (*Client)(nil)
 
-// NewClient creates a new Codeberg API client
-func NewClient(token, org string) *Client {
-	c := &Client{
-		baseURL:   "https://codeberg.org/api/v1",
-		org:       org,
-		service:   "Codeberg",
-		ownerType: forge.OwnerTypeUser,
-	}
-	c.loadToken(token)
-	return c
+// NewForgejoClient creates a Forgejo client using protected token sources.
+// FORGEJO_TOKEN takes precedence over ~/.gitsyncer_forgejo_token.
+func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client {
+	return NewGiteaClient(baseURL, loadForgejoToken(), owner, "Forgejo", ownerType)
 }
 
-// NewGiteaClient creates a client for a Gitea-compatible service such as Forgejo.
+// NewGiteaClient creates a client for a Gitea-compatible API using an explicit
+// token. NewForgejoClient should be used by application code so credentials
+// come from the protected Forgejo token sources.
 func NewGiteaClient(baseURL, token, owner, service string, ownerType forge.OwnerType) *Client {
 	if ownerType == "" {
 		ownerType = forge.OwnerTypeUser
@@ -68,28 +64,12 @@ func NewGiteaClient(baseURL, token, owner, service string, ownerType forge.Owner
 	}
 }
 
-// NewForgejoClient creates a Forgejo client using protected token sources.
-// FORGEJO_TOKEN takes precedence over ~/.gitsyncer_forgejo_token.
-func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client {
-	return NewGiteaClient(baseURL, loadForgejoToken(), owner, "Forgejo", ownerType)
-}
-
 // loadForgejoToken resolves the Forgejo token via the shared FORGEJO_TOKEN
 // env var -> ~/.gitsyncer_forgejo_token cascade in forge.ResolveToken (there
 // is no config-file source for Forgejo tokens, so the config slot is passed
 // empty and resolution always falls through to env, then file).
 func loadForgejoToken() string {
 	return forge.ResolveToken("", "FORGEJO_TOKEN", ".gitsyncer_forgejo_token")
-}
-
-// loadToken resolves the Codeberg API token via the shared config ->
-// CODEBERG_TOKEN env var -> ~/.gitsyncer_codeberg_token cascade in
-// forge.ResolveToken, which is the single source of truth for this
-// precedence (see its doc comment for why the cascade lives there rather
-// than being reimplemented per forge, and for the trimming rules that used
-// to differ between this method and its siblings).
-func (c *Client) loadToken(tokenFromConfig string) {
-	c.token = forge.ResolveToken(tokenFromConfig, "CODEBERG_TOKEN", ".gitsyncer_codeberg_token")
 }
 
 // HasToken returns true if a token is loaded
@@ -133,10 +113,10 @@ func (c *Client) GetRepoDescription(repoName string) (string, bool, error) {
 	return strings.TrimSpace(repo.Description), true, nil
 }
 
-// UpdateRepoDescription updates a repository description on Codeberg
+// UpdateRepoDescription updates a repository description on Forgejo.
 func (c *Client) UpdateRepoDescription(repoName, description string) error {
 	if !c.HasToken() {
-		return fmt.Errorf("Codeberg token required to update repository")
+		return fmt.Errorf("Forgejo token required to update repository")
 	}
 
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
@@ -157,7 +137,7 @@ func (c *Client) UpdateRepoDescription(repoName, description string) error {
 	}
 
 	if result.StatusCode != http.StatusOK {
-		return fmt.Errorf("failed to update Codeberg description: %s - %s", result.Status, string(result.Body))
+		return fmt.Errorf("failed to update Forgejo description: %s - %s", result.Status, string(result.Body))
 	}
 	return nil
 }
@@ -244,7 +224,7 @@ func (c *Client) listReposPage(url string) ([]Repository, error) {
 	return repos, nil
 }
 
-// RepoExists checks if a repository exists on Codeberg
+// RepoExists checks if a repository exists on Forgejo.
 func (c *Client) RepoExists(repoName string) (bool, error) {
 	url := fmt.Sprintf("%s/repos/%s/%s", c.baseURL, c.org, repoName)
 	headers := map[string]string{}
@@ -261,7 +241,7 @@ func (c *Client) RepoExists(repoName string) (bool, error) {
 }
 
 // createRepoURL resolves the create-repository endpoint for this client's
-// owner type: a Codeberg/Gitea user account and an organization use
+// owner type: a Forgejo user account and an organization use
 // different endpoints.
 func (c *Client) createRepoURL() (string, error) {
 	switch c.ownerType {
@@ -274,7 +254,7 @@ func (c *Client) createRepoURL() (string, error) {
 	}
 }
 
-// CreateRepo creates a new repository on Codeberg
+// CreateRepo creates a new repository on Forgejo.
 func (c *Client) CreateRepo(repoName, description string, private bool) error {
 	url, err := c.createRepoURL()
 	if err != nil {
@@ -378,10 +358,10 @@ func (c *Client) EnsurePublicRepo(repoName, description string) error {
 	return nil
 }
 
-// DeleteRepo deletes a repository from Codeberg
+// DeleteRepo deletes a repository from Forgejo.
 func (c *Client) DeleteRepo(repoName string) error {
 	if !c.HasToken() {
-		return fmt.Errorf("Codeberg token required to delete repository")
+		return fmt.Errorf("Forgejo token required to delete repository")
 	}
 
 	if err := forge.EnsureRepoExists(c.org, repoName, c.RepoExists); err != nil {

@@ -2,7 +2,7 @@
 // description in sync across forges and for pushing the canonical
 // description to any configured backup destinations. This logic used to
 // live in internal/cli/description_sync.go, which reached directly into
-// codeberg.NewForgejoClient, os.WriteFile, and exec.Command("ssh", ...) from
+// forgejo.NewForgejoClient, os.WriteFile, and exec.Command("ssh", ...) from
 // the CLI layer - a Separation of Concerns violation (task w01). Moving it
 // here keeps internal/cli as a thin flag-parsing -> function-call layer:
 // the composition root (internal/cli/description_sync.go) builds the

@@ -117,6 +117,16 @@ func TestPushBranchArgs(t *testing.T) {
 			want:        []string{"push", "-u", "backup", "main", "--tags", "--force"},
 		},
 		{
+			name: "regular pushOnly mirror push",
+			org:  &config.Organization{PushOnly: true},
+			want: []string{"push", "backup", "main", "--tags"},
+		},
+		{
+			name: "forced pushOnly mirror push",
+			org:  &config.Organization{PushOnly: true, ForcePush: true},
+			want: []string{"push", "backup", "main", "--tags", "--force"},
+		},
+		{
 			name: "force ignored for primary remote",
 			org:  &config.Organization{ForcePush: true},
 			want: []string{"push", "backup", "main", "--tags"},

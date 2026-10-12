@@ -19,7 +19,7 @@ var releaseCmd = &cobra.Command{
 	Use:   "release",
 	Short: "Manage releases across platforms",
 	Long: `Check for version tags without releases and create them across 
-GitHub, Codeberg, and Forgejo. Supports AI-generated release notes via ollama
+GitHub and Forgejo. Supports AI-generated release notes via ollama
 (glm-5.3-flash:cloud), with fallback to hexai, claude, or amp.`,
 }
 

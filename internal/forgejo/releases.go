@@ -1,4 +1,4 @@
-package codeberg
+package forgejo
 
 import (
 	"bytes"
@@ -11,16 +11,16 @@ import (
 	"github.com/snonux/gitsyncer/internal/httpclient"
 )
 
-// Compile-time guarantees that the Codeberg/Forgejo client satisfies the forge
-// release contracts. Codeberg/Gitea/Forgejo is the only built-in forge that
+// Compile-time guarantees that the Forgejo client satisfies the forge
+// release contracts. Forgejo/Gitea is the only built-in forge that
 // needs releases enabled per-repository, so it also implements ReleasesEnabler.
 var (
 	_ forge.ReleaseClient   = (*Client)(nil)
 	_ forge.ReleasesEnabler = (*Client)(nil)
 )
 
-// codebergRelease is the subset of the Gitea release payload we send and read.
-type codebergRelease struct {
+// forgejoRelease is the subset of the Gitea release payload we send and read.
+type forgejoRelease struct {
 	TagName string `json:"tag_name"`
 	Name    string `json:"name"`
 	Body    string `json:"body"`
@@ -32,7 +32,7 @@ type repoReleaseSettings struct {
 	HasReleases bool `json:"has_releases"`
 }
 
-const codebergReleasesPerPage = 50
+const forgejoReleasesPerPage = 50
 
 func (c *Client) releasesURL(owner, repo string) string {
 	return fmt.Sprintf("%s/repos/%s/%s/releases", c.baseURL, owner, repo)
@@ -57,7 +57,7 @@ func (c *Client) GetReleases(owner, repo string) ([]string, error) {
 }
 
 func (c *Client) getReleasesPage(owner, repo string, page int) (tags []string, done bool, err error) {
-	url := fmt.Sprintf("%s?page=%d&limit=%d", c.releasesURL(owner, repo), page, codebergReleasesPerPage)
+	url := fmt.Sprintf("%s?page=%d&limit=%d", c.releasesURL(owner, repo), page, forgejoReleasesPerPage)
 	result, err := httpclient.DoJSON(http.MethodGet, url, c.authHeaders(false), nil)
 	if err != nil {
 		return nil, true, err
@@ -70,7 +70,7 @@ func (c *Client) getReleasesPage(owner, repo string, page int) (tags []string, d
 		return nil, true, fmt.Errorf("%s API error: %s - %s", c.service, result.Status, string(result.Body))
 	}
 
-	var releases []codebergRelease
+	var releases []forgejoRelease
 	if err := json.Unmarshal(result.Body, &releases); err != nil {
 		return nil, true, err
 	}
@@ -79,14 +79,14 @@ func (c *Client) getReleasesPage(owner, repo string, page int) (tags []string, d
 	for _, release := range releases {
 		tags = append(tags, release.TagName)
 	}
-	return tags, len(releases) < codebergReleasesPerPage, nil
+	return tags, len(releases) < forgejoReleasesPerPage, nil
 }
 
 func (c *Client) repoURL(owner, repo string) string {
 	return fmt.Sprintf("%s/repos/%s/%s", c.baseURL, owner, repo)
 }
 
-// authHeaders returns the standard Gitea/Codeberg auth + content headers for
+// authHeaders returns the standard Forgejo/Gitea auth + content headers for
 // a DoJSON call. contentType indicates whether the request carries a JSON
 // body that needs Content-Type: application/json set. This replaces the
 // former authRequest(req, bool), which mutated an *http.Request directly;
@@ -104,7 +104,7 @@ func (c *Client) authHeaders(contentType bool) map[string]string {
 }
 
 // EnsureReleasesEnabled ensures that the repository has the Releases feature
-// enabled, enabling it via API when it is disabled. Codeberg/Gitea exposes
+// enabled, enabling it via API when it is disabled. Forgejo/Gitea exposes
 // releases as a per-repository toggle, unlike GitHub where releases are always
 // available.
 func (c *Client) EnsureReleasesEnabled(owner, repo string) error {
@@ -171,7 +171,7 @@ func (c *Client) postRelease(url string, jsonData []byte) (int, string, []byte, 
 	return result.StatusCode, result.Status, result.Body, nil
 }
 
-// CreateRelease creates a release for the given tag on Codeberg/Gitea. The
+// CreateRelease creates a release for the given tag on Forgejo/Gitea. The
 // Gitea release API returns 404 in two distinct situations (repository missing
 // vs. releases disabled) and 409 for a known tag bug; both are handled here so
 // callers get an actionable error instead of nested branching at the call
@@ -279,7 +279,7 @@ func (c *Client) handleCreate404(owner, repo, url string, jsonData []byte, respB
 }
 
 // UpdateRelease updates the body of an existing release for the given tag on
-// Codeberg/Gitea.
+// Forgejo/Gitea.
 func (c *Client) UpdateRelease(owner, repo, tag, releaseNotes string) error {
 	if c.token == "" {
 		return fmt.Errorf("%s token is required for updating releases", c.service)
@@ -320,7 +320,7 @@ func (c *Client) releaseIDForTag(owner, repo, tag string) (int64, error) {
 // to the ~30-line guideline.
 func (c *Client) patchRelease(owner, repo string, releaseID int64, tag, releaseNotes string) error {
 	updateURL := fmt.Sprintf("%s/repos/%s/%s/releases/%d", c.baseURL, owner, repo, releaseID)
-	release := codebergRelease{
+	release := forgejoRelease{
 		TagName: tag,
 		Name:    tag,
 		Body:    releaseNotes,

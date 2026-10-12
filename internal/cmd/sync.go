@@ -24,7 +24,7 @@ var syncCmd = &cobra.Command{
 	Short: "Synchronize repositories between platforms",
 	Long: `Synchronize git repositories across multiple platforms.
 This command provides various sync operations for keeping repositories
-in sync between GitHub, Codeberg, and other configured platforms.`,
+in sync between GitHub and other configured platforms.`,
 }
 
 var syncRepoCmd = &cobra.Command{
@@ -84,54 +84,18 @@ var syncAllCmd = &cobra.Command{
 	},
 }
 
-var syncCodebergToGitHubCmd = &cobra.Command{
-	Use:   "codeberg-to-github",
-	Short: "Sync public Codeberg repos to GitHub",
-	Long:  `Synchronize all public repositories from Codeberg to GitHub.`,
-	Example: `  # Sync Codeberg public repos to GitHub
-  gitsyncer sync codeberg-to-github
-  
-  # Auto-create missing GitHub repos
-  gitsyncer sync codeberg-to-github --create-repos
-  
+var syncGitHubToForgejoCmd = &cobra.Command{
+	Use:   "github-to-forgejo",
+	Short: "Sync public GitHub repositories to configured organizations",
+	Long:  `Synchronize all public repositories from GitHub to the configured organizations.`,
+	Example: `  # Sync GitHub public repos to configured organizations
+  gitsyncer sync github-to-forgejo
+
   # Preview what would be synced
-  gitsyncer sync codeberg-to-github --dry-run`,
-	Run: func(cmd *cobra.Command, args []string) {
-		flags := buildFlags()
-		flags.SyncCodebergPublic = true
-
-		if createRepos || autoCreate {
-			flags.CreateGitHubRepos = true
-		}
-
-		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
-		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
-			cli.HandleCheckReleases(cfg, flags)
-		}
-		os.Exit(exitCode)
-	},
-}
-
-var syncGitHubToCodebergCmd = &cobra.Command{
-	Use:   "github-to-codeberg",
-	Short: "Sync public GitHub repos to Codeberg",
-	Long:  `Synchronize all public repositories from GitHub to Codeberg.`,
-	Example: `  # Sync GitHub public repos to Codeberg
-  gitsyncer sync github-to-codeberg
-  
-  # Auto-create missing Codeberg repos
-  gitsyncer sync github-to-codeberg --create-repos
-  
-  # Preview what would be synced
-  gitsyncer sync github-to-codeberg --dry-run`,
+  gitsyncer sync github-to-forgejo --dry-run`,
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.SyncGitHubPublic = true
-
-		if createRepos || autoCreate {
-			flags.CreateCodebergRepos = true
-		}
-
 		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
 		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleases(cfg, flags)
@@ -143,8 +107,7 @@ var syncGitHubToCodebergCmd = &cobra.Command{
 var syncBidirectionalCmd = &cobra.Command{
 	Use:   "bidirectional",
 	Short: "Full bidirectional sync of all public repos",
-	Long: `Perform a complete bidirectional synchronization of all public 
-repositories between GitHub and Codeberg. This is equivalent to the old --full flag.`,
+	Long:  `Perform a complete synchronization of all public GitHub repositories to configured organizations.`,
 	Example: `  # Full bidirectional sync
   gitsyncer sync bidirectional
   
@@ -156,19 +119,8 @@ repositories between GitHub and Codeberg. This is equivalent to the old --full f
 	Run: func(cmd *cobra.Command, args []string) {
 		flags := buildFlags()
 		flags.FullSync = true
-		flags.SyncCodebergPublic = true
 		flags.SyncGitHubPublic = true
-		flags.CreateGitHubRepos = true
-		flags.CreateCodebergRepos = true
-
-		// First sync Codeberg to GitHub
-		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
-		if exitCode != 0 {
-			os.Exit(exitCode)
-		}
-
-		// Then sync GitHub to Codeberg
-		exitCode = cli.HandleSyncGitHubPublic(cfg, flags)
+		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
 		if shouldRunPostSyncReleases(exitCode, flags, noReleases) {
 			cli.HandleCheckReleases(cfg, flags)
 		}
@@ -182,8 +134,7 @@ func init() {
 	// Add subcommands
 	syncCmd.AddCommand(syncRepoCmd)
 	syncCmd.AddCommand(syncAllCmd)
-	syncCmd.AddCommand(syncCodebergToGitHubCmd)
-	syncCmd.AddCommand(syncGitHubToCodebergCmd)
+	syncCmd.AddCommand(syncGitHubToForgejoCmd)
 	syncCmd.AddCommand(syncBidirectionalCmd)
 
 	// Sync flags (available for all sync subcommands)
@@ -200,18 +151,17 @@ func init() {
 
 func buildFlags() *cli.Flags {
 	return &cli.Flags{
-		ConfigPath:          cfgFile,
-		WorkDir:             workDir,
-		DryRun:              dryRun,
-		Backup:              backup,
-		NoCheckReleases:     noReleases,
-		AutoCreateReleases:  autoCreate,
-		AIReleaseNotes:      !noAIReleaseNotes,
-		AITool:              syncAITool,
-		Force:               syncForce,
-		Throttle:            throttle,
-		CreateGitHubRepos:   createRepos,
-		CreateCodebergRepos: createRepos,
+		ConfigPath:         cfgFile,
+		WorkDir:            workDir,
+		DryRun:             dryRun,
+		Backup:             backup,
+		NoCheckReleases:    noReleases,
+		AutoCreateReleases: autoCreate,
+		AIReleaseNotes:     !noAIReleaseNotes,
+		AITool:             syncAITool,
+		Force:              syncForce,
+		Throttle:           throttle,
+		CreateGitHubRepos:  createRepos,
 	}
 }
 

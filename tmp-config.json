@@ -1,6 +1,5 @@
 {
   "organizations": [
-    {"host": "git@codeberg.org", "name": "dummy"},
     {"host": "git@github.com", "name": "dummy"}
   ],
   "repositories": ["fapi"],

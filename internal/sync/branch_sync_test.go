@@ -124,7 +124,7 @@ func TestPushToAllRemotes_ProcessesRemotesInSortedOrder(t *testing.T) {
 
 // TestFetchAll_ProcessesRemotesInSortedOrder exercises fetchAll against a
 // real git repository with several remotes configured as active backup
-// locations, which makes fetchAll print "Skipping fetch from backup
+// locations, which makes fetchAll print "Skipping fetch from write-only
 // location X" and move on without ever invoking git fetch. That lets the
 // test observe fetch order deterministically and cheaply across many runs,
 // which would have caught fetchAll ranging over the remotes map directly.
@@ -150,7 +150,7 @@ func TestFetchAll_ProcessesRemotesInSortedOrder(t *testing.T) {
 	want := append([]string(nil), names...)
 	sort.Strings(want)
 
-	orderRe := regexp.MustCompile(`Skipping fetch from backup location (\S+)`)
+	orderRe := regexp.MustCompile(`Skipping fetch from write-only location (\S+)`)
 
 	for i := 0; i < 20; i++ {
 		syncer := &Syncer{
@@ -268,7 +268,7 @@ func TestSyncRepository_ThreeWaySyncIncludesOptionalPeer(t *testing.T) {
 	root := t.TempDir()
 	remoteRoots := []string{
 		filepath.Join(root, "github"),
-		filepath.Join(root, "codeberg"),
+		filepath.Join(root, "peer"),
 		filepath.Join(root, "forgejo"),
 	}
 	for _, remoteRoot := range remoteRoots {
@@ -308,7 +308,7 @@ func TestSyncRepository_ThreeWaySyncIncludesOptionalPeer(t *testing.T) {
 		runGit(t, repoPath, "commit", "-m", name)
 		runGit(t, repoPath, "push", filepath.Join(remoteRoot, "demo.git"), "main")
 	}
-	addRemoteCommit("codeberg-change", "codeberg.txt", remoteRoots[1])
+	addRemoteCommit("peer-change", "peer.txt", remoteRoots[1])
 	addRemoteCommit("forgejo-change", "forgejo.txt", remoteRoots[2])
 
 	workDir := filepath.Join(root, "work")
@@ -336,7 +336,7 @@ func TestSyncRepository_ThreeWaySyncIncludesOptionalPeer(t *testing.T) {
 		if got := runGit(t, remoteRoot, "--git-dir", gitDir, "rev-parse", "main"); got != wantCommit {
 			t.Fatalf("%s main = %s, want %s", remoteRoot, got, wantCommit)
 		}
-		for _, filename := range []string{"codeberg.txt", "forgejo.txt"} {
+		for _, filename := range []string{"peer.txt", "forgejo.txt"} {
 			runGit(t, remoteRoot, "--git-dir", gitDir, "show", "main:"+filename)
 		}
 	}

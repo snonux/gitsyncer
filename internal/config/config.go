@@ -45,13 +45,13 @@ type Organization struct {
 	Host                string          `json:"host"`
 	Name                string          `json:"name"`
 	GitHubToken         string          `json:"github_token,omitempty"`
-	CodebergToken       string          `json:"codeberg_token,omitempty"`
 	ForgejoAPIBase      string          `json:"forgejo_api_base,omitempty"`    // Gitea-compatible API root, for example https://code.example/api/v1
 	ForgejoOwner        string          `json:"forgejo_owner,omitempty"`       // Forgejo user or organization that owns repositories
 	ForgejoOwnerType    forge.OwnerType `json:"forgejo_owner_type,omitempty"`  // user (default) or organization
 	BackupLocation      bool            `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
 	Optional            bool            `json:"optional,omitempty"`            // Skip this sync peer for the current run when it is unavailable
-	ForcePush           bool            `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup destination
+	PushOnly            bool            `json:"pushOnly,omitempty"`            // One-way mirror: always pushed to, never fetched, merged, or cloned from
+	ForcePush           bool            `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup or pushOnly destination
 	DescriptionSyncHost string          `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
 	DescriptionSyncRoot string          `json:"descriptionSyncRoot,omitempty"` // Filesystem path on DescriptionSyncHost where bare repos live
 }
@@ -69,13 +69,8 @@ type Config struct {
 	ShowcaseOutputDir     string              `json:"showcase_output_dir,omitempty"`     // Directory where showcase files and assets are written
 	ShowcaseCgitHost      string              `json:"showcase_cgit_host,omitempty"`      // Deprecated: accepted for configuration compatibility but ignored
 	// SkipReleases maps a repository name to a list of tag names for which
-	// releases should NOT be created on any platform (GitHub/Codeberg)
+	// releases should NOT be created on any platform (GitHub/Forgejo).
 	SkipReleases map[string][]string `json:"skip_releases,omitempty"`
-	// SyncCodeberg opts in to any Codeberg syncing (push/fetch, repo creation,
-	// releases, description sync, and the codeberg-to-github / github-to-codeberg
-	// subcommands). Codeberg is never synced unless this is explicitly true,
-	// even when a Codeberg organization is present in Organizations.
-	SyncCodeberg bool `json:"sync_codeberg,omitempty"`
 }
 
 // SyncBranches returns the configured branch scope for a repository. A
@@ -171,8 +166,15 @@ func (c *Config) Validate() error {
 		if org.Name == "" && !strings.HasPrefix(org.Host, "file://") && !org.IsSSH() && !org.IsForgejo() {
 			return fmt.Errorf("organization %d: missing name", i)
 		}
-		if org.ForcePush && !org.BackupLocation {
-			return fmt.Errorf("organization %d: forcePush requires backupLocation", i)
+		// forcePush rewrites the destination, so it is only allowed where
+		// gitsyncer never reads back from that destination.
+		if org.ForcePush && !org.IsWriteOnly() {
+			return fmt.Errorf("organization %d: forcePush requires backupLocation or pushOnly", i)
+		}
+		// A backup only syncs with --backup; a pushOnly mirror syncs on every
+		// run. One organization cannot be both.
+		if org.BackupLocation && org.PushOnly {
+			return fmt.Errorf("organization %d: backupLocation and pushOnly are mutually exclusive", i)
 		}
 		if org.BackupLocation && org.Optional {
 			return fmt.Errorf("organization %d: backupLocation and optional are mutually exclusive", i)
@@ -181,8 +183,8 @@ func (c *Config) Validate() error {
 			if org.ForgejoOwnerType != "" && !org.ForgejoOwnerType.Valid() {
 				return fmt.Errorf("organization %d: forgejo_owner_type must be %q or %q", i, forge.OwnerTypeUser, forge.OwnerTypeOrganization)
 			}
-			if !org.BackupLocation && !org.Optional {
-				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation or optional", i)
+			if !org.BackupLocation && !org.Optional && !org.PushOnly {
+				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation, optional, or pushOnly", i)
 			}
 			if strings.TrimSpace(org.ForgejoOwner) == "" {
 				return fmt.Errorf("organization %d: forgejo_owner is required with forgejo_api_base", i)
@@ -312,9 +314,13 @@ func (c *Config) FindOrganization(host string) *Organization {
 	return nil
 }
 
-// IsCodeberg checks if the organization is Codeberg
-func (o *Organization) IsCodeberg() bool {
-	return o.Host == "git@codeberg.org" || strings.Contains(o.Host, "codeberg.org")
+// IsWriteOnly reports whether gitsyncer only ever pushes to this organization
+// and never fetches, merges, or clones from it. That holds for backup
+// locations (synced only with --backup) and for pushOnly mirrors (synced on
+// every run). Content that exists only on a write-only organization therefore
+// never flows back to the other forges.
+func (o *Organization) IsWriteOnly() bool {
+	return o.BackupLocation || o.PushOnly
 }
 
 // IsForgejo reports whether the organization is a configured Forgejo target.
@@ -322,20 +328,27 @@ func (o *Organization) IsForgejo() bool {
 	return strings.TrimSpace(o.ForgejoAPIBase) != ""
 }
 
-// CodebergSyncEnabled reports whether Codeberg syncing has been explicitly
-// enabled in the configuration. Codeberg is never synced unless this returns
-// true, regardless of whether a Codeberg organization is configured.
-func (c *Config) CodebergSyncEnabled() bool {
-	return c != nil && c.SyncCodeberg
+// MirrorsAllGitHubRepos reports whether a pushOnly mirror is configured. Such
+// a mirror receives every public GitHub repository, so the GitHub discovery
+// commands must not restrict themselves to the repositories allowlist.
+func (c *Config) MirrorsAllGitHubRepos() bool {
+	if c == nil {
+		return false
+	}
+	for i := range c.Organizations {
+		if c.Organizations[i].PushOnly {
+			return true
+		}
+	}
+	return false
 }
 
 // FilterSyncRepos restricts a set of discovered repository names to those that
 // are explicitly configured for syncing. When Repositories is non-empty it acts
 // as an allowlist and only repos in that list are returned; this prevents the
-// discovery-based sync commands (codeberg-to-github, github-to-codeberg,
-// batch-run, bidirectional) from syncing unintended repos to a platform such as
-// Codeberg. When Repositories is empty, discovery mode is preserved and all
-// discovered repos are returned untouched.
+// discovery-based sync commands from syncing unintended repositories. When
+// Repositories is empty, discovery mode is preserved and all discovered repos
+// are returned untouched.
 func (c *Config) FilterSyncRepos(discovered []string) []string {
 	if c == nil || len(c.Repositories) == 0 {
 		return discovered
@@ -372,16 +385,6 @@ func (c *Config) IsSyncRepo(repoName string) bool {
 	return false
 }
 
-// FindCodebergOrg finds the first Codeberg organization
-func (c *Config) FindCodebergOrg() *Organization {
-	for i := range c.Organizations {
-		if c.Organizations[i].IsCodeberg() {
-			return &c.Organizations[i]
-		}
-	}
-	return nil
-}
-
 // FindForgejoOrg finds the first configured Forgejo organization.
 func (c *Config) FindForgejoOrg() *Organization {
 	for i := range c.Organizations {
@@ -393,26 +396,13 @@ func (c *Config) FindForgejoOrg() *Organization {
 }
 
 // SyncOrganizations returns the organizations that should participate in
-// repository syncing (clone/fetch/push). It excludes Codeberg organizations
-// when Codeberg syncing is not enabled via CodebergSyncEnabled, so that a
-// Codeberg org may still be configured (e.g. for showcase links or tokens)
-// without becoming an active sync target. Backup locations are returned as
+// repository syncing (clone/fetch/push). Backup locations are returned as
 // usual; the sync layer gates them separately via backupActive.
 func (c *Config) SyncOrganizations() []Organization {
 	if c == nil {
 		return nil
 	}
-	if c.CodebergSyncEnabled() {
-		return c.Organizations
-	}
-	orgs := make([]Organization, 0, len(c.Organizations))
-	for i := range c.Organizations {
-		if c.Organizations[i].IsCodeberg() {
-			continue
-		}
-		orgs = append(orgs, c.Organizations[i])
-	}
-	return orgs
+	return c.Organizations
 }
 
 // IsGitHub checks if the organization is GitHub
@@ -433,7 +423,7 @@ func (c *Config) FindGitHubOrg() *Organization {
 // IsSSH checks if the organization is a plain SSH location
 func (o *Organization) IsSSH() bool {
 	// Check if it's not a known git hosting service and contains SSH-like syntax
-	return !o.IsGitHub() && !o.IsCodeberg() && !o.IsForgejo() && !strings.HasPrefix(o.Host, "file://") &&
+	return !o.IsGitHub() && !o.IsForgejo() && !strings.HasPrefix(o.Host, "file://") &&
 		(strings.Contains(o.Host, "@") || strings.Contains(o.Host, ":"))
 }
 

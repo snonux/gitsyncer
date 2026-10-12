@@ -77,10 +77,6 @@ func HandleDeleteRepo(cfg *config.Config, repoName string) int {
 
 	resolver := ForgeClientResolver{}
 	for _, org := range cfg.Organizations {
-		if org.IsCodeberg() && !cfg.CodebergSyncEnabled() {
-			fmt.Printf("Skipping Codeberg org (sync_codeberg disabled): %s\n", org.Host)
-			continue
-		}
 		client, supported := resolver.ClientFor(&org)
 		if !supported {
 			fmt.Printf("Skipping unsupported host: %s\n", org.Host)

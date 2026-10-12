@@ -1,8 +1,8 @@
 package cli
 
-// Description precedence (Codeberg > GitHub) and backup-description writing
+// GitHub description sync and backup-description writing
 // (Forgejo API / local file / SSH) used to live entirely in this file,
-// reaching directly into codeberg.NewForgejoClient, os.WriteFile, and
+// reaching directly into forgejo.NewForgejoClient, os.WriteFile, and
 // exec.Command("ssh", ...) from the CLI layer. Task w01 moved that domain
 // logic to internal/description, leaving this file as the composition root:
 // it builds the concrete Forgejo client factory and the ordered list of
@@ -11,9 +11,9 @@ package cli
 // t01 established for forge.PublicRepoEnsurer (SetForgejoBackupClientFactory)
 // and task u01 established for ForgeClientResolver.
 import (
-	"github.com/snonux/gitsyncer/internal/codeberg"
 	"github.com/snonux/gitsyncer/internal/config"
 	"github.com/snonux/gitsyncer/internal/description"
+	"github.com/snonux/gitsyncer/internal/forgejo"
 )
 
 // backupDescriptionWriters is the ordered list of backup mechanisms
@@ -32,20 +32,19 @@ var backupDescriptionWriters = []description.BackupDescriptionWriter{
 // newForgejoDescriptionClient constructs the Forgejo client used to write
 // backup descriptions, satisfying description.ForgejoDescriptionClient. It
 // is the description-package analogue of newForgejoBackupClient in
-// forge_client.go: both build a codeberg.Client for a Forgejo org so that
+// forge_client.go: both build a forgejo.Client for a Forgejo org so that
 // the packages depending on them (internal/description, internal/sync)
-// never import the concrete codeberg package themselves.
+// never import the concrete Forgejo package themselves.
 func newForgejoDescriptionClient(org *config.Organization) description.ForgejoDescriptionClient {
-	return codeberg.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType)
+	return forgejo.NewForgejoClient(org.ForgejoAPIBase, org.ForgejoOwner, org.ForgejoOwnerType)
 }
 
-// syncRepoDescriptions ensures both platforms have the canonical description
-// Precedence: Codeberg > GitHub; if Codeberg empty and GitHub has one, use GitHub.
-// knownCBDesc and knownGHDesc can be empty; the function fetches as needed.
-func syncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string) {
-	syncRepoDescriptionsWithResolver(cfg, dryRun, backupActive, disableBackup, repoName, knownCBDesc, knownGHDesc, cache, ForgeClientResolver{})
+// syncRepoDescriptions synchronizes the GitHub description to active backups.
+// knownGHDesc may be empty; the description package fetches it when needed.
+func syncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownGHDesc string, cache map[string]string) {
+	syncRepoDescriptionsWithResolver(cfg, dryRun, backupActive, disableBackup, repoName, knownGHDesc, cache, ForgeClientResolver{})
 }
 
-func syncRepoDescriptionsWithResolver(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string, resolver forgeClientResolver) {
-	description.SyncRepoDescriptions(cfg, dryRun, backupActive, disableBackup, repoName, knownCBDesc, knownGHDesc, cache, resolver, backupDescriptionWriters)
+func syncRepoDescriptionsWithResolver(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownGHDesc string, cache map[string]string, resolver forgeClientResolver) {
+	description.SyncRepoDescriptions(cfg, dryRun, backupActive, disableBackup, repoName, knownGHDesc, cache, resolver, backupDescriptionWriters)
 }

@@ -91,18 +91,11 @@ This is designed for automated weekly synchronization from cron jobs or shell sc
 		// Enable full sync and showcase
 		flags.FullSync = true
 		flags.Showcase = true
-		flags.SyncCodebergPublic = true
 		flags.SyncGitHubPublic = true
 		flags.CreateGitHubRepos = true
-		flags.CreateCodebergRepos = true
 
 		// Run sync operations
-		exitCode := cli.HandleSyncCodebergPublic(cfg, flags)
-		if exitCode != 0 {
-			os.Exit(exitCode)
-		}
-
-		exitCode = cli.HandleSyncGitHubPublic(cfg, flags)
+		exitCode := cli.HandleSyncGitHubPublic(cfg, flags)
 		if exitCode != 0 {
 			os.Exit(exitCode)
 		}

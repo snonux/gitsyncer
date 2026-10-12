@@ -168,7 +168,7 @@ func extractImageReferences(content string) []string {
 						images = append(images, url)
 						seen[url] = true
 					} else if isGitHostedImage(url) {
-						// GitHub/Codeberg hosted images - we can download these
+						// GitHub-hosted images can be downloaded from their source.
 						fmt.Printf("DEBUG: Found git-hosted image: %s\n", url)
 						images = append(images, url)
 						seen[url] = true
@@ -218,12 +218,10 @@ func isImageFile(url string) bool {
 	return false
 }
 
-// isGitHostedImage checks if URL is from GitHub/Codeberg
+// isGitHostedImage checks if URL is from GitHub.
 func isGitHostedImage(url string) bool {
 	return strings.Contains(url, "github.com") ||
-		strings.Contains(url, "githubusercontent.com") ||
-		strings.Contains(url, "codeberg.org") ||
-		strings.Contains(url, "codeberg.page")
+		strings.Contains(url, "githubusercontent.com")
 }
 
 // copyFile copies a file from src to dst. The destination is a write, so

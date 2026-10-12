@@ -9,52 +9,32 @@ import (
 )
 
 // ForgeClientResolver builds the forge.RepoDescriptionClient used to read and
-// update a repository's canonical description on GitHub/Codeberg/Forgejo.
+// update a repository's canonical description on GitHub and backups.
 // internal/cli's ForgeClientResolver (the composition root's single client
 // construction point, see forge_client.go) satisfies this structurally, so
-// this package never imports the concrete github/codeberg packages.
+// this package never imports concrete forge packages.
 type ForgeClientResolver interface {
 	ClientFor(org *config.Organization) (forge.RepoDescriptionClient, bool)
 }
 
-// SyncRepoDescriptions ensures both platforms have the canonical description
-// and pushes it to any active backup destinations.
-// Precedence: Codeberg > GitHub; if Codeberg empty and GitHub has one, use GitHub.
-// knownCBDesc and knownGHDesc can be empty; the function fetches as needed.
+// SyncRepoDescriptions ensures GitHub has the canonical description and pushes
+// it to any active backup destinations. knownGHDesc can be empty; the function
+// fetches the description when needed.
 // writers is tried in order for each active backup organization (see
 // writeBackupDescription); internal/cli constructs and injects the concrete
 // list (Forgejo/file/SSH) at its composition root.
-func SyncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownCBDesc, knownGHDesc string, cache map[string]string, resolver ForgeClientResolver, writers []BackupDescriptionWriter) {
+func SyncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*config.Organization) bool, disableBackup func(*config.Organization, error), repoName, knownGHDesc string, cache map[string]string, resolver ForgeClientResolver, writers []BackupDescriptionWriter) {
 	// Load orgs
 	ghOrg := cfg.FindGitHubOrg()
-	cbOrg := cfg.FindCodebergOrg()
 
 	var ghClient forge.RepoDescriptionClient
-	var cbClient forge.RepoDescriptionClient
 	if ghOrg != nil {
 		ghClient, _ = resolver.ClientFor(ghOrg)
 	}
-	if cbOrg != nil && cfg.CodebergSyncEnabled() && cfg.IsSyncRepo(repoName) {
-		cbClient, _ = resolver.ClientFor(cbOrg)
-	}
 
 	// Get current descriptions (use known if provided)
-	cbDesc := strings.TrimSpace(knownCBDesc)
 	ghDesc := strings.TrimSpace(knownGHDesc)
-	var cbExists, ghExists bool
-
-	if cbDesc == "" && cbClient != nil {
-		if desc, exists, err := cbClient.GetRepoDescription(repoName); err == nil {
-			cbExists = exists
-			if exists {
-				cbDesc = strings.TrimSpace(desc)
-			}
-		} else {
-			fmt.Printf("  Warning: Codeberg repo lookup failed: %v\n", err)
-		}
-	} else if cbClient != nil {
-		cbExists = true
-	}
+	var ghExists bool
 
 	if ghClient != nil {
 		if ghDesc == "" || !ghExists {
@@ -69,33 +49,11 @@ func SyncRepoDescriptions(cfg *config.Config, dryRun bool, backupActive func(*co
 		}
 	}
 
-	// Determine canonical description
-	canonical := cbDesc
-	if canonical == "" {
-		canonical = ghDesc
-	}
-	canonical = strings.TrimSpace(canonical)
+	canonical := strings.TrimSpace(ghDesc)
 
 	// If nothing to sync, bail
 	if canonical == "" {
 		return
-	}
-
-	// Update Codeberg if needed
-	if cbClient != nil && cbExists {
-		if cbDesc != canonical {
-			if dryRun {
-				fmt.Printf("  [DRY RUN] Would update Codeberg description for %s -> %q\n", repoName, canonical)
-			} else if cbClient.HasToken() {
-				if err := cbClient.UpdateRepoDescription(repoName, canonical); err != nil {
-					fmt.Printf("  Warning: Failed to update Codeberg description: %v\n", err)
-				} else {
-					fmt.Printf("  Updated Codeberg description for %s\n", repoName)
-				}
-			} else {
-				fmt.Println("  Warning: No Codeberg token; cannot update description")
-			}
-		}
 	}
 
 	// Update GitHub if needed

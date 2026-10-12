@@ -50,28 +50,6 @@ gitsyncer version
 
 ## Repository Discovery
 
-### Sync All Public Codeberg Repositories to GitHub
-
-```bash
-# Discover and sync all public repos from Codeberg
-gitsyncer sync codeberg-to-github
-
-# Also create repos on GitHub if they don't exist
-gitsyncer sync codeberg-to-github --create-repos
-
-# Dry run to see what would be synced
-gitsyncer sync codeberg-to-github --dry-run
-```
-
-### Sync All Public GitHub Repositories to Codeberg
-
-```bash
-# Discover and sync all public repos from GitHub
-gitsyncer sync github-to-codeberg
-
-# Also create missing repositories automatically
-gitsyncer sync github-to-codeberg --create-repos
-```
 
 ### Full Bidirectional Sync
 
@@ -80,8 +58,7 @@ gitsyncer sync github-to-codeberg --create-repos
 gitsyncer sync bidirectional
 
 # Equivalent to:
-# gitsyncer sync codeberg-to-github --create-repos
-# gitsyncer sync github-to-codeberg --create-repos
+# gitsyncer sync github-to-forgejo --create-repos
 ```
 
 ## Advanced Synchronization
@@ -93,7 +70,7 @@ Configuration with branch selection and exclusions:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
-    {"host": "git@codeberg.org", "name": "myorg"}
+    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg", "backupLocation": true}
   ],
   "repositories": ["my-project"],
   "branches": ["main", "master", "develop"],
@@ -244,7 +221,7 @@ jobs:
           {
             "organizations": [
               {"host": "git@github.com", "name": "${{ github.repository_owner }}"},
-              {"host": "git@codeberg.org", "name": "${{ secrets.CODEBERG_ORG }}"}
+              {"host": "ssh://git@forgejo.example", "name": "${{ secrets.FORGEJO_ORG }}"}
             ]
           }
           EOF
@@ -335,7 +312,7 @@ ERROR: Failed to connect to github.com port 22: Connection timed out
 {
   "organizations": [
     {"host": "https://github.com", "name": "myorg"},
-    {"host": "https://codeberg.org", "name": "myorg"}
+    {"host": "https://forgejo.example", "name": "myorg"}
   ]
 }
 ```

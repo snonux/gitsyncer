@@ -13,7 +13,7 @@ import (
 // os.ReadFile, so a symlink, a non-regular file, or an overly-permissive file
 // must all be rejected. This coverage used to live in internal/cli as tests
 // of the now-removed loadTokenWithFallback, and was duplicated in spirit by
-// similar tests in internal/github and internal/codeberg; task g01 moved it
+// similar tests in internal/github and internal/forgejo; task g01 moved it
 // here, next to the single implementation all three forges now call.
 
 func TestResolveToken_AcceptsOwnerOnlyTokenFile(t *testing.T) {

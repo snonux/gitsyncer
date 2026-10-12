@@ -444,7 +444,9 @@ func pushBranchArgs(remoteName, branch string, setUpstream bool, org *config.Org
 		args = append(args, "-u")
 	}
 	args = append(args, remoteName, branch, "--tags")
-	if org != nil && org.BackupLocation && org.ForcePush {
+	// Force is only honored for write-only destinations (backups, pushOnly
+	// mirrors), where overwriting cannot lose anything we would sync back.
+	if org != nil && org.IsWriteOnly() && org.ForcePush {
 		args = append(args, "--force")
 	}
 	return args
