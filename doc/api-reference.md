@@ -443,7 +443,7 @@ The version package provides version information.
 
 ```go
 var (
-    Version   = "0.21.3"           // Application version
+    Version   = "0.21.4"           // Application version
     GitCommit = "unknown"         // Git commit hash (set at build time)
     BuildDate = "unknown"         // Build date (set at build time)
     GoVersion = runtime.Version() // Go version used for build
