@@ -11,6 +11,24 @@ type BranchFilter struct {
 	excludePatterns []*regexp.Regexp
 }
 
+// FilterAllowedBranches keeps only branches named in allowedBranches while
+// preserving the order from branches. The sync configuration supplies the
+// conventional main branch names when no override is present.
+func FilterAllowedBranches(branches, allowedBranches []string) []string {
+	allowed := make(map[string]struct{}, len(allowedBranches))
+	for _, branch := range allowedBranches {
+		allowed[branch] = struct{}{}
+	}
+
+	filtered := make([]string, 0, len(branches))
+	for _, branch := range branches {
+		if _, ok := allowed[branch]; ok {
+			filtered = append(filtered, branch)
+		}
+	}
+	return filtered
+}
+
 // NewBranchFilter creates a new branch filter from exclusion patterns
 func NewBranchFilter(excludePatterns []string) (*BranchFilter, error) {
 	filter := &BranchFilter{

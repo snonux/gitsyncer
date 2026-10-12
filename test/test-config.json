@@ -8,5 +8,6 @@
       "host": "file:///home/paul/git/gitsyncer/test/repos/org2",
       "name": ""
     }
-  ]
+  ],
+  "branches": ["main", "develop", "feature/test-feature"]
 }

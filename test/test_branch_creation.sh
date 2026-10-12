@@ -77,7 +77,8 @@ cat > "$TEST_DIR/branch-test-config.json" << EOF
   ],
   "repositories": [
     "test-branch-repo"
-  ]
+  ],
+  "branches": ["main", "feature/new-feature", "hotfix/urgent-fix"]
 }
 EOF
 

@@ -58,14 +58,16 @@ type Organization struct {
 
 // Config holds the application configuration
 type Config struct {
-	Organizations         []Organization    `json:"organizations"`
-	Repositories          []string          `json:"repositories,omitempty"`
-	ExcludeBranches       []string          `json:"exclude_branches,omitempty"`        // Regex patterns for branches to exclude
-	WorkDir               string            `json:"work_dir,omitempty"`                // Working directory for cloning repositories
-	ExcludeFromShowcase   []string          `json:"exclude_from_showcase,omitempty"`   // Repository names to exclude from showcase
-	ShowcaseStatsBranches map[string]string `json:"showcase_stats_branches,omitempty"` // Repository names mapped to the branch used for showcase stats/code snippets
-	ShowcaseOutputDir     string            `json:"showcase_output_dir,omitempty"`     // Directory where showcase files and assets are written
-	ShowcaseCgitHost      string            `json:"showcase_cgit_host,omitempty"`      // Deprecated: accepted for configuration compatibility but ignored
+	Organizations         []Organization      `json:"organizations"`
+	Repositories          []string            `json:"repositories,omitempty"`
+	Branches              []string            `json:"branches,omitempty"`                // Branches synchronized for every repository unless overridden
+	RepositoryBranches    map[string][]string `json:"repository_branches,omitempty"`     // Branches synchronized for specific repositories
+	ExcludeBranches       []string            `json:"exclude_branches,omitempty"`        // Regex patterns for branches to exclude
+	WorkDir               string              `json:"work_dir,omitempty"`                // Working directory for cloning repositories
+	ExcludeFromShowcase   []string            `json:"exclude_from_showcase,omitempty"`   // Repository names to exclude from showcase
+	ShowcaseStatsBranches map[string]string   `json:"showcase_stats_branches,omitempty"` // Repository names mapped to the branch used for showcase stats/code snippets
+	ShowcaseOutputDir     string              `json:"showcase_output_dir,omitempty"`     // Directory where showcase files and assets are written
+	ShowcaseCgitHost      string              `json:"showcase_cgit_host,omitempty"`      // Deprecated: accepted for configuration compatibility but ignored
 	// SkipReleases maps a repository name to a list of tag names for which
 	// releases should NOT be created on any platform (GitHub/Codeberg)
 	SkipReleases map[string][]string `json:"skip_releases,omitempty"`
@@ -74,6 +76,21 @@ type Config struct {
 	// subcommands). Codeberg is never synced unless this is explicitly true,
 	// even when a Codeberg organization is present in Organizations.
 	SyncCodeberg bool `json:"sync_codeberg,omitempty"`
+}
+
+// SyncBranches returns the configured branch scope for a repository. A
+// repository-specific list overrides the global list; when neither is set,
+// only the conventional main branches are synchronized.
+func (c *Config) SyncBranches(repoName string) []string {
+	if c != nil {
+		if branches, ok := c.RepositoryBranches[repoName]; ok && len(branches) > 0 {
+			return branches
+		}
+		if len(c.Branches) > 0 {
+			return c.Branches
+		}
+	}
+	return []string{"main", "master", "develop"}
 }
 
 // Load reads and parses the configuration file

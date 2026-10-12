@@ -88,7 +88,7 @@ gitsyncer sync bidirectional
 
 ### Working with Branch Filters
 
-Configuration with branch exclusions:
+Configuration with branch selection and exclusions:
 ```json
 {
   "organizations": [
@@ -96,6 +96,10 @@ Configuration with branch exclusions:
     {"host": "git@codeberg.org", "name": "myorg"}
   ],
   "repositories": ["my-project"],
+  "branches": ["main", "master", "develop"],
+  "repository_branches": {
+    "my-project": ["main", "release"]
+  },
   "exclude_branches": [
     "^temp-",
     "^feature/experimental-",
@@ -103,6 +107,10 @@ Configuration with branch exclusions:
   ]
 }
 ```
+
+The default branch list is `main`, `master`, and `develop`. A non-empty
+`repository_branches` entry overrides the global `branches` list for that
+repository. Exclusions are applied after branch selection.
 
 Output shows excluded branches:
 ```bash

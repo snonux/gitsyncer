@@ -34,6 +34,10 @@ GitSyncer looks for configuration files in the following order:
     "repo1",
     "repo2"
   ],
+  "branches": ["main", "master", "develop"],
+  "repository_branches": {
+    "repo1": ["main", "release"]
+  },
   "exclude_branches": [
     "^temp-",
     "-wip$"
@@ -96,6 +100,22 @@ peer.
 
 #### repositories (optional)
 Array of repository names to sync. If empty, use `gitsyncer sync codeberg-to-github` or `gitsyncer sync github-to-codeberg` to discover repositories.
+
+#### branches and repository_branches (optional)
+By default, synchronization is limited to branches named `main`, `master`, or
+`develop`. Set `branches` to choose a global branch list for all repositories.
+Use `repository_branches` to override that list for individual repositories;
+repositories without an override use the global list, or the default list when
+`branches` is omitted. Branch exclusions in `exclude_branches` still apply.
+
+```json
+{
+  "branches": ["main", "stable"],
+  "repository_branches": {
+    "legacy-app": ["master", "release"]
+  }
+}
+```
 
 #### exclude_branches (optional)
 Array of regex patterns for branches to exclude from synchronization.

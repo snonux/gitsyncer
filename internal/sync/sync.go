@@ -206,8 +206,10 @@ func (s *Syncer) SyncRepository(repoName string) error {
 		return fmt.Errorf("failed to get branches: %w", err)
 	}
 
-	// Filter branches based on exclusion patterns
-	branches := s.branchFilter.FilterBranches(allBranches)
+	// Limit synchronization to the repository-specific or global configured
+	// branch scope, which defaults to main/master/develop, then apply exclusions.
+	branches := FilterAllowedBranches(allBranches, s.config.SyncBranches(repoName))
+	branches = s.branchFilter.FilterBranches(branches)
 	excludedBranches := s.branchFilter.GetExcludedBranches(allBranches)
 
 	// Report excluded branches if any

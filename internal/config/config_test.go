@@ -3,6 +3,7 @@ package config
 import (
 	"net/url"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -49,6 +50,28 @@ func TestValidate_DescriptionSyncFieldsMustBePaired(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "descriptionSyncHost") {
 		t.Fatalf("Validate() error = %q, want descriptionSyncHost context", err)
+	}
+}
+
+func TestSyncBranches_DefaultGlobalAndRepositoryOverrides(t *testing.T) {
+	t.Parallel()
+
+	defaults := (&Config{}).SyncBranches("demo")
+	if want := []string{"main", "master", "develop"}; !reflect.DeepEqual(defaults, want) {
+		t.Fatalf("SyncBranches() = %v, want defaults %v", defaults, want)
+	}
+
+	cfg := &Config{
+		Branches: []string{"main", "release"},
+		RepositoryBranches: map[string][]string{
+			"demo": {"trunk", "stable"},
+		},
+	}
+	if got, want := cfg.SyncBranches("other"), []string{"main", "release"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("SyncBranches(other) = %v, want global %v", got, want)
+	}
+	if got, want := cfg.SyncBranches("demo"), []string{"trunk", "stable"}; !reflect.DeepEqual(got, want) {
+		t.Errorf("SyncBranches(demo) = %v, want repository override %v", got, want)
 	}
 }
 

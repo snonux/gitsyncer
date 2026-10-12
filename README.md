@@ -353,9 +353,23 @@ gitsyncer sync repo myrepo --backup
    - Merges changes from remotes that have the branch
    - Pushes to all remotes (creating branches if needed)
 
-## Branch Exclusion
+## Branch Selection and Exclusion
 
-You can exclude branches from synchronization using regex patterns in your configuration:
+By default, GitSyncer synchronizes only `main`, `master`, and `develop`. Set a
+global list with `branches`, then override it for individual repositories with
+`repository_branches`:
+
+```json
+{
+  "branches": ["main", "stable"],
+  "repository_branches": {
+    "legacy-app": ["master", "release"]
+  }
+}
+```
+
+Branches outside the selected list are not synchronized. You can also exclude
+branches from that list using regex patterns in `exclude_branches`:
 
 ```json
 {
