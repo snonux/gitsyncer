@@ -162,8 +162,9 @@ Finds organization by host string.
 
 
 #### func (o *Organization) IsForgejo() bool
-Returns true when a Forgejo API base is configured. Forgejo organizations must
-be either one-way backups or optional bidirectional peers.
+Returns true when a Forgejo API base is configured. Forgejo organizations are
+bidirectional peers by default; configure a backup or push-only mode explicitly
+when needed.
 
 #### func NewForgejoClient(baseURL, owner string, ownerType forge.OwnerType) *Client
 Creates a Forgejo API client. The token is read from `FORGEJO_TOKEN`, falling
@@ -443,7 +444,7 @@ The version package provides version information.
 
 ```go
 var (
-    Version   = "0.21.4"           // Application version
+    Version   = "0.21.5"           // Application version
     GitCommit = "unknown"         // Git commit hash (set at build time)
     BuildDate = "unknown"         // Build date (set at build time)
     GoVersion = runtime.Version() // Go version used for build

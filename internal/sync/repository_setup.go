@@ -20,28 +20,9 @@ func (s *Syncer) setupRepository(repoPath string) error {
 // setupNewRepository clones and configures a new repository
 func (s *Syncer) setupNewRepository(repoPath string) error {
 	orgs := s.syncOrgs()
-	if len(orgs) == 0 {
-		return fmt.Errorf("no organizations configured")
-	}
-
-	// Find the first organization we are allowed to read from. Backups and
-	// pushOnly mirrors are write-only and never serve as a clone source.
-	var firstOrg *config.Organization
-	var firstOrgIndex int
-	for i := range orgs {
-		if !orgs[i].IsWriteOnly() {
-			firstOrg = &orgs[i]
-			firstOrgIndex = i
-			break
-		}
-	}
-
-	if firstOrg == nil {
-		return fmt.Errorf("no non-backup organizations configured to clone from")
-	}
-
-	if err := s.cloneRepository(firstOrg, repoPath); err != nil {
-		return fmt.Errorf("failed to clone repository: %w", err)
+	firstOrg, firstOrgIndex, err := s.cloneFromAvailableSource(repoPath)
+	if err != nil {
+		return err
 	}
 
 	// Rename origin to the proper remote name
@@ -69,6 +50,50 @@ func (s *Syncer) setupNewRepository(repoPath string) error {
 	}
 
 	return nil
+}
+
+// cloneFromAvailableSource clones repoName from the first usable source and
+// returns that organization's position in syncOrgs. A peer can be temporarily
+// unusable because a newly discovered repository has not reached it yet, or
+// because an optional peer is offline. In either case, another readable peer
+// can provide the local checkout. The subsequent fetch still reports a
+// mandatory peer's failure instead of silently treating it as optional.
+func (s *Syncer) cloneFromAvailableSource(repoPath string) (*config.Organization, int, error) {
+	orgs := s.syncOrgs()
+	if len(orgs) == 0 {
+		return nil, 0, fmt.Errorf("no organizations configured")
+	}
+
+	var (
+		hasSource bool
+		lastErr   error
+	)
+	for i := range orgs {
+		org := &orgs[i]
+		if org.IsWriteOnly() || !s.organizationActive(org) {
+			continue
+		}
+		hasSource = true
+
+		if err := s.cloneRepository(org, repoPath); err == nil {
+			return org, i, nil
+		} else {
+			lastErr = err
+			if org.Optional {
+				s.disableOptionalForSession(s.getRemoteName(org), err)
+			} else {
+				fmt.Printf("Warning: Failed to clone from %s; trying another source: %v\n", s.getRemoteName(org), err)
+			}
+			if removeErr := os.RemoveAll(repoPath); removeErr != nil {
+				return nil, 0, fmt.Errorf("failed to remove incomplete clone at %s: %w", repoPath, removeErr)
+			}
+		}
+	}
+
+	if !hasSource {
+		return nil, 0, fmt.Errorf("no non-backup organizations configured to clone from")
+	}
+	return nil, 0, fmt.Errorf("failed to clone repository from any available source: %w", lastErr)
 }
 
 // setupExistingRepository ensures all remotes are configured for an existing repository

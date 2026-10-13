@@ -37,7 +37,7 @@ echo "============================"
 # Clean up any previous test artifacts
 print_test "Cleaning up previous test artifacts"
 cd "$TEST_DIR"
-rm -rf repos work work-* test-config.json
+rm -rf repos work work2 work3 work-multi work-conflict test-config.json
 print_success "Cleanup complete"
 
 # Build the project
@@ -214,7 +214,7 @@ fi
 # Cleanup test artifacts
 print_test "Cleaning up test artifacts"
 cd "$TEST_DIR"
-rm -rf repos work work-* empty-config.json multi-repo-config.json
+rm -rf repos work work2 work3 work-multi work-conflict empty-config.json multi-repo-config.json
 print_success "Cleanup complete"
 
 # Summary

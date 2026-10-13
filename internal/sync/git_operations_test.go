@@ -37,6 +37,19 @@ func TestAddRemote_ForgejoUsesOwnerAndSSHURL(t *testing.T) {
 	}
 }
 
+func TestCloneURL_ForgejoUsesOwnerAndSSHURL(t *testing.T) {
+	syncer := New(&config.Config{}, t.TempDir())
+	syncer.repoName = "demo"
+	org := &config.Organization{
+		Host:           "ssh://git@code.f3s.buetow.org:2022",
+		ForgejoAPIBase: "https://code.f3s.buetow.org/api/v1",
+		ForgejoOwner:   "snonux",
+	}
+	if got, want := syncer.cloneURL(org), "ssh://git@code.f3s.buetow.org:2022/snonux/demo.git"; got != want {
+		t.Fatalf("cloneURL() = %q, want %q", got, want)
+	}
+}
+
 func TestSetupExistingRepository_RewritesForgejoRemoteWithWrongURL(t *testing.T) {
 	repoPath := t.TempDir()
 	if output, err := exec.Command("git", "init", repoPath).CombinedOutput(); err != nil {

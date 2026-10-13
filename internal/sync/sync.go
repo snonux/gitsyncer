@@ -186,13 +186,16 @@ func (s *Syncer) SyncRepository(repoName string) error {
 		return fmt.Errorf("failed to create work directory: %w", err)
 	}
 
+	// Ensure Forgejo repositories before choosing a clone source. This lets a
+	// Forgejo peer appear before GitHub in the configuration even when the
+	// repository does not yet exist there.
+	s.ensureForgejoRepositories(repoName)
+
 	// Setup repository (clone or ensure remotes are configured)
 	repoPath := filepath.Join(s.workDir, repoName)
 	if err := s.setupRepository(repoPath); err != nil {
 		return err
 	}
-
-	s.ensureForgejoRepositories(repoName)
 
 	// Fetch all remotes
 	fmt.Printf("Fetching updates from all remotes...\n")
@@ -264,7 +267,11 @@ func (s *Syncer) ensureForgejoRepositories(repoName string) {
 				fmt.Printf("Warning: Forgejo API unavailable for %s; continuing with Git sync: %v\n", s.getRemoteName(org), err)
 				continue
 			}
-			s.disableBackupForSession(s.getRemoteName(org), err)
+			if org.BackupLocation {
+				s.disableBackupForSession(s.getRemoteName(org), err)
+				continue
+			}
+			fmt.Printf("Warning: Failed to ensure Forgejo repository on %s; continuing with Git sync: %v\n", s.getRemoteName(org), err)
 		}
 	}
 }
@@ -294,24 +301,8 @@ func (s *Syncer) EnsureRepositoryCloned(repoName string) error {
 	// Repository doesn't exist, clone it
 	fmt.Printf("  Cloning %s...\n", repoName)
 
-	// Find the first organization we are allowed to read from. Backups and
-	// pushOnly mirrors are write-only and never serve as a clone source.
-	var sourceOrg *config.Organization
-	orgs := s.syncOrgs()
-	for i := range orgs {
-		if !orgs[i].IsWriteOnly() {
-			sourceOrg = &orgs[i]
-			break
-		}
-	}
-
-	if sourceOrg == nil {
-		return fmt.Errorf("no non-backup organizations configured to clone from")
-	}
-
-	// Clone the repository
-	if err := s.cloneRepository(sourceOrg, repoPath); err != nil {
-		return fmt.Errorf("failed to clone repository: %w", err)
+	if _, _, err := s.cloneFromAvailableSource(repoPath); err != nil {
+		return err
 	}
 
 	fmt.Printf("  Successfully cloned %s\n", repoName)
@@ -325,18 +316,7 @@ func (s *Syncer) cloneRepository(org *config.Organization, repoPath string) erro
 		return fmt.Errorf("cannot clone from write-only location %s", org.Host)
 	}
 
-	// For file:// URLs, we need special handling
-	var cloneURL string
-	if strings.HasPrefix(org.Host, "file://") {
-		// For local file paths, the format is: file:///path/to/repo.git
-		cloneURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
-	} else if org.IsSSH() && org.Name == "" {
-		// For SSH backup locations: user@host:path/repo.git
-		cloneURL = fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
-	} else {
-		// For SSH URLs, the format is: git@host:org/repo.git
-		cloneURL = fmt.Sprintf("%s/%s.git", org.GetGitURL(), s.repoName)
-	}
+	cloneURL := s.cloneURL(org)
 
 	fmt.Printf("Cloning from %s...\n", cloneURL)
 
@@ -349,6 +329,22 @@ func (s *Syncer) cloneRepository(org *config.Organization, repoPath string) erro
 	}
 
 	return nil
+}
+
+// cloneURL returns the read URL for a repository at org. Forgejo uses an SSH
+// URL path containing ForgejoOwner, unlike generic git hosts that use the
+// host:name scp-style syntax.
+func (s *Syncer) cloneURL(org *config.Organization) string {
+	if strings.HasPrefix(org.Host, "file://") {
+		return fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	}
+	if org.IsForgejo() {
+		return s.expectedRemoteURL(org)
+	}
+	if org.IsSSH() && org.Name == "" {
+		return fmt.Sprintf("%s/%s.git", org.Host, s.repoName)
+	}
+	return fmt.Sprintf("%s/%s.git", org.GetGitURL(), s.repoName)
 }
 
 // addRemote adds a remote to the repository

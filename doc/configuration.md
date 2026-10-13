@@ -29,8 +29,7 @@ GitSyncer looks for configuration files in the following order:
       "host": "ssh://git@forgejo.example",
       "name": "myorg",
       "forgejo_api_base": "https://forgejo.example/api/v1",
-      "forgejo_owner": "myorg",
-      "backupLocation": true
+      "forgejo_owner": "myorg"
     }
   ],
   "repositories": [
@@ -70,7 +69,7 @@ Array of organization objects. At least one organization must be configured.
 - **forgejo_owner** (string, required with `forgejo_api_base`): User or organization that owns the repositories
 - **forgejo_owner_type** (`user` or `organization`, optional): Owner kind; defaults to `user` for backward compatibility
 - **backupLocation** (boolean): Makes the destination a one-way backup; it is pushed but never fetched
-- **optional** (boolean): Makes the organization a bidirectional sync peer whose Git fetch or push failures cause it to be skipped for the remainder of the run
+- **optional** (boolean): Makes a bidirectional peer's Git fetch or push failures non-fatal; the peer is skipped for the remainder of the run
 - **pushOnly** (boolean): Makes the organization a one-way mirror: pushed on every run (no `--backup` needed), never fetched, merged, or cloned from. May be combined with `optional`; mutually exclusive with `backupLocation`. While one is configured, the GitHub discovery commands sync every public GitHub repository, not only those in `repositories`
 - **forcePush** (boolean, optional): Force-update branches and tags; only allowed with `backupLocation` or `pushOnly`
 
@@ -85,19 +84,17 @@ pseudo-user cannot issue a usable token. Protect the token file with
 tracked JSON configuration. Forgejo creation is public and uninitialized.
 Existing repositories must belong to the configured owner and must be public.
 The Git SSH URL is formed as `<host>/<forgejo_owner>/<repo>.git`; do not
-configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo because
-metadata is updated through the API. The same token and API are used to create
-and update releases on Forgejo (alongside GitHub) when release
+configure `descriptionSyncHost` or `descriptionSyncRoot` for Forgejo. When
+Forgejo is configured as a backup, descriptions are updated through its API.
+The same token and API are used to create and update releases on Forgejo (alongside GitHub) when release
 checking runs.
 
-Forgejo requires `backupLocation: true`, `optional: true`, or `pushOnly: true`.
-Use `pushOnly` (optionally with `optional`) for a one-way GitHub → Forgejo
+Forgejo is bidirectional by default: it is fetched, merged, and pushed with the
+other configured git hosts. Use `pushOnly` (optionally with `optional`) for a one-way GitHub → Forgejo
 mirror: Forgejo then receives every public GitHub repository on each run and
 nothing that exists only on Forgejo flows back to GitHub.
-Use `optional` alone for three-way GitHub ↔ Forgejo synchronization.
-Unlike a backup, an optional Forgejo peer is fetched and contributes branches
-and commits to the merge. If Forgejo is offline, GitSyncer disables it for the
-rest of that run and continues syncing the remaining hosts. A metadata API
+Use `optional` when a bidirectional Forgejo peer may be offline: GitSyncer then
+disables it for the rest of that run and continues syncing the remaining hosts. A metadata API
 failure is reported but does not disable an otherwise reachable Git-over-SSH
 peer.
 
@@ -176,7 +173,7 @@ Sync between GitHub and a configured Forgejo server:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myusername"},
-    {"host": "ssh://git@forgejo.example", "name": "myusername", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myusername", "backupLocation": true}
+    {"host": "ssh://git@forgejo.example", "name": "myusername", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myusername"}
   ]
 }
 ```
@@ -187,7 +184,7 @@ Sync between GitHub and a configured Forgejo server:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
-    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg", "backupLocation": true}
+    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg"}
   ],
   "repositories": [
     "project1",
@@ -203,7 +200,7 @@ Sync between GitHub and a configured Forgejo server:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
-    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg", "backupLocation": true}
+    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg"}
   ],
   "repositories": ["myproject"],
   "exclude_branches": [
@@ -226,7 +223,7 @@ Sync between GitHub and a configured Forgejo server:
   "organizations": [
     {"host": "git@github.com", "name": "personal"},
     {"host": "git@github.com", "name": "work"},
-    {"host": "ssh://git@forgejo.example", "name": "personal", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "personal", "backupLocation": true},
+    {"host": "ssh://git@forgejo.example", "name": "personal", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "personal"},
     {"host": "git@gitlab.com", "name": "personal"}
   ],
   "repositories": ["shared-project"]

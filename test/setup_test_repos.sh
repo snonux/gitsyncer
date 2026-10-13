@@ -94,7 +94,8 @@ cat > "$TEST_DIR/test-config.json" << EOF
       "host": "file://$REPO2_DIR",
       "name": ""
     }
-  ]
+  ],
+  "branches": ["main", "develop", "feature/test-feature"]
 }
 EOF
 

@@ -70,7 +70,7 @@ Configuration with branch selection and exclusions:
 {
   "organizations": [
     {"host": "git@github.com", "name": "myorg"},
-    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg", "backupLocation": true}
+    {"host": "ssh://git@forgejo.example", "name": "myorg", "forgejo_api_base": "https://forgejo.example/api/v1", "forgejo_owner": "myorg"}
   ],
   "repositories": ["my-project"],
   "branches": ["main", "master", "develop"],

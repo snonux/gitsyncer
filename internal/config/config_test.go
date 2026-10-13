@@ -93,7 +93,7 @@ func TestValidate_ForcePushRequiresBackupLocation(t *testing.T) {
 	}
 }
 
-func TestValidate_ForgejoMustBeBackupOrOptional(t *testing.T) {
+func TestValidate_ForgejoIsBidirectionalByDefault(t *testing.T) {
 	t.Parallel()
 
 	cfg := &Config{Organizations: []Organization{{
@@ -101,9 +101,11 @@ func TestValidate_ForgejoMustBeBackupOrOptional(t *testing.T) {
 		ForgejoAPIBase: "https://forgejo.example/api/v1",
 		ForgejoOwner:   "snonux",
 	}}}
-	err := cfg.Validate()
-	if err == nil || !strings.Contains(err.Error(), "must set backupLocation, optional, or pushOnly") {
-		t.Fatalf("Validate() error = %v, want backup-optional-or-pushOnly validation", err)
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() error = %v, want nil for a default bidirectional Forgejo peer", err)
+	}
+	if cfg.Organizations[0].IsWriteOnly() {
+		t.Fatal("default Forgejo organization must not be write-only")
 	}
 }
 

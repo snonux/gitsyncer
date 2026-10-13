@@ -3,6 +3,9 @@ package sync
 import (
 	"errors"
 	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
 	stdsync "sync"
 	"sync/atomic"
 	"testing"
@@ -17,8 +20,9 @@ import (
 // Forgejo client, tests can exercise the call/error paths without an HTTP
 // server standing in for a real Forgejo API.
 type fakePublicRepoEnsurer struct {
-	calls []fakeEnsureCall
-	err   error
+	calls  []fakeEnsureCall
+	err    error
+	ensure func(name, description string) error
 }
 
 type fakeEnsureCall struct {
@@ -28,6 +32,9 @@ type fakeEnsureCall struct {
 
 func (f *fakePublicRepoEnsurer) EnsurePublicRepo(name, description string) error {
 	f.calls = append(f.calls, fakeEnsureCall{name: name, description: description})
+	if f.ensure != nil {
+		return f.ensure(name, description)
+	}
 	return f.err
 }
 
@@ -73,6 +80,144 @@ func TestEnsureForgejoBackups_CallsInjectedFactory(t *testing.T) {
 	}
 }
 
+func TestSyncRepository_EnsuresForgejoBeforeCloningFromFirstPeer(t *testing.T) {
+	root := t.TempDir()
+	githubRoot := filepath.Join(root, "github")
+	forgejoRoot := filepath.Join(root, "forgejo")
+	workDir := filepath.Join(root, "work")
+	for _, dir := range []string{githubRoot, forgejoRoot, workDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	githubRepo := filepath.Join(githubRoot, "demo.git")
+	runGit(t, root, "init", "--bare", "-b", "main", githubRepo)
+	seed := filepath.Join(root, "seed")
+	runGit(t, root, "init", "-b", "main", seed)
+	runGit(t, seed, "config", "user.name", "GitSyncer Test")
+	runGit(t, seed, "config", "user.email", "gitsyncer@example.test")
+	runGit(t, seed, "commit", "--allow-empty", "-m", "base")
+	runGit(t, seed, "push", githubRepo, "main")
+
+	forgejoRepo := filepath.Join(forgejoRoot, "demo.git")
+	fake := &fakePublicRepoEnsurer{ensure: func(name, _ string) error {
+		if name != "demo" {
+			t.Fatalf("EnsurePublicRepo name = %q, want demo", name)
+		}
+		runGit(t, root, "init", "--bare", "-b", "main", forgejoRepo)
+		return nil
+	}}
+	cfg := &config.Config{Organizations: []config.Organization{
+		{
+			Host:           "file://" + forgejoRoot,
+			ForgejoAPIBase: "https://forgejo.example/api/v1",
+			ForgejoOwner:   "owner",
+		},
+		{Host: "file://" + githubRoot},
+	}}
+	syncer := New(cfg, workDir)
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
+	if err := syncer.SyncRepository("demo"); err != nil {
+		t.Fatalf("SyncRepository() error = %v", err)
+	}
+
+	if len(fake.calls) != 1 {
+		t.Fatalf("EnsurePublicRepo calls = %d, want 1", len(fake.calls))
+	}
+	for _, repo := range []string{githubRepo, forgejoRepo} {
+		if got, want := runGit(t, root, "--git-dir", repo, "rev-parse", "main"), runGit(t, root, "--git-dir", githubRepo, "rev-parse", "main"); got != want {
+			t.Fatalf("%s main = %s, want %s", repo, got, want)
+		}
+	}
+}
+
+func TestSyncRepository_SkipsUnavailableOptionalForgejoCloneSource(t *testing.T) {
+	root := t.TempDir()
+	githubRoot := filepath.Join(root, "github")
+	forgejoRoot := filepath.Join(root, "forgejo")
+	workDir := filepath.Join(root, "work")
+	for _, dir := range []string{githubRoot, forgejoRoot, workDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	githubRepo := filepath.Join(githubRoot, "demo.git")
+	runGit(t, root, "init", "--bare", "-b", "main", githubRepo)
+	seed := filepath.Join(root, "seed")
+	runGit(t, root, "init", "-b", "main", seed)
+	runGit(t, seed, "config", "user.name", "GitSyncer Test")
+	runGit(t, seed, "config", "user.email", "gitsyncer@example.test")
+	runGit(t, seed, "commit", "--allow-empty", "-m", "base")
+	runGit(t, seed, "push", githubRepo, "main")
+
+	apiErr := errors.New("Forgejo API unavailable")
+	fake := &fakePublicRepoEnsurer{err: apiErr}
+	cfg := &config.Config{Organizations: []config.Organization{
+		{
+			Host:           "file://" + forgejoRoot,
+			ForgejoAPIBase: "https://forgejo.example/api/v1",
+			ForgejoOwner:   "owner",
+			Optional:       true,
+		},
+		{Host: "file://" + githubRoot},
+	}}
+	syncer := New(cfg, workDir)
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
+	if err := syncer.SyncRepository("demo"); err != nil {
+		t.Fatalf("SyncRepository() error = %v, want GitHub fallback after optional Forgejo failure", err)
+	}
+	if len(fake.calls) != 1 {
+		t.Fatalf("EnsurePublicRepo calls = %d, want 1", len(fake.calls))
+	}
+	if syncer.organizationActive(&cfg.Organizations[0]) {
+		t.Fatal("unavailable optional Forgejo peer remained active after clone failure")
+	}
+	if got := runGit(t, root, "--git-dir", githubRepo, "rev-parse", "main"); got == "" {
+		t.Fatal("GitHub main is missing after fallback sync")
+	}
+}
+
+func TestEnsureRepositoryCloned_FallsBackFromMissingForgejoPeer(t *testing.T) {
+	root := t.TempDir()
+	githubRoot := filepath.Join(root, "github")
+	forgejoRoot := filepath.Join(root, "forgejo")
+	workDir := filepath.Join(root, "work")
+	for _, dir := range []string{githubRoot, forgejoRoot, workDir} {
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	githubRepo := filepath.Join(githubRoot, "demo.git")
+	runGit(t, root, "init", "--bare", "-b", "main", githubRepo)
+	seed := filepath.Join(root, "seed")
+	runGit(t, root, "init", "-b", "main", seed)
+	runGit(t, seed, "config", "user.name", "GitSyncer Test")
+	runGit(t, seed, "config", "user.email", "gitsyncer@example.test")
+	runGit(t, seed, "commit", "--allow-empty", "-m", "base")
+	runGit(t, seed, "push", githubRepo, "main")
+
+	cfg := &config.Config{Organizations: []config.Organization{
+		{
+			Host:           "file://" + forgejoRoot,
+			ForgejoAPIBase: "https://forgejo.example/api/v1",
+			ForgejoOwner:   "owner",
+		},
+		{Host: "file://" + githubRoot},
+	}}
+	syncer := New(cfg, workDir)
+	if err := syncer.EnsureRepositoryCloned("demo"); err != nil {
+		t.Fatalf("EnsureRepositoryCloned() error = %v, want GitHub fallback", err)
+	}
+
+	repoPath := filepath.Join(workDir, "demo")
+	if got, want := runGit(t, repoPath, "remote", "get-url", "origin"), "file://"+githubRepo; got != want {
+		t.Fatalf("clone source URL = %q, want %q", got, want)
+	}
+}
+
 func TestEnsureForgejoBackups_FactoryErrorDisablesBackupForSession(t *testing.T) {
 	fake := &fakePublicRepoEnsurer{err: errors.New("boom")}
 	cfg := forgejoBackupOrgConfig()
@@ -95,6 +240,24 @@ func TestEnsureForgejoBackups_OptionalPeerAPIErrorKeepsGitPeerActive(t *testing.
 	syncer.ensureForgejoRepositories("demo")
 	if !syncer.organizationActive(&cfg.Organizations[0]) {
 		t.Fatal("expected optional Forgejo peer to remain active after metadata API error")
+	}
+}
+
+func TestEnsureForgejoDefaultPeerAPIErrorLogsWarning(t *testing.T) {
+	fake := &fakePublicRepoEnsurer{err: errors.New("token missing")}
+	cfg := forgejoBackupOrgConfig()
+	cfg.Organizations[0].BackupLocation = false
+	syncer := New(cfg, t.TempDir())
+	syncer.SetForgejoBackupClientFactory(func(*config.Organization) forge.PublicRepoEnsurer { return fake })
+
+	output := captureStdout(t, func() {
+		syncer.ensureForgejoRepositories("demo")
+	})
+	if !strings.Contains(output, "Failed to ensure Forgejo repository") || !strings.Contains(output, "token missing") {
+		t.Fatalf("ensureForgejoRepositories output = %q, want API failure warning", output)
+	}
+	if !syncer.organizationActive(&cfg.Organizations[0]) {
+		t.Fatal("default Forgejo peer must remain active after metadata API failure")
 	}
 }
 

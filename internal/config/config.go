@@ -49,7 +49,7 @@ type Organization struct {
 	ForgejoOwner        string          `json:"forgejo_owner,omitempty"`       // Forgejo user or organization that owns repositories
 	ForgejoOwnerType    forge.OwnerType `json:"forgejo_owner_type,omitempty"`  // user (default) or organization
 	BackupLocation      bool            `json:"backupLocation,omitempty"`      // Mark this as a backup-only destination
-	Optional            bool            `json:"optional,omitempty"`            // Skip this sync peer for the current run when it is unavailable
+	Optional            bool            `json:"optional,omitempty"`            // Skip this otherwise bidirectional peer for the current run when it is unavailable
 	PushOnly            bool            `json:"pushOnly,omitempty"`            // One-way mirror: always pushed to, never fetched, merged, or cloned from
 	ForcePush           bool            `json:"forcePush,omitempty"`           // Force-update branches and tags at this backup or pushOnly destination
 	DescriptionSyncHost string          `json:"descriptionSyncHost,omitempty"` // SSH host with shell access for updating backup descriptions
@@ -183,9 +183,6 @@ func (c *Config) Validate() error {
 			if org.ForgejoOwnerType != "" && !org.ForgejoOwnerType.Valid() {
 				return fmt.Errorf("organization %d: forgejo_owner_type must be %q or %q", i, forge.OwnerTypeUser, forge.OwnerTypeOrganization)
 			}
-			if !org.BackupLocation && !org.Optional && !org.PushOnly {
-				return fmt.Errorf("organization %d: Forgejo targets must set backupLocation, optional, or pushOnly", i)
-			}
 			if strings.TrimSpace(org.ForgejoOwner) == "" {
 				return fmt.Errorf("organization %d: forgejo_owner is required with forgejo_api_base", i)
 			}
@@ -204,7 +201,7 @@ func (c *Config) Validate() error {
 				return fmt.Errorf("organization %d: forgejo_api_base must be an absolute HTTP(S) URL", i)
 			}
 			if org.DescriptionSyncHost != "" || org.DescriptionSyncRoot != "" {
-				return fmt.Errorf("organization %d: Forgejo descriptions are managed through the API; descriptionSyncHost/Root are not allowed", i)
+				return fmt.Errorf("organization %d: Forgejo does not support descriptionSyncHost/Root; backup descriptions use its API", i)
 			}
 		}
 		if org.ForgejoOwner != "" && org.ForgejoAPIBase == "" {

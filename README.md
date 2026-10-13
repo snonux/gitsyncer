@@ -150,7 +150,7 @@ gitsyncer sync bidirectional --dry-run
 
 `sync bidirectional`, `sync github-to-forgejo`, and `manage batch-run` now always try configured backup locations when `backupLocation: true` is present in the config. If a backup push fails because that host is offline or unavailable, GitSyncer records that failure in memory and skips that destination for the rest of the process while continuing the primary sync targets and other backups.
 
-Forgejo can be used as a one-way public backup, as a one-way mirror that is pushed on every run, or as an optional bidirectional sync peer. Repository creation and descriptions use its Gitea-compatible API, while Git data is transferred over SSH. To make it a peer that is fetched, merged, and pushed whenever available, set `optional: true` instead of `backupLocation`:
+Forgejo is a bidirectional sync peer by default: changes from either GitHub or Forgejo are fetched, merged, and pushed to both locations. Repository creation uses its Gitea-compatible API, while Git data is transferred over SSH. Forgejo backup descriptions are updated through the API. Set `optional: true` when an unavailable Forgejo peer should be skipped for the current run:
 
 ```json
 {
@@ -205,10 +205,10 @@ surrounding
 whitespace is removed from either source. Never put a Forgejo token in the JSON
 configuration. A repository named `demo` uses
 `ssh://git@code.f3s.buetow.org:2022/snonux/demo.git`. Forgejo targets with
-`backupLocation: true` or `pushOnly: true` are never fetched. Targets with only
-`optional: true` participate fully in branch discovery, fetch, merge, and push. Metadata API
+`backupLocation: true` or `pushOnly: true` are never fetched. Forgejo targets
+without either setting participate fully in branch discovery, fetch, merge, and push; `optional: true` only makes a failed peer non-fatal. Metadata API
 failures are reported but do not prevent Git-over-SSH synchronization; a fetch
-or push failure skips that Forgejo peer for the remainder of the run without
+or push failure skips an `optional` Forgejo peer for the remainder of the run without
 interrupting synchronization between the other hosts. GitSyncer never runs
 remote shell repository-creation or description-file commands for Forgejo.
 When a Forgejo organization is configured and `FORGEJO_TOKEN` (or
