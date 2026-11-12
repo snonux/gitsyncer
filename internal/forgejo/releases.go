@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/snonux/gitsyncer/internal/forge"
@@ -181,6 +182,15 @@ func (c *Client) CreateRelease(owner, repo, tag, releaseNotes string) error {
 		return fmt.Errorf("%s token is required for creating releases", c.service)
 	}
 
+	// Forgejo/Gitea creates a missing tag at the default branch HEAD when a
+	// release is created for it. For a repository whose tags have not been
+	// pushed to Forgejo yet, that silently creates every release tag on the
+	// same, wrong commit, and the next sync then fails with a tag conflict.
+	// So a release is only created once the tag itself exists on Forgejo.
+	if err := c.requireTag(owner, repo, tag); err != nil {
+		return err
+	}
+
 	body := releaseNotes
 	if body == "" {
 		body = fmt.Sprintf("Release %s", tag)
@@ -276,6 +286,21 @@ func (c *Client) handleCreate404(owner, repo, url string, jsonData []byte, respB
 		"failed to create %s release: repository %s/%s not found (404). Verify your %s owner ('organizations[].name') matches the actual owner for this repo and that the repository exists. If needed, create it first, e.g.: gitsyncer sync repo %s --create-%s-repos. Raw response: %s",
 		c.service, owner, repo, c.service, repo, strings.ToLower(c.service), string(respBody),
 	)
+}
+
+// requireTag returns an error when tag definitely does not exist in
+// owner/repo (the tag lookup answers 404, which also covers a missing
+// repository). Any other outcome, including a failed lookup, returns nil so
+// the release creation proceeds and reports its own, more specific error:
+// only a confirmed missing tag must block it (see CreateRelease).
+func (c *Client) requireTag(owner, repo, tag string) error {
+	tagURL := fmt.Sprintf("%s/tags/%s", c.repoURL(owner, repo), url.PathEscape(tag))
+	result, err := httpclient.DoJSON(http.MethodGet, tagURL, c.authHeaders(false), nil)
+	if err != nil || result.StatusCode != http.StatusNotFound {
+		return nil
+	}
+	return fmt.Errorf("tag %s does not exist on %s for %s/%s yet; not creating the release, because %s would create the tag at the default branch HEAD. Sync the repository first so the tag is pushed",
+		tag, c.service, owner, repo, c.service)
 }
 
 // UpdateRelease updates the body of an existing release for the given tag on
