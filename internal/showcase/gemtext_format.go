@@ -183,13 +183,12 @@ func writeProjectMetadata(builder *strings.Builder, metadata *RepoMetadata) {
 		builder.WriteString("* 🧪 Status: Experimental (no releases yet)\n")
 	}
 
-	// Mark as inactive when the average age of the last 42 commits exceeds
-	// 730 days (~2 years).  A single recent commit (e.g. a deprecation
-	// notice) does not rescue a dormant project — ~42 recent commits are
-	// required to move the average below the threshold.  This matches the
-	// grey-line rule used in the interactive rank-history SVG.
-	if metadata.AvgCommitAge > 730 {
-		builder.WriteString("\n⚠️  **Notice**: This project appears to be inactive or no longer maintained. The average age of its last 42 commits exceeds 2 years. Use at your own risk.")
+	// Mark as inactive when the effective activity age exceeds ~2 years (see
+	// RepoMetadata.IsInactive). A single recent commit (e.g. a deprecation
+	// notice) does not rescue a dormant project. This matches the grey-line
+	// rule used in the interactive rank-history SVG.
+	if metadata.IsInactive() {
+		builder.WriteString("\n⚠️  **Notice**: This project appears to be inactive or no longer maintained. The average age of its recent commits exceeds 2 years. Use at your own risk.")
 	}
 	builder.WriteString("\n\n")
 }

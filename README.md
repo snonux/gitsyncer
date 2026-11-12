@@ -512,6 +512,8 @@ The showcase is generated in Gemini Gemtext format and includes:
 
 Weekly rank snapshots are written on full showcase runs (all repositories), including `manage batch-run`. Single-repository showcase updates (`--repo`) read existing history but do not write snapshots.
 
+Projects are ranked by a score of code size and tag count divided by their commit age, measured on the checked-out branch. The commit age is normally the average age of the last 42 commits, so a single stray commit cannot revive a dormant project. When a project has at least 5 commits in the last 90 days, the average age of those recent commits is used instead if it is lower, so a project whose recent history was squashed into a few commits still counts as active. A project whose commit age exceeds two years gets an "inactive" notice and is drawn grey in the rank-history chart.
+
 ### Configuration
 
 The showcase output defaults to `~/git/foo.zone-content/gemtext/about/showcase.gmi.tpl`. You can override the output directory with `showcase_output_dir`.

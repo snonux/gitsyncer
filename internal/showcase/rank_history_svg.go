@@ -375,14 +375,12 @@ func buildProjectData(summaries []ProjectSummary, numPoints int) ([]svgProjectDa
 			continue // skip projects that have never appeared in any snapshot
 		}
 
-		// A project is inactive when its average commit age (HEAD) exceeds 730
-		// days (~2 years).  AvgCommitAge is the mean age of the last 42 commits,
-		// so a single stray "add deprecation notice" commit does not rescue a
-		// decade-old dormant project.  A genuinely revived project needs ~42
-		// recent commits before the average drops below the threshold.
-		// LastActivityDate (all-branches) is retained in the struct for future
-		// use but is not part of this check so one-off commits cannot mask decay.
-		inactive := s.Metadata != nil && s.Metadata.AvgCommitAge > 730
+		// Inactive projects are drawn grey. The rule (effective activity age
+		// over ~2 years) is shared with the gemtext notice via
+		// RepoMetadata.IsInactive. LastActivityDate (all-branches) is
+		// retained in the struct for future use but is not part of this check
+		// so one-off commits on side branches cannot mask decay.
+		inactive := s.Metadata != nil && s.Metadata.IsInactive()
 
 		score := 0.0
 		if s.Metadata != nil {

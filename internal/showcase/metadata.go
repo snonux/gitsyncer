@@ -15,6 +15,22 @@ import (
 
 const unreleasedScorePenalty = 0.75
 
+// Recent-activity window used by effectiveActivityAge: a project with at
+// least minRecentCommits commits on HEAD within the last
+// recentActivityWindowDays days is judged by the age of those commits rather
+// than by its last 42 commits, which keeps squashed histories from looking
+// dormant. Five commits (not one) are required so a stray maintenance commit
+// cannot revive an abandoned project.
+const (
+	recentActivityWindowDays = 90
+	minRecentCommits         = 5
+)
+
+// inactiveAfterDays is the effective activity age (~2 years) beyond which a
+// project is flagged as inactive in the showcase and drawn grey in the
+// rank-history SVG.
+const inactiveAfterDays = 730
+
 // LanguageStats holds statistics for a programming language
 type LanguageStats struct {
 	Name       string
@@ -24,28 +40,50 @@ type LanguageStats struct {
 
 // RepoMetadata holds metadata about a repository
 type RepoMetadata struct {
-	Languages        []LanguageStats // Programming languages with usage statistics
-	Documentation    []LanguageStats // Documentation/text files with usage statistics
-	CommitCount      int
-	LinesOfCode      int // Lines of code (excluding documentation)
-	LinesOfDocs      int // Lines of documentation
-	FirstCommitDate  string
-	LastCommitDate   string
-	LastActivityDate string // Most recent commit on any local branch (--all); used for activity checks
-	License          string
-	AvgCommitAge     float64 // Average age of last 42 commits in days (HEAD only; used for score)
-	TagCount         int     // Total number of git tags in the repository
-	Score            float64 // Project score combining recent activity, reduced LOC weight, tag count, and release status
-	LatestTag        string  // Latest version tag (empty if no tags)
-	LatestTagDate    string  // Date of the latest tag (empty if no tags)
-	HasReleases      bool    // Whether the project has any releases/tags
+	Languages         []LanguageStats // Programming languages with usage statistics
+	Documentation     []LanguageStats // Documentation/text files with usage statistics
+	CommitCount       int
+	LinesOfCode       int // Lines of code (excluding documentation)
+	LinesOfDocs       int // Lines of documentation
+	FirstCommitDate   string
+	LastCommitDate    string
+	LastActivityDate  string // Most recent commit on any local branch (--all); used for activity checks
+	License           string
+	AvgCommitAge      float64 // Average age of last 42 commits in days (HEAD only)
+	RecentCommitCount int     // Commits on HEAD within the last recentActivityWindowDays days
+	ActivityAge       float64 // Effective commit age in days used for score and inactive notice; see effectiveActivityAge
+	TagCount          int     // Total number of git tags in the repository
+	Score             float64 // Project score combining recent activity, reduced LOC weight, tag count, and release status
+	LatestTag         string  // Latest version tag (empty if no tags)
+	LatestTagDate     string  // Date of the latest tag (empty if no tags)
+	HasReleases       bool    // Whether the project has any releases/tags
 }
 
-// extractRepoMetadata extracts metadata from a repository
+// extractRepoMetadata extracts metadata from a repository. Each concern
+// (languages, commit dates, activity, tags) is gathered by its own helper;
+// failures are reported as warnings and leave the affected fields at their
+// zero values so a partially broken repository still gets a showcase entry.
 func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	metadata := &RepoMetadata{}
 
-	// Get programming languages and documentation by analyzing file extensions
+	extractLanguageMetadata(repoPath, metadata)
+	extractCommitDateMetadata(repoPath, metadata)
+	metadata.License = detectLicense(repoPath)
+	extractActivityMetadata(repoPath, metadata)
+	// Tags are gathered before scoring so they can influence the ranking.
+	extractTagMetadata(repoPath, metadata)
+
+	// Calculate score with recent activity as the strongest signal,
+	// a smaller LOC contribution than before, a modest tag bonus,
+	// and a penalty for projects without a release yet.
+	metadata.Score = calculateRepoScore(metadata.LinesOfCode, metadata.ActivityAge, metadata.TagCount, metadata.HasReleases)
+
+	return metadata, nil
+}
+
+// extractLanguageMetadata fills the language/documentation breakdown and the
+// derived code and documentation line totals.
+func extractLanguageMetadata(repoPath string, metadata *RepoMetadata) {
 	languages, documentation, err := detectLanguages(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to detect languages: %v\n", err)
@@ -53,27 +91,23 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	metadata.Languages = languages
 	metadata.Documentation = documentation
 
-	// Get commit count
+	for _, lang := range metadata.Languages {
+		metadata.LinesOfCode += lang.Lines
+	}
+	for _, doc := range metadata.Documentation {
+		metadata.LinesOfDocs += doc.Lines
+	}
+}
+
+// extractCommitDateMetadata fills the commit count and the first/last commit
+// dates of HEAD, plus the last activity date across all local branches.
+func extractCommitDateMetadata(repoPath string, metadata *RepoMetadata) {
 	commitCount, err := getCommitCount(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get commit count: %v\n", err)
 	}
 	metadata.CommitCount = commitCount
 
-	// Calculate lines of code and documentation from language stats
-	loc := 0
-	for _, lang := range metadata.Languages {
-		loc += lang.Lines
-	}
-	metadata.LinesOfCode = loc
-
-	locDocs := 0
-	for _, doc := range metadata.Documentation {
-		locDocs += doc.Lines
-	}
-	metadata.LinesOfDocs = locDocs
-
-	// Get first and last commit dates
 	firstDate, err := getFirstCommitDate(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get first commit date: %v\n", err)
@@ -89,7 +123,7 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	// LastActivityDate is the most recent commit across ALL local branches so
 	// that projects with active development on non-default branches (e.g. a
 	// "develop" branch while HEAD is an old "master") are not falsely marked
-	// inactive.  Code stats (LOC, AvgCommitAge, score) remain HEAD-only per
+	// inactive.  Code stats (LOC, ActivityAge, score) remain HEAD-only per
 	// the configured branch rules.
 	activityDate, err := getLastActivityDate(repoPath)
 	if err != nil {
@@ -97,19 +131,30 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 		activityDate = lastDate // fall back to HEAD-based date
 	}
 	metadata.LastActivityDate = activityDate
+}
 
-	// Check for license file
-	license := detectLicense(repoPath)
-	metadata.License = license
-
-	// Get average age of last 42 commits (42 is the answer!)
+// extractActivityMetadata fills AvgCommitAge (last 42 commits on HEAD, 42 is
+// the answer!), the recent-commit statistics and the effective ActivityAge
+// used for scoring and the inactive notice. See effectiveActivityAge for why
+// both measures are needed.
+func extractActivityMetadata(repoPath string, metadata *RepoMetadata) {
 	avgAge, err := getAverageCommitAge(repoPath, 42)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get average commit age: %v\n", err)
 	}
 	metadata.AvgCommitAge = avgAge
 
-	// Get tag metadata before calculating score so tags can influence ranking.
+	recentCount, recentAvgAge, err := getRecentCommitStats(repoPath, recentActivityWindowDays)
+	if err != nil {
+		fmt.Printf("Warning: Failed to get recent commit stats: %v\n", err)
+	}
+	metadata.RecentCommitCount = recentCount
+	metadata.ActivityAge = effectiveActivityAge(avgAge, recentCount, recentAvgAge)
+}
+
+// extractTagMetadata fills the latest version tag, its date, the release
+// flag and the total tag count.
+func extractTagMetadata(repoPath string, metadata *RepoMetadata) {
 	latestTag, latestTagDate, hasReleases, tagCount, err := getLatestTag(repoPath)
 	if err != nil {
 		fmt.Printf("Warning: Failed to get latest tag: %v\n", err)
@@ -118,16 +163,48 @@ func extractRepoMetadata(repoPath string) (*RepoMetadata, error) {
 	metadata.LatestTagDate = latestTagDate
 	metadata.HasReleases = hasReleases
 	metadata.TagCount = tagCount
-
-	// Calculate score with recent activity as the strongest signal,
-	// a smaller LOC contribution than before, a modest tag bonus,
-	// and a penalty for projects without a release yet.
-	metadata.Score = calculateRepoScore(metadata.LinesOfCode, metadata.AvgCommitAge, metadata.TagCount, metadata.HasReleases)
-
-	return metadata, nil
 }
 
-func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int, hasReleases bool) float64 {
+// effectiveActivityAge returns the commit age (in days) that drives the score
+// and the inactive notice.
+//
+// The baseline is the average age of the last 42 commits, so one stray
+// commit (e.g. a deprecation notice) cannot make a dormant project look
+// active. That measure breaks for projects whose recent history was squashed:
+// hundreds of recent commits collapse into a handful, and the remaining slots
+// of the 42-commit window are filled with years-old commits (dtail: 323
+// commits since July squashed into 9, averaging ~935 days). So when a project
+// has at least minRecentCommits commits within the recent window, the average
+// age of those recent commits is used instead, but only if it is lower:
+// projects that are already active by the 42-commit measure never get worse.
+func effectiveActivityAge(avgCommitAge float64, recentCount int, recentAvgAge float64) float64 {
+	if recentCount >= minRecentCommits && recentAvgAge < avgCommitAge {
+		return recentAvgAge
+	}
+	return avgCommitAge
+}
+
+// ActivityAgeDays returns the effective activity age, falling back to
+// AvgCommitAge for summaries cached before ActivityAge existed (they decode
+// with ActivityAge == 0, which would otherwise read as "brand new").
+func (m *RepoMetadata) ActivityAgeDays() float64 {
+	if m.ActivityAge > 0 {
+		return m.ActivityAge
+	}
+	return m.AvgCommitAge
+}
+
+// IsInactive reports whether the project looks unmaintained: its effective
+// activity age (see effectiveActivityAge) exceeds inactiveAfterDays. Both the
+// gemtext notice and the rank-history SVG use this so they always agree.
+func (m *RepoMetadata) IsInactive() bool {
+	return m.ActivityAgeDays() > inactiveAfterDays
+}
+
+// calculateRepoScore combines code size and tag count, divided by the
+// effective activity age (see effectiveActivityAge) so recently active
+// projects rank highest.
+func calculateRepoScore(linesOfCode int, activityAge float64, tagCount int, hasReleases bool) float64 {
 	sizeComponent := 0.0
 	if linesOfCode > 0 {
 		sizeComponent = math.Sqrt(math.Log10(float64(linesOfCode)+1.0)) * 250.0
@@ -138,7 +215,7 @@ func calculateRepoScore(linesOfCode int, avgCommitAge float64, tagCount int, has
 		tagComponent = math.Log1p(float64(tagCount)) * 40.0
 	}
 
-	score := (sizeComponent + tagComponent) / (avgCommitAge + 1.0)
+	score := (sizeComponent + tagComponent) / (activityAge + 1.0)
 	if !hasReleases {
 		score *= unreleasedScorePenalty
 	}
@@ -283,36 +360,48 @@ func getAverageCommitAge(repoPath string, commitCount int) (float64, error) {
 		return 0, err
 	}
 
-	lines := strings.Split(strings.TrimSpace(string(output)), "\n")
-	if len(lines) == 0 || lines[0] == "" {
+	count, avgAge := averageAgeDays(string(output), time.Now())
+	if count == 0 {
 		return 0, fmt.Errorf("no commits found")
 	}
+	return avgAge, nil
+}
 
-	// Calculate average age
-	now := float64(time.Now().Unix())
+// getRecentCommitStats returns how many commits on HEAD are younger than
+// windowDays and their average age in days. A repository without recent
+// commits yields (0, 0, nil); that is a normal state, not an error.
+func getRecentCommitStats(repoPath string, windowDays int) (int, float64, error) {
+	cmd := exec.Command("git", "-C", repoPath, "log", fmt.Sprintf("--since=%d.days", windowDays), "--pretty=format:%at", "HEAD")
+	output, err := cmd.Output()
+	if err != nil {
+		return 0, 0, err
+	}
+
+	count, avgAge := averageAgeDays(string(output), time.Now())
+	return count, avgAge, nil
+}
+
+// averageAgeDays parses newline-separated Unix timestamps (git's %at) and
+// returns how many were valid and their average age in days relative to
+// now. Blank or malformed lines are skipped; zero valid lines yield (0, 0).
+func averageAgeDays(output string, now time.Time) (int, float64) {
+	nowUnix := float64(now.Unix())
 	var totalAge float64
 	validCommits := 0
 
-	for _, line := range lines {
-		if line == "" {
-			continue
-		}
-
-		timestamp, err := strconv.ParseInt(line, 10, 64)
+	for _, line := range strings.Split(strings.TrimSpace(output), "\n") {
+		timestamp, err := strconv.ParseInt(strings.TrimSpace(line), 10, 64)
 		if err != nil {
 			continue
 		}
-
-		age := (now - float64(timestamp)) / 86400 // Convert to days
-		totalAge += age
+		totalAge += (nowUnix - float64(timestamp)) / 86400 // seconds -> days
 		validCommits++
 	}
 
 	if validCommits == 0 {
-		return 0, fmt.Errorf("no valid commits found")
+		return 0, 0
 	}
-
-	return totalAge / float64(validCommits), nil
+	return validCommits, totalAge / float64(validCommits)
 }
 
 // getLatestTag returns the latest version-like tag merged into HEAD, its date,
