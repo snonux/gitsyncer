@@ -84,7 +84,16 @@ func HandleSync(cfg *config.Config, flags *Flags) int {
 // only the config-level "no repositories configured" check above aborts
 // immediately, since that is an unrecoverable setup error rather than a
 // per-repo one. The final exit code reflects whether any repo failed.
+//
+// With sync_all_github_repos the configured repositories are only extras, so
+// "all" means GitHub discovery plus those extras: the call is delegated to
+// HandleSyncGitHubPublic. That also avoids creating GitHub repositories for
+// configured names that are missing there on purpose.
 func HandleSyncAll(cfg *config.Config, flags *Flags) int {
+	if cfg.SyncsAllGitHubRepos() {
+		fmt.Println("sync_all_github_repos is set: syncing all public GitHub repositories plus configured extras")
+		return HandleSyncGitHubPublic(cfg, flags)
+	}
 	if len(cfg.Repositories) == 0 {
 		fmt.Println("No repositories configured. Add repositories to the config file.")
 		return 1
@@ -200,11 +209,13 @@ func handleSyncGitHubPublicWithDeps(cfg *config.Config, flags *Flags, newLister 
 		return 1
 	}
 
-	// A configured pushOnly mirror receives every public GitHub repository.
+	// The selector applies the repositories allowlist, or extends discovery
+	// with configured extras (sync_all_github_repos), or leaves discovery
+	// untouched for a pushOnly mirror; see githubRepoSelector.
 	pipeline := publicSyncPipeline{
-		sourceLabel:    "GitHub",
-		targetLabel:    githubSyncTargetLabel(cfg),
-		applyAllowlist: !cfg.MirrorsAllGitHubRepos(),
+		sourceLabel: "GitHub",
+		targetLabel: githubSyncTargetLabel(cfg),
+		selectRepos: githubRepoSelector(cfg, client),
 		sync: func(repoNames []string) int {
 			return syncGitHubRepos(cfg, flags, repos, repoNames)
 		},
@@ -213,16 +224,17 @@ func handleSyncGitHubPublicWithDeps(cfg *config.Config, flags *Flags, newLister 
 	return pipeline.run(cfg, flags, publicRepoNames(repos))
 }
 
-// publicSyncPipeline reports the discovered repos, applies the configured
-// allowlist when appropriate, and dispatches the sync loop.
+// publicSyncPipeline reports the discovered repos, narrows or extends them
+// via selectRepos, and dispatches the sync loop.
 type publicSyncPipeline struct {
 	sourceLabel string // used in log and dry-run messages
 	targetLabel string // destination label shown in dry-run output
-	// applyAllowlist restricts the discovered repos to cfg.Repositories. It
-	// is false for GitHub discovery when a pushOnly mirror must receive every
+	// selectRepos maps the discovered repos to the repos to sync (allowlist
+	// or configured extras, see githubRepoSelector). nil syncs every
+	// discovered repo, as needed when a pushOnly mirror must receive every
 	// public repo (see Config.MirrorsAllGitHubRepos).
-	applyAllowlist bool
-	sync           func(repoNames []string) int
+	selectRepos func(discovered []string) []string
+	sync        func(repoNames []string) int
 }
 
 // githubSyncTargetLabel names the destination selected by the configured
@@ -237,11 +249,8 @@ func githubSyncTargetLabel(cfg *config.Config) string {
 func (p publicSyncPipeline) run(cfg *config.Config, flags *Flags, repoNames []string) int {
 	fmt.Printf("Found %d public repositories on %s\n", len(repoNames), p.sourceLabel)
 
-	if before := len(repoNames); before > 0 && p.applyAllowlist {
-		repoNames = cfg.FilterSyncRepos(repoNames)
-		if len(repoNames) < before {
-			fmt.Printf("Restricted to %d configured repositories (allowlist)\n", len(repoNames))
-		}
+	if p.selectRepos != nil {
+		repoNames = p.selectRepos(repoNames)
 	}
 
 	if len(repoNames) == 0 {

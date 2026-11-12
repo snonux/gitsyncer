@@ -24,6 +24,16 @@ func (l githubPublicRepoLister) ListPublicRepos() ([]forge.PublicRepo, error) {
 	return converted, err
 }
 
+// LookupRepo implements forge.RepoLookuper on top of github.Client.GetRepo,
+// so configured extra repositories can be checked before they are synced.
+func (l githubPublicRepoLister) LookupRepo(name string) (forge.RepoLookup, error) {
+	repo, exists, err := l.Client.GetRepo(name)
+	if err != nil || !exists {
+		return forge.RepoLookup{}, err
+	}
+	return forge.RepoLookup{Exists: true, Name: repo.Name, Private: repo.Private, Archived: repo.Archived}, nil
+}
+
 // newGitHubPublicRepoLister builds the forge.PublicRepoLister for a GitHub
 // organization. It is the injection seam HandleSyncGitHubPublic uses so
 // tests can substitute a fake lister instead of making real GitHub API

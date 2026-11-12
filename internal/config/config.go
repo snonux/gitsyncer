@@ -59,7 +59,8 @@ type Organization struct {
 // Config holds the application configuration
 type Config struct {
 	Organizations         []Organization      `json:"organizations"`
-	Repositories          []string            `json:"repositories,omitempty"`
+	Repositories          []string            `json:"repositories,omitempty"`            // Allowlist for GitHub discovery, or extra repos when SyncAllGitHubRepos is set
+	SyncAllGitHubRepos    bool                `json:"sync_all_github_repos,omitempty"`   // Sync every public GitHub repo plus Repositories as extras (see SyncAllGitHubRepos doc)
 	Branches              []string            `json:"branches,omitempty"`                // Branches synchronized for every repository unless overridden
 	RepositoryBranches    map[string][]string `json:"repository_branches,omitempty"`     // Branches synchronized for specific repositories
 	ExcludeBranches       []string            `json:"exclude_branches,omitempty"`        // Regex patterns for branches to exclude
@@ -338,6 +339,16 @@ func (c *Config) MirrorsAllGitHubRepos() bool {
 		}
 	}
 	return false
+}
+
+// SyncsAllGitHubRepos reports whether GitHub discovery should sync every
+// public, non-fork, non-archived GitHub repository instead of restricting it
+// to the Repositories allowlist. Repositories then lists extra repositories
+// that discovery cannot find (e.g. forks you maintain); each extra is checked
+// against GitHub before it is synced. This removes the need to keep a manual
+// list of every repository in sync with GitHub.
+func (c *Config) SyncsAllGitHubRepos() bool {
+	return c != nil && c.SyncAllGitHubRepos
 }
 
 // FilterSyncRepos restricts a set of discovered repository names to those that

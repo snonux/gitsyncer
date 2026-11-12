@@ -68,12 +68,15 @@ Create a configuration file at `~/.config/gitsyncer/config.json` (or specify a c
     "repo1",
     "repo2"
   ],
+  "sync_all_github_repos": false,
   "showcase_output_dir": "~/git/foo.zone-content/gemtext/about",
   "showcase_stats_branches": {
     "foo.zone": "content-gemtext"
   },
 }
 ```
+
+Set `"sync_all_github_repos": true` to sync every public GitHub repository automatically instead of maintaining the `repositories` list; `repositories` then only names extras such as forks you maintain. See [doc/configuration.md](doc/configuration.md#sync_all_github_repos-optional).
 
 ## Usage
 

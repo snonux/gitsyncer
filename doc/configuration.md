@@ -99,7 +99,29 @@ failure is reported but does not disable an otherwise reachable Git-over-SSH
 peer.
 
 #### repositories (optional)
-Array of repository names to sync. If empty, use `gitsyncer sync github-to-forgejo` to discover repositories.
+Array of repository names to sync. `gitsyncer sync all` syncs exactly this list.
+For the GitHub discovery commands (`sync github-to-forgejo`,
+`sync bidirectional`, `manage batch-run`) it acts as an allowlist: only
+discovered public repositories named here are synced. If it is empty, every
+discovered repository is synced.
+
+#### sync_all_github_repos (optional)
+Boolean. When `true`, the GitHub discovery commands and `sync all` sync every
+public, non-fork, non-archived GitHub repository, so new repositories are
+picked up without editing the configuration. `repositories` then lists only
+extras that discovery cannot find, such as forks you maintain:
+
+```json
+{
+  "sync_all_github_repos": true,
+  "repositories": ["dtail"]
+}
+```
+
+Before an extra is synced it is looked up on GitHub. Extras that do not exist,
+were renamed, are archived (read-only) or are private are skipped with a
+notice instead of failing the run, so `repositories` can still name
+repositories that should only appear in the showcase.
 
 #### branches and repository_branches (optional)
 By default, synchronization is limited to branches named `main`, `master`, or

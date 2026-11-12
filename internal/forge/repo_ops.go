@@ -66,6 +66,24 @@ type PublicRepo struct {
 	Description string
 }
 
+// RepoLookup describes a single repository as reported by a forge, used to
+// decide whether an explicitly configured repository can be synchronized.
+// Name is the canonical name the forge returned, which differs from the
+// requested name when the repository was renamed (GitHub redirects lookups
+// of the old name to the new repository).
+type RepoLookup struct {
+	Exists   bool
+	Name     string
+	Private  bool
+	Archived bool
+}
+
+// RepoLookuper looks up a single repository by name. A missing repository is
+// reported as RepoLookup{Exists: false} with a nil error.
+type RepoLookuper interface {
+	LookupRepo(name string) (RepoLookup, error)
+}
+
 // PublicRepoLister lists public repositories for a forge account.
 // HasToken is part of the contract because GitHub's public-listing API
 // requires an auth token even for public repositories;

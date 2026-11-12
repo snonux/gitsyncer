@@ -129,7 +129,8 @@ type Organization struct {
 ```go
 type Config struct {
     Organizations         []Organization      `json:"organizations"`             // List of git organizations
-    Repositories          []string            `json:"repositories"`              // Specific repos to sync
+    Repositories          []string            `json:"repositories"`              // Specific repos to sync; extras when SyncAllGitHubRepos is set
+    SyncAllGitHubRepos    bool                `json:"sync_all_github_repos"`     // Sync every public GitHub repo plus Repositories extras
     Branches              []string            `json:"branches"`                  // Global branch allowlist
     RepositoryBranches    map[string][]string `json:"repository_branches"`      // Per-repo branch overrides
     ExcludeBranches       []string            `json:"exclude_branches"`          // Regex patterns for branch exclusion
