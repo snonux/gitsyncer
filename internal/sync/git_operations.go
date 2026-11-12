@@ -7,6 +7,7 @@ import (
 	"net/url"
 	"os/exec"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -199,6 +200,31 @@ func parseTagHashOutput(output []byte, tag, source string) (string, error) {
 	return fields[0], nil
 }
 
+// currentBranch returns the short name of the checked-out branch, or "" when
+// HEAD is detached or cannot be resolved (e.g. an empty repository). Callers
+// treat "" as "nothing to restore".
+func currentBranch(repoPath string) string {
+	output, err := gitCommand(repoPath, "symbolic-ref", "--short", "-q", "HEAD").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(output))
+}
+
+// restoreBranch checks branch out again after a multi-branch sync. It is
+// best effort: a failure (e.g. an unresolved merge left behind by a failed
+// branch sync) is only reported, because the sync result itself must not be
+// masked by a cleanup problem.
+func restoreBranch(repoPath, branch string) {
+	if currentBranch(repoPath) == branch {
+		return
+	}
+	output, err := gitCommand(repoPath, "checkout", branch).CombinedOutput()
+	if err != nil {
+		fmt.Printf("  Warning: failed to restore branch %s: %s\n", branch, strings.TrimSpace(string(output)))
+	}
+}
+
 // checkoutExistingBranch tries to checkout an existing branch
 func checkoutExistingBranch(repoPath, branch string) error {
 	cmd := gitCommand(repoPath, "checkout", branch)
@@ -239,11 +265,14 @@ func getAllUniqueBranches(output []byte) []string {
 		}
 	}
 
-	// Convert map to slice
+	// Convert map to a sorted slice. Go randomizes map iteration order, so
+	// without sorting the branches would be synced in a different order on
+	// every run, making sync logs and side effects non-reproducible.
 	branches := make([]string, 0, len(branchMap))
 	for branch := range branchMap {
 		branches = append(branches, branch)
 	}
+	sort.Strings(branches)
 
 	return branches
 }

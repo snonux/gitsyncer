@@ -114,8 +114,20 @@ func (s *Syncer) pushToAllRemotes(repoPath, branch string, remotes map[string]*c
 	return nil
 }
 
-// syncAllBranches synchronizes all branches across remotes
+// syncAllBranches synchronizes all branches across remotes.
+//
+// Each branch is checked out in turn to merge and push it, so without care
+// the working tree would be left on whichever branch happened to be synced
+// last (e.g. "develop" after "master"). Consumers of the work directory such
+// as the showcase generator read HEAD, so a stray checkout silently changes
+// what they measure. The branch that was checked out before syncing is
+// therefore restored afterwards, also when a branch fails to sync.
 func (s *Syncer) syncAllBranches(branches []string, remotes map[string]*config.Organization) error {
+	repoPath := s.repoPath()
+	if original := currentBranch(repoPath); original != "" {
+		defer restoreBranch(repoPath, original)
+	}
+
 	for _, branch := range branches {
 		fmt.Printf("\nSyncing branch: %s\n", branch)
 		if err := s.syncBranch(branch, remotes); err != nil {

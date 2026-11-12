@@ -341,3 +341,56 @@ func TestSyncRepository_ThreeWaySyncIncludesOptionalPeer(t *testing.T) {
 		}
 	}
 }
+
+// TestSyncRepository_RestoresOriginallyCheckedOutBranch guards against the
+// work directory being left on the last synced branch. Branches are synced
+// in sorted order ("develop", then "main"), each checked out in turn. The
+// clone starts on "develop" so that, without the restore, HEAD would
+// deterministically end up on "main". Consumers such as the showcase
+// generator measure whatever HEAD points to, so the original branch must be
+// checked out again after the sync.
+func TestSyncRepository_RestoresOriginallyCheckedOutBranch(t *testing.T) {
+	root := t.TempDir()
+	remoteRoot := filepath.Join(root, "github")
+	if err := os.MkdirAll(remoteRoot, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	bare := filepath.Join(remoteRoot, "demo.git")
+	runGit(t, root, "init", "--bare", bare)
+
+	seed := filepath.Join(root, "seed")
+	if err := os.Mkdir(seed, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, seed, "init", "-b", "main")
+	runGit(t, seed, "config", "user.name", "GitSyncer Test")
+	runGit(t, seed, "config", "user.email", "gitsyncer@example.test")
+	if err := os.WriteFile(filepath.Join(seed, "base.txt"), []byte("base\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	runGit(t, seed, "add", "base.txt")
+	runGit(t, seed, "commit", "-m", "base")
+	runGit(t, seed, "branch", "develop")
+	runGit(t, seed, "push", bare, "main", "develop")
+	runGit(t, root, "--git-dir", bare, "symbolic-ref", "HEAD", "refs/heads/main")
+
+	workDir := filepath.Join(root, "work")
+	if err := os.Mkdir(workDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	repoPath := filepath.Join(workDir, "demo")
+	runGit(t, workDir, "clone", "--branch", "develop", bare, repoPath)
+	runGit(t, repoPath, "remote", "rename", "origin", "github")
+
+	cfg := &config.Config{Organizations: []config.Organization{{Host: "file://" + remoteRoot}}}
+	if err := New(cfg, workDir).SyncRepository("demo"); err != nil {
+		t.Fatalf("SyncRepository() error = %v", err)
+	}
+
+	// "main" must actually have been synced (checked out locally) for the
+	// restore to be meaningful.
+	runGit(t, repoPath, "rev-parse", "--verify", "refs/heads/main")
+	if got := currentBranch(repoPath); got != "develop" {
+		t.Fatalf("checked-out branch after sync = %q, want %q", got, "develop")
+	}
+}
